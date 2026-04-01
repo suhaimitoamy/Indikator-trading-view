@@ -11,9 +11,9 @@ strategy("XAUUSD Smart Context + Entry PRO Production",
      calc_on_order_fills = false,
      calc_on_every_tick = false,
      process_orders_on_close = true,
-     max_labels_count = 500,
-     max_lines_count = 500,
-     max_boxes_count = 200)
+     max_labels_count = 300,
+     max_lines_count = 300,
+     max_boxes_count = 100)
 
 //==================== INPUTS ====================//
 groupSess = "Sessions"
@@ -59,6 +59,7 @@ showTradeLevels = input.bool(true, "Show entry/SL/TP levels", group = groupVis)
 signalLevelBars = input.int(4, "Show last signal levels for N bars", minval = 0, maxval = 50, group = groupVis)
 showDashboard = input.bool(true, "Show dashboard", group = groupVis)
 dashboardPos = input.string("Top Right", "Dashboard Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = groupVis)
+dashboardMode = input.string("Compact", "Dashboard Mode", options = ["Compact", "Full"], group = groupVis)
 
 //==================== HELPERS ====================//
 f_inSession(_sess) =>
@@ -423,7 +424,7 @@ if showLabels and shortSignal and shortRiskOk
     label.new(bar_index, high, shortReason, style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white)
 
 //==================== DASHBOARD DATA ====================//
-sessionText = inAsia ? "Asia" : inLondon ? "London" : inNewYork ? "New York" : "Off Session"
+sessionText = inAsia ? "Asia" : inLondon ? "London" : inNewYork ? "New York" : "Off"
 asiaStateText = inAsia ? "Building" : asiaLocked ? "Locked" : "Waiting"
 biasText = bullBias ? "Bull" : bearBias ? "Bear" : "Neutral"
 
@@ -437,12 +438,7 @@ currentBreakText = validBreakUp ? "BOS Up" :
      rejectionResistance ? "Reject Resistance" :
      "None"
 
-sweepText = bullAsiaSweep ? "Asia Low Swept" : bearAsiaSweep ? "Asia High Swept" : "None"
-
-longZoneText = ((inBullFvg or bullFvgCreated) ? "FVG " : "") + (inBullOb ? "OB " : "") + (inBullOte ? "OTE " : "")
-shortZoneText = ((inBearFvg or bearFvgCreated) ? "FVG " : "") + (inBearOb ? "OB " : "") + (inBearOte ? "OTE " : "")
-longZoneText := longZoneText == "" ? "-" : longZoneText
-shortZoneText := shortZoneText == "" ? "-" : shortZoneText
+sweepText = bullAsiaSweep ? "Low Swept" : bearAsiaSweep ? "High Swept" : "None"
 
 hasCurrentLong = longSignal and longRiskOk
 hasCurrentShort = shortSignal and shortRiskOk
@@ -457,7 +453,6 @@ displaySetup = hasCurrentLong ? (buyBreakoutSetup ? "Breakout" : "Reversal") :
      hasCurrentShort ? (sellBreakoutSetup ? "Breakout" : "Reversal") :
      lastSetupType
 
-displayBreak = hasCurrentLong or hasCurrentShort ? currentBreakText : lastBreakType
 displayScore = hasCurrentLong ? buyScore : hasCurrentShort ? sellScore : lastScore
 displayQuality = hasCurrentLong ? buyQuality : hasCurrentShort ? sellQuality : lastQuality
 displayEntry = strategy.position_size != 0 ? strategy.position_avg_price : (hasCurrentLong or hasCurrentShort ? close : lastEntry)
@@ -466,14 +461,8 @@ displayTP = hasCurrentLong ? longTp : hasCurrentShort ? shortTp : lastTP
 
 stopDist = na(displayEntry) or na(displaySL) ? na : math.abs(displayEntry - displaySL)
 tpDist = na(displayEntry) or na(displayTP) ? na : math.abs(displayTP - displayEntry)
-stopTicks = na(stopDist) ? na : stopDist / syminfo.mintick
-tpTicks = na(tpDist) ? na : tpDist / syminfo.mintick
-
-closedTrades = strategy.closedtrades
-winRate = closedTrades > 0 ? strategy.wintrades * 100.0 / closedTrades : na
-profitFactor = strategy.grossloss != 0 ? strategy.grossprofit / math.abs(strategy.grossloss) : na
-signalAgeText = na(lastSignalBar) ? "-" : str.tostring(bar_index - lastSignalBar) + " bar"
 tradeStateText = f_side(strategy.position_size)
+signalAgeText = na(lastSignalBar) ? "-" : str.tostring(bar_index - lastSignalBar) + " bar"
 
 biasBg = biasText == "Bull" ? color.new(color.lime, 82) : biasText == "Bear" ? color.new(color.red, 82) : color.new(color.gray, 84)
 signalBg = displaySignal == "BUY" or displaySignal == "LONG" ? color.new(color.lime, 74) : displaySignal == "SELL" or displaySignal == "SHORT" ? color.new(color.red, 74) : color.new(color.gray, 84)
@@ -481,99 +470,113 @@ headerBg = color.new(color.blue, 76)
 labelBg = color.new(color.black, 20)
 valueBg = color.new(color.black, 78)
 
+dashRows = dashboardMode == "Compact" ? 12 : 18
 var table dash = na
 
 if showDashboard and na(dash)
-    dash := table.new(f_dashPos(dashboardPos), 2, 28, border_width = 1, border_color = color.new(color.gray, 55), frame_color = color.new(color.gray, 35), frame_width = 1, force_overlay = true)
+    dash := table.new(f_dashPos(dashboardPos), 2, dashRows, border_width = 1, border_color = color.new(color.gray, 55), frame_color = color.new(color.gray, 35), frame_width = 1)
+
+if showDashboard and not na(dash)
+    table.delete(dash)
+    dash := table.new(f_dashPos(dashboardPos), 2, dashRows, border_width = 1, border_color = color.new(color.gray, 55), frame_color = color.new(color.gray, 35), frame_width = 1)
 
 if not showDashboard and not na(dash)
     table.delete(dash)
     dash := na
 
 if showDashboard and not na(dash) and barstate.islast
-    table.cell(dash, 0, 0, "XAUUSD ENTRY PRO", text_color = color.white, bgcolor = headerBg)
-    table.cell(dash, 1, 0, "TF " + timeframe.period, text_color = color.white, bgcolor = headerBg)
+    table.clear(dash, 0, 0, 1, dashRows - 1)
 
-    table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 1, biasText, text_color = color.white, bgcolor = biasBg)
+    if dashboardMode == "Compact"
+        table.cell(dash, 0, 0, "XAUUSD DASH", text_color = color.white, bgcolor = headerBg)
+        table.cell(dash, 1, 0, "TF " + timeframe.period, text_color = color.white, bgcolor = headerBg)
 
-    table.cell(dash, 0, 2, "Bias TF / Struct", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 2, biasTf + " / " + levelTf, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 1, biasText, text_color = color.white, bgcolor = biasBg)
 
-    table.cell(dash, 0, 3, "Session", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 3, sessionText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 2, "Session", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 2, sessionText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 4, "Asia State", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 4, asiaStateText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 3, "Break", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 3, currentBreakText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 5, "What Break", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 5, displayBreak, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 4, "Signal", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 4, displaySignal, text_color = color.white, bgcolor = signalBg)
 
-    table.cell(dash, 0, 6, "Sweep", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 6, sweepText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 5, "Setup", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 5, displaySetup + " / " + displayQuality, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 7, "Long Zones", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 7, longZoneText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 6, "Entry", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 6, f_price(displayEntry), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 8, "Short Zones", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 8, shortZoneText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 7, "SL", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 7, f_price(displaySL), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 9, "Scores B/S", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 9, str.tostring(buyScore) + " / " + str.tostring(sellScore), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 8, "TP", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 8, f_price(displayTP), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 10, "Signal", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 10, displaySignal, text_color = color.white, bgcolor = signalBg)
+        table.cell(dash, 0, 9, "Score", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 9, f_num(displayScore), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 11, "Setup / Quality", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 11, displaySetup + " / " + displayQuality, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 10, "State", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 10, tradeStateText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 12, "Entry", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 12, f_price(displayEntry), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 11, "Age", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 11, signalAgeText, text_color = color.white, bgcolor = valueBg)
+    else
+        table.cell(dash, 0, 0, "XAUUSD DASH", text_color = color.white, bgcolor = headerBg)
+        table.cell(dash, 1, 0, "TF " + timeframe.period, text_color = color.white, bgcolor = headerBg)
 
-    table.cell(dash, 0, 13, "SL", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 13, f_price(displaySL), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 1, biasText, text_color = color.white, bgcolor = biasBg)
 
-    table.cell(dash, 0, 14, "TP", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 14, f_price(displayTP), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 2, "Bias TF/Struct", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 2, biasTf + " / " + levelTf, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 15, "SL Dist / Tick", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 15, f_price(stopDist) + " / " + f_num(stopTicks), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 3, "Session", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 3, sessionText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 16, "TP Dist / Tick", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 16, f_price(tpDist) + " / " + f_num(tpTicks), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 4, "Asia", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 4, asiaStateText + " / " + sweepText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 17, "RR Target", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 17, "1 : " + f_num(rr), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 5, "Break", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 5, currentBreakText, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 18, "Support", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 18, f_price(activeSupport), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 6, "Signal", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 6, displaySignal, text_color = color.white, bgcolor = signalBg)
 
-    table.cell(dash, 0, 19, "Resistance", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 19, f_price(activeResistance), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 7, "Setup", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 7, displaySetup + " / " + displayQuality, text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 20, "Asia High", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 20, f_price(asiaHigh), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 8, "Entry", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 8, f_price(displayEntry), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 21, "Asia Low", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 21, f_price(asiaLow), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 9, "SL", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 9, f_price(displaySL), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 22, "Trade State", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 22, tradeStateText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 10, "TP", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 10, f_price(displayTP), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 23, "Open P/L", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 23, f_num(strategy.openprofit) + " " + strategy.account_currency + " / " + f_num(strategy.openprofit_percent) + "%", text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 11, "SL Dist", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 11, f_price(stopDist), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 24, "Net P/L", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 24, f_num(strategy.netprofit) + " " + strategy.account_currency + " / " + f_num(strategy.netprofit_percent) + "%", text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 12, "TP Dist", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 12, f_price(tpDist), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 25, "Trades / Winrate", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 25, str.tostring(closedTrades) + " / " + f_num(winRate) + "%", text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 13, "RR", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 13, "1 : " + f_num(rr), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 26, "Profit Factor", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 26, f_num(profitFactor), text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 14, "Support", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 14, f_price(activeSupport), text_color = color.white, bgcolor = valueBg)
 
-    table.cell(dash, 0, 27, "Last Signal Age", text_color = color.white, bgcolor = labelBg)
-    table.cell(dash, 1, 27, signalAgeText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 15, "Resistance", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 15, f_price(activeResistance), text_color = color.white, bgcolor = valueBg)
+
+        table.cell(dash, 0, 16, "State", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 16, tradeStateText, text_color = color.white, bgcolor = valueBg)
+
+        table.cell(dash, 0, 17, "Age", text_color = color.white, bgcolor = labelBg)
+        table.cell(dash, 1, 17, signalAgeText, text_color = color.white, bgcolor = valueBg)
 
 //==================== ALERTS ====================//
 alertcondition(longSignal and longRiskOk, title = "BUY XAUUSD", message = "BUY confirmed on candle close")
