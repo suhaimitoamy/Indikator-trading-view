@@ -1,1 +1,42 @@
+name: Review and Improve Pine v6 with Groq
 
+on:
+  workflow_dispatch:
+    inputs:
+      input_file:
+        description: 'Path file Pine v5/v6, contoh: indikator-v3.pine'
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install openai
+
+      - name: Run Pine reviewer
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          INPUT_FILE: ${{ github.event.inputs.input_file }}
+          GROQ_MODEL: llama-3.3-70b-versatile
+        run: python scripts/review_pine_groq.py
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Review and improve Pine script" || echo "No changes"
+          git push
