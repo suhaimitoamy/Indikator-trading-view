@@ -4,13 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       input_file:
-        description: "Path file Pine v3 (contoh: indikator/ema_v3.pine)"
+        description: 'Path file Pine v3, contoh: indikator-v3.pine'
         required: true
-        type: string
       output_file:
-        description: "Path output (opsional)"
+        description: 'Path output, opsional'
         required: false
-        type: string
 
 jobs:
   convert:
@@ -26,7 +24,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: pip install openai
@@ -34,8 +32,8 @@ jobs:
       - name: Run converter
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          INPUT_FILE: ${{ inputs.input_file }}
-          OUTPUT_FILE: ${{ inputs.output_file }}
+          INPUT_FILE: ${{ github.event.inputs.input_file }}
+          OUTPUT_FILE: ${{ github.event.inputs.output_file }}
         run: python scripts/convert_pine_groq.py
 
       - name: Commit result
