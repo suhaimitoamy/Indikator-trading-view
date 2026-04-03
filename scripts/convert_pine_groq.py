@@ -11,7 +11,7 @@ if not INPUT_FILE:
 
 input_path = Path(INPUT_FILE)
 if not input_path.exists():
-    raise SystemExit(f"File tidak ditemukan: {INPUT_FILE}")
+    raise SystemExit(f"File input tidak ditemukan: {INPUT_FILE}")
 
 if not OUTPUT_FILE:
     if input_path.suffix:
@@ -33,26 +33,40 @@ system_prompt = """You are an expert Pine Script migration assistant.
 Convert Pine Script v3 code to Pine Script v4.
 
 Rules:
-- Keep behavior the same
-- Return ONLY code
-- No markdown
+- Keep behavior as close as possible to the original.
+- Output valid Pine Script v4 code only.
+- Do not include markdown fences.
+"""
+
+user_prompt = f"""Convert this Pine Script v3 code to Pine Script v4.
+
+Return code only.
+
+SOURCE FILE: {INPUT_FILE}
+
+CODE:
+{source_code}
 """
 
 response = client.chat.completions.create(
     model="llama-3.3-70b-versatile",
     messages=[
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": source_code},
+        {"role": "user", "content": user_prompt},
     ],
     temperature=0.2,
 )
 
-result = response.choices[0].message.content.strip()
+content = response.choices[0].message.content.strip()
 
-# bersihin kalau ada ```
-if result.startswith("```"):
-    result = "\n".join(result.splitlines()[1:-1])
+if content.startswith("```"):
+    lines = content.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    content = "\n".join(lines).strip()
 
-output_path.write_text(result, encoding="utf-8")
+output_path.write_text(content + "\n", encoding="utf-8")
 
-print(f"Saved: {OUTPUT_FILE}")
+print(f"Saved converted file to: {OUTPUT_FILE}")
