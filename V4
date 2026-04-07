@@ -1,5 +1,5 @@
 //@version=6
-indicator("XAUUSD Context Narrator v1", overlay = true, max_labels_count = 50, max_lines_count = 50)
+indicator("XAUUSD Context Narrator v1.3", overlay = true, max_labels_count = 50, max_lines_count = 50)
 
 //==================== INPUTS ====================//
 groupSess = "Sessions"
@@ -25,7 +25,8 @@ showLevels = input.bool(true, "Show active support/resistance", group = groupVis
 showAsia = input.bool(true, "Show Asia range", group = groupVis)
 showSessionBg = input.bool(false, "Highlight active session", group = groupVis)
 showDashboard = input.bool(true, "Show narrator dashboard", group = groupVis)
-dashboardPos = input.string("Top Right", "Dashboard Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = groupVis)
+dashboardStyle = input.string("Mobile", "Dashboard Style", options = ["Mobile", "Desktop"], group = groupVis)
+dashboardPos = input.string("Bottom Left", "Dashboard Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = groupVis)
 
 //==================== HELPERS ====================//
 f_inSession(_sess) =>
@@ -46,6 +47,8 @@ inLondon = f_inSession(londonSession)
 inNewYork = f_inSession(newYorkSession)
 
 sessionText = inAsia ? "Asia" : inLondon ? "London" : inNewYork ? "New York" : "Off"
+sessionShort = inAsia ? "Asia" : inLondon ? "London" : inNewYork ? "NY" : "Off"
+
 bgcolor(showSessionBg and (inAsia or inLondon or inNewYork) ? color.new(color.teal, 92) : na)
 
 //==================== ASIA RANGE ====================//
@@ -95,7 +98,9 @@ htfEma50 = biasTfIsHigher ? request.security(syminfo.tickerid, biasTf, ta.ema(cl
 
 bullBias = htfClose > htfEma20 and htfEma20 > htfEma50
 bearBias = htfClose < htfEma20 and htfEma20 < htfEma50
-biasText = bullBias ? "Bullish" : bearBias ? "Bearish" : "Neutral"
+
+biasText = bullBias ? "Bullish" : bearBias ? "Bearish" : "Netral"
+biasShort = bullBias ? "Bull" : bearBias ? "Bear" : "Netral"
 
 //==================== STRUCTURE LEVELS ====================//
 levelPh = levelTfIsHigher ? request.security(syminfo.tickerid, levelTf, ta.pivothigh(high, swingLen, swingLen), lookahead = barmerge.lookahead_off) : ta.pivothigh(high, swingLen, swingLen)
@@ -117,7 +122,8 @@ if not na(levelPl)
 bullStructure = not na(activeResistance) and not na(prevResistance) and not na(activeSupport) and not na(prevSupport) and activeResistance > prevResistance and activeSupport > prevSupport
 bearStructure = not na(activeResistance) and not na(prevResistance) and not na(activeSupport) and not na(prevSupport) and activeResistance < prevResistance and activeSupport < prevSupport
 
-structureText = bullStructure ? "HH / HL" : bearStructure ? "LH / LL" : bullBias ? "Bull context" : bearBias ? "Bear context" : "Range / Mixed"
+structureText = bullStructure ? "HH / HL" : bearStructure ? "LH / LL" : bullBias ? "Konteks Bull" : bearBias ? "Konteks Bear" : "Range / Mixed"
+structureShort = bullStructure ? "HH/HL" : bearStructure ? "LH/LL" : bullBias ? "Bull ctx" : bearBias ? "Bear ctx" : "Range"
 
 validBreakUp = not na(activeResistance) and close > activeResistance + breakBuffer and close > open and displacementOk
 validBreakDown = not na(activeSupport) and close < activeSupport - breakBuffer and close < open and displacementOk
@@ -131,50 +137,31 @@ pl = ta.pivotlow(low, swingLen, swingLen)
 
 var float lastSwingHigh = na
 var float lastSwingLow = na
-var int lastSwingHighBar = na
-var int lastSwingLowBar = na
 
 if not na(ph)
     lastSwingHigh := ph
-    lastSwingHighBar := bar_index - swingLen
 
 if not na(pl)
     lastSwingLow := pl
-    lastSwingLowBar := bar_index - swingLen
 
 rangeReady = not na(lastSwingHigh) and not na(lastSwingLow) and lastSwingHigh > lastSwingLow
 rangeMid = rangeReady ? (lastSwingHigh + lastSwingLow) * 0.5 : na
 zoneText = not rangeReady ? "-" : close < rangeMid ? "Discount" : close > rangeMid ? "Premium" : "Equilibrium"
 
 //==================== STATE MACHINE ====================//
-var int ctxDir = 0          // 1 bullish break, -1 bearish break
-var int ctxState = 0        // 0 none, 1 pending, 2 valid, 3 failed
+var int ctxDir = 0
+var int ctxState = 0
 var float ctxLevel = na
-var string lastEvent = "None"
-
-if bullAsiaSweep
-    lastEvent := "Sweep Low Asia"
-
-if bearAsiaSweep
-    lastEvent := "Sweep High Asia"
-
-if falseBreakDown
-    lastEvent := "Sweep Low Structure"
-
-if falseBreakUp
-    lastEvent := "Sweep High Structure"
 
 if validBreakUp
     ctxDir := 1
     ctxState := 1
     ctxLevel := activeResistance
-    lastEvent := "BOS Up"
 
 if validBreakDown
     ctxDir := -1
     ctxState := 1
     ctxLevel := activeSupport
-    lastEvent := "BOS Down"
 
 longRetestTouch = ctxDir == 1 and ctxState == 1 and not na(ctxLevel) and low <= ctxLevel + breakBuffer
 shortRetestTouch = ctxDir == -1 and ctxState == 1 and not na(ctxLevel) and high >= ctxLevel - breakBuffer
@@ -182,28 +169,23 @@ shortRetestTouch = ctxDir == -1 and ctxState == 1 and not na(ctxLevel) and high 
 if longRetestTouch
     if close >= ctxLevel
         ctxState := 2
-        lastEvent := "Retest Valid Up"
     else
         ctxState := 3
-        lastEvent := "Retest Failed Up"
 
 if shortRetestTouch
     if close <= ctxLevel
         ctxState := 2
-        lastEvent := "Retest Valid Down"
     else
         ctxState := 3
-        lastEvent := "Retest Failed Down"
 
 if ctxDir == 1 and ctxState == 2 and close < ctxLevel
     ctxState := 3
-    lastEvent := "Lost Bull Level"
 
 if ctxDir == -1 and ctxState == 2 and close > ctxLevel
     ctxState := 3
-    lastEvent := "Lost Bear Level"
 
-stateText = ctxState == 1 ? "Belum Valid" : ctxState == 2 ? "Valid" : ctxState == 3 ? "Gagal" : "No Setup"
+stateText = ctxState == 1 ? "Belum Valid" : ctxState == 2 ? "Valid" : ctxState == 3 ? "Gagal" : "Belum Ada"
+stateShort = ctxState == 1 ? "Pending" : ctxState == 2 ? "Valid" : ctxState == 3 ? "Gagal" : "Belum ada"
 
 //==================== NARRATIVE ENGINE ====================//
 string areaText = bullAsiaSweep ? "Low Asia disapu, likuiditas bawah sudah diambil." :
@@ -254,47 +236,67 @@ plot(showLevels ? activeResistance : na, "Active Resistance", color = color.new(
 plot(showAsia and asiaLocked ? asiaHigh : na, "Asia High", color = color.new(color.purple, 30), style = plot.style_linebr)
 plot(showAsia and asiaLocked ? asiaLow : na, "Asia Low", color = color.new(color.purple, 30), style = plot.style_linebr)
 
-//==================== LIGHTWEIGHT DASHBOARD ====================//
+//==================== MOBILE / DESKTOP DASHBOARD ====================//
 dashRows = 7
+dashCols = dashboardStyle == "Mobile" ? 1 : 2
+
 var table dash = na
 var string lastDashPos = dashboardPos
+var string lastDashStyle = dashboardStyle
 
-if showDashboard and (na(dash) or lastDashPos != dashboardPos)
+if showDashboard and (na(dash) or lastDashPos != dashboardPos or lastDashStyle != dashboardStyle)
     if not na(dash)
         table.delete(dash)
-    dash := table.new(f_dashPos(dashboardPos), 2, dashRows, border_width = 1, border_color = color.new(color.gray, 60), frame_color = color.new(color.gray, 35), frame_width = 1)
+    dash := table.new(
+         f_dashPos(dashboardPos),
+         dashCols,
+         dashRows,
+         border_width = 1,
+         border_color = color.rgb(90, 90, 90),
+         frame_color = color.rgb(60, 60, 60),
+         frame_width = 1)
     lastDashPos := dashboardPos
+    lastDashStyle := dashboardStyle
 
 if not showDashboard and not na(dash)
     table.delete(dash)
     dash := na
 
 if showDashboard and not na(dash) and barstate.islast
-    table.clear(dash, 0, 0, 1, dashRows - 1)
+    table.clear(dash, 0, 0, dashCols - 1, dashRows - 1)
 
-    headerBg = color.new(color.blue, 78)
-    keyBg = color.new(color.black, 15)
-    valueBg = color.new(color.black, 80)
-    biasBg = bullBias ? color.new(color.lime, 80) : bearBias ? color.new(color.red, 82) : color.new(color.gray, 84)
-    stateBg = ctxState == 2 ? color.new(color.lime, 78) : ctxState == 1 ? color.new(color.orange, 75) : ctxState == 3 ? color.new(color.red, 78) : color.new(color.gray, 84)
+    headerBg = color.rgb(70, 95, 150)
+    keyBg = color.rgb(70, 70, 80)
+    valueBg = color.rgb(210, 210, 210)
+    biasBg = bullBias ? color.rgb(80, 130, 80) : bearBias ? color.rgb(145, 75, 75) : color.rgb(110, 110, 110)
+    stateBg = ctxState == 2 ? color.rgb(80, 130, 80) : ctxState == 1 ? color.rgb(170, 120, 50) : ctxState == 3 ? color.rgb(145, 75, 75) : color.rgb(110, 110, 110)
 
-    table.cell(dash, 0, 0, "XAUUSD CONTEXT", text_color = color.white, bgcolor = headerBg)
-    table.cell(dash, 1, 0, timeframe.period + " | " + sessionText, text_color = color.white, bgcolor = headerBg)
+    if dashboardStyle == "Mobile"
+        table.cell(dash, 0, 0, "XAUUSD CONTEXT | " + timeframe.period + " | " + sessionShort, text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
+        table.cell(dash, 0, 1, "Bias: " + biasText + " | " + structureText, text_color = color.white, bgcolor = biasBg, text_size = size.tiny)
+        table.cell(dash, 0, 2, "Area: " + areaText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
+        table.cell(dash, 0, 3, "Break: " + breakText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
+        table.cell(dash, 0, 4, "State: " + stateText + " | " + confirmText, text_color = color.white, bgcolor = stateBg, text_size = size.tiny)
+        table.cell(dash, 0, 5, "Catatan: " + narrativeText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
+        table.cell(dash, 0, 6, "Rencana: " + scenarioText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
+    else
+        table.cell(dash, 0, 0, "XAUUSD CONTEXT", text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
+        table.cell(dash, 1, 0, timeframe.period + " | " + sessionText, text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 1, biasText + " | " + structureText, text_color = color.white, bgcolor = biasBg)
+        table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 1, biasText + " | " + structureText, text_color = color.white, bgcolor = biasBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 2, "Area", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 2, areaText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 2, "Area", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 2, areaText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 3, "Break", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 3, breakText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 3, "Break", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 3, breakText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 4, "State", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 4, stateText + " | " + confirmText, text_color = color.white, bgcolor = stateBg)
+        table.cell(dash, 0, 4, "State", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 4, stateText + " | " + confirmText, text_color = color.white, bgcolor = stateBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 5, "Narrative", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 5, narrativeText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 5, "Catatan", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 5, narrativeText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
 
-    table.cell(dash, 0, 6, "Scenario", text_color = color.white, bgcolor = keyBg)
-    table.cell(dash, 1, 6, scenarioText, text_color = color.white, bgcolor = valueBg)
+        table.cell(dash, 0, 6, "Rencana", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
+        table.cell(dash, 1, 6, scenarioText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
