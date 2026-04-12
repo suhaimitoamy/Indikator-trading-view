@@ -1,5 +1,5 @@
 //@version=6
-indicator("XAUUSD Context Narrator v9.1", overlay = true, max_labels_count = 150, max_lines_count = 300)
+indicator("XAUUSD Context Narrator v9.2 Locked", overlay = true, max_labels_count = 150, max_lines_count = 300)
 
 //==================== INPUTS ====================//
 groupSess = "Sessions"
@@ -13,7 +13,7 @@ biasTf = input.timeframe("15", "HTF Validation TF", group = groupTf)
 levelTf = input.timeframe("5", "Entry Structure TF", group = groupTf)
 
 groupLogic = "Logic"
-setupMode = input.string("Conservative", "Setup Mode", options = ["Conservative", "Balanced", "Aggressive"], group = groupLogic)
+setupMode = input.string("Balanced", "Setup Mode", options = ["Conservative", "Balanced", "Aggressive"], group = groupLogic)
 fibRetMode = input.string("Adaptive", "Fib Retracement Mode", options = ["Adaptive", "Shallow", "Normal", "Deep"], group = groupLogic)
 fibInvalidation = input.string("0.786", "SL / Invalidation", options = ["0.705", "0.786", "Origin"], group = groupLogic)
 fibUsePoiRefinement = input.bool(true, "Refine zone with OB/FVG POI", group = groupLogic)
@@ -68,45 +68,17 @@ chaseAtr = setupMode == "Conservative" ? 0.85 : setupMode == "Balanced" ? 1.05 :
 setupThreshold = setupMode == "Conservative" ? 72 : setupMode == "Balanced" ? 60 : 52
 
 //==================== HELPERS ====================//
-f_inSession(_sess) =>
-    not na(time(timeframe.period, _sess, tzInput))
-
-f_dashPos(_pos) =>
-    _pos == "Top Left" ? position.top_left :
-     _pos == "Bottom Right" ? position.bottom_right :
-     _pos == "Bottom Left" ? position.bottom_left :
-     position.top_right
-
-f_price(_x) =>
-    na(_x) ? "-" : str.tostring(_x, format.mintick)
-
-f_min_na(_a, _b) =>
-    na(_a) ? _b : na(_b) ? _a : math.min(_a, _b)
-
-f_max_na(_a, _b) =>
-    na(_a) ? _b : na(_b) ? _a : math.max(_a, _b)
-
-f_clamp(_x, _lo, _hi) =>
-    math.max(_lo, math.min(_hi, _x))
-
-f_grade(_score) =>
-    _score >= 85 ? "A+" :
-     _score >= 75 ? "A" :
-     _score >= 65 ? "B" :
-     _score >= 50 ? "C" :
-     "Avoid"
-
-f_overlap(_aLow, _aHigh, _bLow, _bHigh) =>
-    not na(_aLow) and not na(_aHigh) and not na(_bLow) and not na(_bHigh) and math.max(_aLow, _bLow) <= math.min(_aHigh, _bHigh)
-
-f_interLow(_aLow, _aHigh, _bLow, _bHigh) =>
-    f_overlap(_aLow, _aHigh, _bLow, _bHigh) ? math.max(_aLow, _bLow) : na
-
-f_interHigh(_aLow, _aHigh, _bLow, _bHigh) =>
-    f_overlap(_aLow, _aHigh, _bLow, _bHigh) ? math.min(_aHigh, _bHigh) : na
-
-f_zoneText(_lo, _hi) =>
-    na(_lo) or na(_hi) ? "-" : f_price(_lo) + " - " + f_price(_hi)
+f_inSession(_sess) => not na(time(timeframe.period, _sess, tzInput))
+f_dashPos(_pos) => _pos == "Top Left" ? position.top_left : _pos == "Bottom Right" ? position.bottom_right : _pos == "Bottom Left" ? position.bottom_left : position.top_right
+f_price(_x) => na(_x) ? "-" : str.tostring(_x, format.mintick)
+f_min_na(_a, _b) => na(_a) ? _b : na(_b) ? _a : math.min(_a, _b)
+f_max_na(_a, _b) => na(_a) ? _b : na(_b) ? _a : math.max(_a, _b)
+f_clamp(_x, _lo, _hi) => math.max(_lo, math.min(_hi, _x))
+f_grade(_score) => _score >= 85 ? "A+" : _score >= 75 ? "A" : _score >= 65 ? "B" : _score >= 50 ? "C" : "Avoid"
+f_overlap(_aLow, _aHigh, _bLow, _bHigh) => not na(_aLow) and not na(_aHigh) and not na(_bLow) and not na(_bHigh) and math.max(_aLow, _bLow) <= math.min(_aHigh, _bHigh)
+f_interLow(_aLow, _aHigh, _bLow, _bHigh) => f_overlap(_aLow, _aHigh, _bLow, _bHigh) ? math.max(_aLow, _bLow) : na
+f_interHigh(_aLow, _aHigh, _bLow, _bHigh) => f_overlap(_aLow, _aHigh, _bLow, _bHigh) ? math.min(_aHigh, _bHigh) : na
+f_zoneText(_lo, _hi) => na(_lo) or na(_hi) ? "-" : f_price(_lo) + " - " + f_price(_hi)
 
 f_zone_bounds(_dir, _state, _mode, _origin, _extreme) =>
     float _range = math.abs(_extreme - _origin)
@@ -127,30 +99,22 @@ f_zone_bounds(_dir, _state, _mode, _origin, _extreme) =>
 
         if _dir == 1
             if _mode == "Shallow" or (_mode == "Adaptive" and _state >= 4)
-                _low := _fib500
-                _high := _fib382
+                _low := _fib500, _high := _fib382
             else if _mode == "Deep" or (_mode == "Adaptive" and _state == 3)
-                _low := _fib705
-                _high := _fib500
+                _low := _fib705, _high := _fib500
             else if _mode == "Adaptive" and _state == 2
-                _low := _fib618
-                _high := _fib500
+                _low := _fib618, _high := _fib500
             else
-                _low := _fib618
-                _high := _fib382
+                _low := _fib618, _high := _fib382
         else
             if _mode == "Shallow" or (_mode == "Adaptive" and _state >= 4)
-                _low := _fib382
-                _high := _fib500
+                _low := _fib382, _high := _fib500
             else if _mode == "Deep" or (_mode == "Adaptive" and _state == 3)
-                _low := _fib500
-                _high := _fib705
+                _low := _fib500, _high := _fib705
             else if _mode == "Adaptive" and _state == 2
-                _low := _fib500
-                _high := _fib618
+                _low := _fib500, _high := _fib618
             else
-                _low := _fib382
-                _high := _fib618
+                _low := _fib382, _high := _fib618
 
     [_low, _high, _fib382, _fib500, _fib618, _fib705, _fib786]
 
@@ -172,9 +136,7 @@ asiaStart = inAsia and not prevInAsia
 asiaEnd = not inAsia and prevInAsia
 
 if asiaStart
-    asiaHigh := high
-    asiaLow := low
-    asiaLocked := false
+    asiaHigh := high, asiaLow := low, asiaLocked := false
 else if inAsia
     asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
     asiaLow := na(asiaLow) ? low : math.min(asiaLow, low)
@@ -219,8 +181,9 @@ bullBias = htfClose > htfEma20 and htfEma20 > htfEma50
 bearBias = htfClose < htfEma20 and htfEma20 < htfEma50
 biasText = bullBias ? "Bullish" : bearBias ? "Bearish" : "Netral"
 
-htfBullEntryOk = bullBias and htfRangeReady and htfClose <= htfRangeMid + htfAtr * 0.20
-htfBearEntryOk = bearBias and htfRangeReady and htfClose >= htfRangeMid - htfAtr * 0.20
+// HTF Filter dilonggarkan agar lebih sering muncul
+htfBullEntryOk = bullBias and htfRangeReady and htfClose <= htfRangeMid + htfAtr * 0.50
+htfBearEntryOk = bearBias and htfRangeReady and htfClose >= htfRangeMid - htfAtr * 0.50
 htfPdText = not htfRangeReady ? "-" : htfClose < htfRangeMid ? "Discount" : htfClose > htfRangeMid ? "Premium" : "Equilibrium"
 
 //==================== STRUCTURE LEVELS ====================//
@@ -233,12 +196,9 @@ var float prevResistance = na
 var float prevSupport = na
 
 if not na(levelPh)
-    prevResistance := activeResistance
-    activeResistance := levelPh
-
+    prevResistance := activeResistance, activeResistance := levelPh
 if not na(levelPl)
-    prevSupport := activeSupport
-    activeSupport := levelPl
+    prevSupport := activeSupport, activeSupport := levelPl
 
 bullStructure = not na(activeResistance) and not na(prevResistance) and not na(activeSupport) and not na(prevSupport) and activeResistance > prevResistance and activeSupport > prevSupport
 bearStructure = not na(activeResistance) and not na(prevResistance) and not na(activeSupport) and not na(prevSupport) and activeResistance < prevResistance and activeSupport < prevSupport
@@ -289,12 +249,7 @@ rangeRegime = recentRange <= atr * rangeRegimeAtr and spreadAbs <= atr * trendSp
 newsRegime = barRange >= atr * newsBarAtr
 expansionRegime = not newsRegime and barRange >= atr * expansionBarAtr
 
-regimeText = newsRegime ? "Abnormal Volatility" :
-     trendUpRegime ? "Trend Day Bull" :
-     trendDownRegime ? "Trend Day Bear" :
-     expansionRegime ? "Expansion Day" :
-     rangeRegime ? "Range Day" :
-     "Mixed Day"
+regimeText = newsRegime ? "Abnormal Volatility" : trendUpRegime ? "Trend Day Bull" : trendDownRegime ? "Trend Day Bear" : expansionRegime ? "Expansion Day" : rangeRegime ? "Range Day" : "Mixed Day"
 
 //==================== SWEEP ENGINE ====================//
 bullAsiaSweep = asiaLocked and not na(asiaLow) and low < asiaLow and close > asiaLow
@@ -327,14 +282,7 @@ judasBull = inLondon and asiaLocked and bullLiquidityGrab and not na(londonBars)
 judasBear = inLondon and asiaLocked and bearLiquidityGrab and not na(londonBars) and londonBars <= judasBars
 
 sessionOk = inLondon or inNewYork
-sessionModelText = inAsia ? "Asia Build" :
-     judasBull ? "London Judas Bull" :
-     judasBear ? "London Judas Bear" :
-     inLondon and bullBias ? "London Delivery Bull" :
-     inLondon and bearBias ? "London Delivery Bear" :
-     inNewYork and bullBias ? "NY Continuation Bull" :
-     inNewYork and bearBias ? "NY Continuation Bear" :
-     "Off Session"
+sessionModelText = inAsia ? "Asia Build" : judasBull ? "London Judas Bull" : judasBear ? "London Judas Bear" : inLondon and bullBias ? "London Delivery Bull" : inLondon and bearBias ? "London Delivery Bear" : inNewYork and bullBias ? "NY Continuation Bull" : inNewYork and bearBias ? "NY Continuation Bear" : "Off Session"
 
 //==================== STRICT MSS ENGINE ====================//
 var bool bullSweepPending = false
@@ -358,32 +306,12 @@ bullGrabEvent = bullLiquidityGrab and not bullLiquidityGrab[1]
 bearGrabEvent = bearLiquidityGrab and not bearLiquidityGrab[1]
 
 if bullGrabEvent
-    bullSweepPending := true
-    bearSweepPending := false
-    bullSweepBar := bar_index
-    bullSweepExtreme := low
-    bullBreakLevel := activeResistance
-    ctxDir := 1
-    ctxState := 1
-    ctxBreakType := 3
-    ctxLevel := activeSupport
-    ctxBreakBar := bar_index
-    ctxSweepExtreme := low
-    ctxSweepClass := 1
+    bullSweepPending := true, bearSweepPending := false, bullSweepBar := bar_index, bullSweepExtreme := low, bullBreakLevel := activeResistance
+    ctxDir := 1, ctxState := 1, ctxBreakType := 3, ctxLevel := activeSupport, ctxBreakBar := bar_index, ctxSweepExtreme := low, ctxSweepClass := 1
 
 if bearGrabEvent
-    bearSweepPending := true
-    bullSweepPending := false
-    bearSweepBar := bar_index
-    bearSweepExtreme := high
-    bearBreakLevel := activeSupport
-    ctxDir := -1
-    ctxState := 1
-    ctxBreakType := 3
-    ctxLevel := activeResistance
-    ctxBreakBar := bar_index
-    ctxSweepExtreme := high
-    ctxSweepClass := 1
+    bearSweepPending := true, bullSweepPending := false, bearSweepBar := bar_index, bearSweepExtreme := high, bearBreakLevel := activeSupport
+    ctxDir := -1, ctxState := 1, ctxBreakType := 3, ctxLevel := activeResistance, ctxBreakBar := bar_index, ctxSweepExtreme := high, ctxSweepClass := 1
 
 if bullSweepPending and not na(bullSweepBar) and bar_index - bullSweepBar > sweepTimeoutBars
     bullSweepPending := false
@@ -397,24 +325,10 @@ bullBms = bullMssEvent and bullStructure
 bearBms = bearMssEvent and bearStructure
 
 if bullMssEvent
-    bullSweepPending := false
-    ctxDir := 1
-    ctxState := 2
-    ctxBreakType := bullBms ? 2 : 1
-    ctxLevel := bullBreakLevel
-    ctxBreakBar := bar_index
-    ctxSweepExtreme := f_min_na(ctxSweepExtreme, bullSweepExtreme)
-    ctxSweepClass := 2
+    bullSweepPending := false, ctxDir := 1, ctxState := 2, ctxBreakType := bullBms ? 2 : 1, ctxLevel := bullBreakLevel, ctxBreakBar := bar_index, ctxSweepExtreme := f_min_na(ctxSweepExtreme, bullSweepExtreme), ctxSweepClass := 2
 
 if bearMssEvent
-    bearSweepPending := false
-    ctxDir := -1
-    ctxState := 2
-    ctxBreakType := bearBms ? 2 : 1
-    ctxLevel := bearBreakLevel
-    ctxBreakBar := bar_index
-    ctxSweepExtreme := f_max_na(ctxSweepExtreme, bearSweepExtreme)
-    ctxSweepClass := 2
+    bearSweepPending := false, ctxDir := -1, ctxState := 2, ctxBreakType := bearBms ? 2 : 1, ctxLevel := bearBreakLevel, ctxBreakBar := bar_index, ctxSweepExtreme := f_max_na(ctxSweepExtreme, bearSweepExtreme), ctxSweepClass := 2
 
 longRetest = ctxDir == 1 and ctxState >= 2 and not na(ctxLevel) and low <= ctxLevel + shallowRetestBuffer and close >= ctxLevel
 shortRetest = ctxDir == -1 and ctxState >= 2 and not na(ctxLevel) and high >= ctxLevel - shallowRetestBuffer and close <= ctxLevel
@@ -428,35 +342,19 @@ longRun = ctxDir == 1 and ctxState >= 2 and not na(ctxLevel) and close > ctxLeve
 shortRun = ctxDir == -1 and ctxState >= 2 and not na(ctxLevel) and close < ctxLevel - atr * continuationLiftAtr and ta.highest(close, continuationBars) < ctxLevel
 
 if longRun
-    ctxState := ctxState >= 3 ? 5 : 4
-    ctxSweepClass := 2
+    ctxState := ctxState >= 3 ? 5 : 4, ctxSweepClass := 2
 if shortRun
-    ctxState := ctxState >= 3 ? 5 : 4
-    ctxSweepClass := 2
+    ctxState := ctxState >= 3 ? 5 : 4, ctxSweepClass := 2
 
-if ctxDir == 1 and ctxState >= 2 and not na(ctxLevel) and close < ctxLevel - holdBuffer
+// PENGGANTIAN LOGIC STATE FAILED AGAR TIDAK GAMPANG HILANG
+if ctxDir == 1 and ctxState >= 2 and not na(ctxSweepExtreme) and close < ctxSweepExtreme
     ctxState := 6
-if ctxDir == -1 and ctxState >= 2 and not na(ctxLevel) and close > ctxLevel + holdBuffer
+if ctxDir == -1 and ctxState >= 2 and not na(ctxSweepExtreme) and close > ctxSweepExtreme
     ctxState := 6
 
-stateText = ctxState == 1 ? "Liquidity Grab" :
-     ctxState == 2 ? "MSS / BMS Confirmed" :
-     ctxState == 3 ? "Retested" :
-     ctxState == 4 ? "Liquidity Run" :
-     ctxState == 5 ? "Delivering" :
-     ctxState == 6 ? "Failed" :
-     "Idle"
-
-breakClassText = ctxBreakType == 1 ? "MSS" :
-     ctxBreakType == 2 ? "BMS" :
-     ctxBreakType == 3 ? "Grab / Reclaim" :
-     weakBreakUp or weakBreakDown ? "Weak Break" :
-     "None"
-
-mssText = bullMssEvent ? (bullBms ? "Bullish BMS" : "Bullish MSS") :
-     bearMssEvent ? (bearBms ? "Bearish BMS" : "Bearish MSS") :
-     "No MSS"
-
+stateText = ctxState == 1 ? "Liquidity Grab" : ctxState == 2 ? "MSS / BMS Confirmed" : ctxState == 3 ? "Retested" : ctxState == 4 ? "Liquidity Run" : ctxState == 5 ? "Delivering" : ctxState == 6 ? "Failed" : "Idle"
+breakClassText = ctxBreakType == 1 ? "MSS" : ctxBreakType == 2 ? "BMS" : ctxBreakType == 3 ? "Grab / Reclaim" : weakBreakUp or weakBreakDown ? "Weak Break" : "None"
+mssText = bullMssEvent ? (bullBms ? "Bullish BMS" : "Bullish MSS") : bearMssEvent ? (bearBms ? "Bearish BMS" : "Bearish MSS") : "No MSS"
 sweepText = ctxSweepClass == 1 ? "Liquidity Grab" : ctxSweepClass == 2 ? "Liquidity Run" : "None"
 
 //==================== POI ENGINE ====================//
@@ -485,35 +383,17 @@ var bool bearFvgMitigated = false
 var int bearFvgBar = na
 
 if bullMssEvent and close[1] < open[1]
-    bullObLow := low[1]
-    bullObHigh := high[1]
-    bullObActive := true
-    bullObMitigated := false
-    bullObBar := bar_index
-
+    bullObLow := low[1], bullObHigh := high[1], bullObActive := true, bullObMitigated := false, bullObBar := bar_index
 if bearMssEvent and close[1] > open[1]
-    bearObLow := low[1]
-    bearObHigh := high[1]
-    bearObActive := true
-    bearObMitigated := false
-    bearObBar := bar_index
+    bearObLow := low[1], bearObHigh := high[1], bearObActive := true, bearObMitigated := false, bearObBar := bar_index
 
 bullFvgNew = bar_index > 2 and low > high[2] and (low - high[2]) >= atr * minFvgAtr
 bearFvgNew = bar_index > 2 and high < low[2] and (low[2] - high) >= atr * minFvgAtr
 
 if bullFvgNew
-    bullFvgLow := high[2]
-    bullFvgHigh := low
-    bullFvgActive := true
-    bullFvgMitigated := false
-    bullFvgBar := bar_index
-
+    bullFvgLow := high[2], bullFvgHigh := low, bullFvgActive := true, bullFvgMitigated := false, bullFvgBar := bar_index
 if bearFvgNew
-    bearFvgLow := high
-    bearFvgHigh := low[2]
-    bearFvgActive := true
-    bearFvgMitigated := false
-    bearFvgBar := bar_index
+    bearFvgLow := high, bearFvgHigh := low[2], bearFvgActive := true, bearFvgMitigated := false, bearFvgBar := bar_index
 
 if bullObActive and not na(bullObBar) and bar_index > bullObBar and low <= bullObHigh and high >= bullObLow
     bullObMitigated := true
@@ -536,37 +416,10 @@ if bearFvgActive and close > bearFvgHigh + holdBuffer
 bullPdPreOk = not na(drCE) ? close <= drCE + atr * 0.20 : close <= drMid
 bearPdPreOk = not na(drCE) ? close >= drCE - atr * 0.20 : close >= drMid
 
-bullObScore = 0
-bullObScore += bullObActive and bullBias ? 1 : 0
-bullObScore += bullObActive and bullMssEvent ? 1 : 0
-bullObScore += bullObActive and sessionOk ? 1 : 0
-bullObScore += bullObActive and bullPdPreOk ? 1 : 0
-bullObScore += bullObActive and htfBullEntryOk ? 1 : 0
-bullObScore += bullObActive and not bullObMitigated ? 1 : 0
-
-bearObScore = 0
-bearObScore += bearObActive and bearBias ? 1 : 0
-bearObScore += bearObActive and bearMssEvent ? 1 : 0
-bearObScore += bearObActive and sessionOk ? 1 : 0
-bearObScore += bearObActive and bearPdPreOk ? 1 : 0
-bearObScore += bearObActive and htfBearEntryOk ? 1 : 0
-bearObScore += bearObActive and not bearObMitigated ? 1 : 0
-
-bullFvgScore = 0
-bullFvgScore += bullFvgActive and bullBias ? 1 : 0
-bullFvgScore += bullFvgActive and ctxDir == 1 and ctxState >= 2 ? 1 : 0
-bullFvgScore += bullFvgActive and sessionOk ? 1 : 0
-bullFvgScore += bullFvgActive and bullPdPreOk ? 1 : 0
-bullFvgScore += bullFvgActive and htfBullEntryOk ? 1 : 0
-bullFvgScore += bullFvgActive and not bullFvgMitigated ? 1 : 0
-
-bearFvgScore = 0
-bearFvgScore += bearFvgActive and bearBias ? 1 : 0
-bearFvgScore += bearFvgActive and ctxDir == -1 and ctxState >= 2 ? 1 : 0
-bearFvgScore += bearFvgActive and sessionOk ? 1 : 0
-bearFvgScore += bearFvgActive and bearPdPreOk ? 1 : 0
-bearFvgScore += bearFvgActive and htfBearEntryOk ? 1 : 0
-bearFvgScore += bearFvgActive and not bearFvgMitigated ? 1 : 0
+bullObScore = (bullObActive and bullBias ? 1 : 0) + (bullObActive and bullMssEvent ? 1 : 0) + (bullObActive and sessionOk ? 1 : 0) + (bullObActive and bullPdPreOk ? 1 : 0) + (bullObActive and htfBullEntryOk ? 1 : 0) + (bullObActive and not bullObMitigated ? 1 : 0)
+bearObScore = (bearObActive and bearBias ? 1 : 0) + (bearObActive and bearMssEvent ? 1 : 0) + (bearObActive and sessionOk ? 1 : 0) + (bearObActive and bearPdPreOk ? 1 : 0) + (bearObActive and htfBearEntryOk ? 1 : 0) + (bearObActive and not bearObMitigated ? 1 : 0)
+bullFvgScore = (bullFvgActive and bullBias ? 1 : 0) + (bullFvgActive and ctxDir == 1 and ctxState >= 2 ? 1 : 0) + (bullFvgActive and sessionOk ? 1 : 0) + (bullFvgActive and bullPdPreOk ? 1 : 0) + (bullFvgActive and htfBullEntryOk ? 1 : 0) + (bullFvgActive and not bullFvgMitigated ? 1 : 0)
+bearFvgScore = (bearFvgActive and bearBias ? 1 : 0) + (bearFvgActive and ctxDir == -1 and ctxState >= 2 ? 1 : 0) + (bearFvgActive and sessionOk ? 1 : 0) + (bearFvgActive and bearPdPreOk ? 1 : 0) + (bearFvgActive and htfBearEntryOk ? 1 : 0) + (bearFvgActive and not bearFvgMitigated ? 1 : 0)
 
 bullObPoi = bullObActive and bullObScore >= poiMinScore
 bearObPoi = bearObActive and bearObScore >= poiMinScore
@@ -595,49 +448,26 @@ var float projTP3 = na
 var bool projActive = false
 var bool projTouched = false
 var string projReason = ""
+var bool tradeLocked = false
 
-clearProj = false
-clearProj := projActive and (
+clearProj = projActive and not tradeLocked and (
      (not na(projBar) and bar_index - projBar > projectionMaxBars) or
      (ctxState == 6) or
      (projDir == 1 and bearGrabEvent) or
      (projDir == -1 and bullGrabEvent))
 
 if clearProj
-    projDir := 0
-    projBar := na
-    projState := 0
-    projBreakType := 0
-    projOrigin := na
-    projBreakLevel := na
-    projSeedExtreme := na
-    projLegRange := na
-    projZoneLow := na
-    projZoneHigh := na
-    projFib382 := na
-    projFib500 := na
-    projFib618 := na
-    projFib705 := na
-    projFib786 := na
-    projTP1 := na
-    projTP2 := na
-    projTP3 := na
-    projActive := false
-    projTouched := false
-    projReason := ""
+    projDir := 0, projBar := na, projState := 0, projBreakType := 0, projOrigin := na, projBreakLevel := na, projSeedExtreme := na, projLegRange := na, projZoneLow := na, projZoneHigh := na, projFib382 := na, projFib500 := na, projFib618 := na, projFib705 := na, projFib786 := na, projTP1 := na, projTP2 := na, projTP3 := na, projActive := false, projTouched := false, projReason := ""
 
 newBullProjEvent = bullMssEvent and htfBullEntryOk
 newBearProjEvent = bearMssEvent and htfBearEntryOk
 
 if newBullProjEvent
     float pOrigin = na
-    pOrigin := f_min_na(pOrigin, activeSupport)
-    pOrigin := f_min_na(pOrigin, lastSwingLow)
+    pOrigin := f_min_na(pOrigin, activeSupport), pOrigin := f_min_na(pOrigin, lastSwingLow)
     if asiaLocked
         pOrigin := f_min_na(pOrigin, asiaLow)
-    pOrigin := f_min_na(pOrigin, bullSweepExtreme)
-    pOrigin := f_min_na(pOrigin, low)
-
+    pOrigin := f_min_na(pOrigin, bullSweepExtreme), pOrigin := f_min_na(pOrigin, low)
     float pExtreme = high
     float pMinRange = atr * projectionSeedAtr
     if math.abs(pExtreme - pOrigin) < pMinRange
@@ -645,37 +475,14 @@ if newBullProjEvent
 
     [zLow, zHigh, f382, f500, f618, f705, f786] = f_zone_bounds(1, ctxState > 0 ? ctxState : 2, fibRetMode, pOrigin, pExtreme)
 
-    projDir := 1
-    projBar := bar_index
-    projState := ctxState > 0 ? ctxState : 2
-    projBreakType := ctxBreakType
-    projOrigin := pOrigin
-    projBreakLevel := bullBreakLevel
-    projSeedExtreme := pExtreme
-    projLegRange := math.abs(pExtreme - pOrigin)
-    projZoneLow := zLow
-    projZoneHigh := zHigh
-    projFib382 := f382
-    projFib500 := f500
-    projFib618 := f618
-    projFib705 := f705
-    projFib786 := f786
-    projTP1 := projOrigin + projLegRange * fibExt1
-    projTP2 := projOrigin + projLegRange * fibExt2
-    projTP3 := projOrigin + projLegRange * fibExt3
-    projActive := true
-    projTouched := false
-    projReason := "MSS Projection"
+    projDir := 1, projBar := bar_index, projState := ctxState > 0 ? ctxState : 2, projBreakType := ctxBreakType, projOrigin := pOrigin, projBreakLevel := bullBreakLevel, projSeedExtreme := pExtreme, projLegRange := math.abs(pExtreme - pOrigin), projZoneLow := zLow, projZoneHigh := zHigh, projFib382 := f382, projFib500 := f500, projFib618 := f618, projFib705 := f705, projFib786 := f786, projTP1 := projOrigin + projLegRange * fibExt1, projTP2 := projOrigin + projLegRange * fibExt2, projTP3 := projOrigin + projLegRange * fibExt3, projActive := true, projTouched := false, projReason := "MSS Projection"
 
 if newBearProjEvent
     float pOrigin = na
-    pOrigin := f_max_na(pOrigin, activeResistance)
-    pOrigin := f_max_na(pOrigin, lastSwingHigh)
+    pOrigin := f_max_na(pOrigin, activeResistance), pOrigin := f_max_na(pOrigin, lastSwingHigh)
     if asiaLocked
         pOrigin := f_max_na(pOrigin, asiaHigh)
-    pOrigin := f_max_na(pOrigin, bearSweepExtreme)
-    pOrigin := f_max_na(pOrigin, high)
-
+    pOrigin := f_max_na(pOrigin, bearSweepExtreme), pOrigin := f_max_na(pOrigin, high)
     float pExtreme = low
     float pMinRange = atr * projectionSeedAtr
     if math.abs(pExtreme - pOrigin) < pMinRange
@@ -683,27 +490,7 @@ if newBearProjEvent
 
     [zLow, zHigh, f382, f500, f618, f705, f786] = f_zone_bounds(-1, ctxState > 0 ? ctxState : 2, fibRetMode, pOrigin, pExtreme)
 
-    projDir := -1
-    projBar := bar_index
-    projState := ctxState > 0 ? ctxState : 2
-    projBreakType := ctxBreakType
-    projOrigin := pOrigin
-    projBreakLevel := bearBreakLevel
-    projSeedExtreme := pExtreme
-    projLegRange := math.abs(pExtreme - pOrigin)
-    projZoneLow := zLow
-    projZoneHigh := zHigh
-    projFib382 := f382
-    projFib500 := f500
-    projFib618 := f618
-    projFib705 := f705
-    projFib786 := f786
-    projTP1 := projOrigin - projLegRange * fibExt1
-    projTP2 := projOrigin - projLegRange * fibExt2
-    projTP3 := projOrigin - projLegRange * fibExt3
-    projActive := true
-    projTouched := false
-    projReason := "MSS Projection"
+    projDir := -1, projBar := bar_index, projState := ctxState > 0 ? ctxState : 2, projBreakType := ctxBreakType, projOrigin := pOrigin, projBreakLevel := bearBreakLevel, projSeedExtreme := pExtreme, projLegRange := math.abs(pExtreme - pOrigin), projZoneLow := zLow, projZoneHigh := zHigh, projFib382 := f382, projFib500 := f500, projFib618 := f618, projFib705 := f705, projFib786 := f786, projTP1 := projOrigin - projLegRange * fibExt1, projTP2 := projOrigin - projLegRange * fibExt2, projTP3 := projOrigin - projLegRange * fibExt3, projActive := true, projTouched := false, projReason := "MSS Projection"
 
 if projActive and not na(projZoneLow) and not na(projZoneHigh) and low <= projZoneHigh and high >= projZoneLow
     projTouched := true
@@ -722,29 +509,6 @@ bearFibInvalid = fibInvalidation == "0.705" ? projFib705 : fibInvalidation == "0
 longSL = projDir == 1 ? f_min_na(bullStructuralInvalid, bullFibInvalid) : na
 shortSL = projDir == -1 ? f_max_na(bearStructuralInvalid, bearFibInvalid) : na
 
-if projActive and ((projDir == 1 and close < longSL - holdBuffer) or (projDir == -1 and close > shortSL + holdBuffer))
-    projDir := 0
-    projBar := na
-    projState := 0
-    projBreakType := 0
-    projOrigin := na
-    projBreakLevel := na
-    projSeedExtreme := na
-    projLegRange := na
-    projZoneLow := na
-    projZoneHigh := na
-    projFib382 := na
-    projFib500 := na
-    projFib618 := na
-    projFib705 := na
-    projFib786 := na
-    projTP1 := na
-    projTP2 := na
-    projTP3 := na
-    projActive := false
-    projTouched := false
-    projReason := ""
-
 //==================== CONFIRMED EXECUTION ZONE ====================//
 float execZoneLow = projZoneLow
 float execZoneHigh = projZoneHigh
@@ -757,62 +521,34 @@ if projActive and fibUsePoiRefinement and projDir == 1
     bool fvgOverlap = bullFvgPoi and f_overlap(bullFvgLow, bullFvgHigh, projZoneLow, projZoneHigh)
 
     if obOverlap and fvgOverlap and f_overlap(bullObLow, bullObHigh, bullFvgLow, bullFvgHigh)
-        execZoneLow := math.max(projZoneLow, math.max(bullObLow, bullFvgLow))
-        execZoneHigh := math.min(projZoneHigh, math.min(bullObHigh, bullFvgHigh))
-        zoneSourceText := "OB + FVG POI"
+        execZoneLow := math.max(projZoneLow, math.max(bullObLow, bullFvgLow)), execZoneHigh := math.min(projZoneHigh, math.min(bullObHigh, bullFvgHigh)), zoneSourceText := "OB + FVG POI"
     else if obOverlap and preferOb
-        execZoneLow := f_interLow(bullObLow, bullObHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bullObLow, bullObHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "OB POI"
+        execZoneLow := f_interLow(bullObLow, bullObHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bullObLow, bullObHigh, projZoneLow, projZoneHigh), zoneSourceText := "OB POI"
     else if fvgOverlap
-        execZoneLow := f_interLow(bullFvgLow, bullFvgHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bullFvgLow, bullFvgHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "FVG POI"
+        execZoneLow := f_interLow(bullFvgLow, bullFvgHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bullFvgLow, bullFvgHigh, projZoneLow, projZoneHigh), zoneSourceText := "FVG POI"
     else if obOverlap
-        execZoneLow := f_interLow(bullObLow, bullObHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bullObLow, bullObHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "OB POI"
+        execZoneLow := f_interLow(bullObLow, bullObHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bullObLow, bullObHigh, projZoneLow, projZoneHigh), zoneSourceText := "OB POI"
 
 if projActive and fibUsePoiRefinement and projDir == -1
     bool obOverlap = bearObPoi and f_overlap(bearObLow, bearObHigh, projZoneLow, projZoneHigh)
     bool fvgOverlap = bearFvgPoi and f_overlap(bearFvgLow, bearFvgHigh, projZoneLow, projZoneHigh)
 
     if obOverlap and fvgOverlap and f_overlap(bearObLow, bearObHigh, bearFvgLow, bearFvgHigh)
-        execZoneLow := math.max(projZoneLow, math.max(bearObLow, bearFvgLow))
-        execZoneHigh := math.min(projZoneHigh, math.min(bearObHigh, bearFvgHigh))
-        zoneSourceText := "OB + FVG POI"
+        execZoneLow := math.max(projZoneLow, math.max(bearObLow, bearFvgLow)), execZoneHigh := math.min(projZoneHigh, math.min(bearObHigh, bearFvgHigh)), zoneSourceText := "OB + FVG POI"
     else if obOverlap and preferOb
-        execZoneLow := f_interLow(bearObLow, bearObHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bearObLow, bearObHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "OB POI"
+        execZoneLow := f_interLow(bearObLow, bearObHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bearObLow, bearObHigh, projZoneLow, projZoneHigh), zoneSourceText := "OB POI"
     else if fvgOverlap
-        execZoneLow := f_interLow(bearFvgLow, bearFvgHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bearFvgLow, bearFvgHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "FVG POI"
+        execZoneLow := f_interLow(bearFvgLow, bearFvgHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bearFvgLow, bearFvgHigh, projZoneLow, projZoneHigh), zoneSourceText := "FVG POI"
     else if obOverlap
-        execZoneLow := f_interLow(bearObLow, bearObHigh, projZoneLow, projZoneHigh)
-        execZoneHigh := f_interHigh(bearObLow, bearObHigh, projZoneLow, projZoneHigh)
-        zoneSourceText := "OB POI"
+        execZoneLow := f_interLow(bearObLow, bearObHigh, projZoneLow, projZoneHigh), execZoneHigh := f_interHigh(bearObLow, bearObHigh, projZoneLow, projZoneHigh), zoneSourceText := "OB POI"
 
 confirmedZone = zoneSourceText != "Projected Fib"
 execZoneMid = projActive and not na(execZoneLow) and not na(execZoneHigh) ? (execZoneLow + execZoneHigh) * 0.5 : na
 
 inProjectedZone = projActive and not na(projZoneLow) and not na(projZoneHigh) and low <= projZoneHigh and high >= projZoneLow
-nearProjectedZone = projActive and not inProjectedZone and (
-     projDir == 1 ? close > projZoneHigh and close - projZoneHigh <= atr * nearZoneAtr :
-     projDir == -1 ? close < projZoneLow and projZoneLow - close <= atr * nearZoneAtr :
-     false)
-
 inExecZone = projActive and not na(execZoneLow) and not na(execZoneHigh) and low <= execZoneHigh and high >= execZoneLow
-nearExecZone = projActive and not inExecZone and (
-     projDir == 1 ? close > execZoneHigh and close - execZoneHigh <= atr * nearZoneAtr :
-     projDir == -1 ? close < execZoneLow and execZoneLow - close <= atr * nearZoneAtr :
-     false)
-
-projectedChase = projActive and not projTouched and (
-     projDir == 1 ? close > execZoneHigh + atr * chaseAtr :
-     projDir == -1 ? close < execZoneLow - atr * chaseAtr :
-     false)
+nearExecZone = projActive and not inExecZone and (projDir == 1 ? close > execZoneHigh and close - execZoneHigh <= atr * nearZoneAtr : projDir == -1 ? close < execZoneLow and execZoneLow - close <= atr * nearZoneAtr : false)
+projectedChase = projActive and not projTouched and (projDir == 1 ? close > execZoneHigh + atr * chaseAtr : projDir == -1 ? close < execZoneLow - atr * chaseAtr : false)
 
 longPdOk = projDir == 1 and (not na(drCE) ? execZoneHigh <= drCE + atr * 0.20 : execZoneHigh <= drMid + atr * 0.20) and htfBullEntryOk
 shortPdOk = projDir == -1 and (not na(drCE) ? execZoneLow >= drCE - atr * 0.20 : execZoneLow >= drMid - atr * 0.20) and htfBearEntryOk
@@ -823,19 +559,17 @@ bearTrigger = projActive and projDir == -1 and inExecZone and close < open and b
 //==================== TARGETS ====================//
 bullInternalTarget = projDir == 1 ? (not na(intBSL) and intBSL > execZoneHigh ? intBSL : not na(activeResistance) and activeResistance > execZoneHigh ? activeResistance : projTP1) : na
 bearInternalTarget = projDir == -1 ? (not na(intSSL) and intSSL < execZoneLow ? intSSL : not na(activeSupport) and activeSupport < execZoneLow ? activeSupport : projTP1) : na
-
 bullExternalTarget = projDir == 1 ? (not na(extBSL) and extBSL > execZoneHigh ? extBSL : projTP2) : na
 bearExternalTarget = projDir == -1 ? (not na(extSSL) and extSSL < execZoneLow ? extSSL : projTP2) : na
 
 longTP1 = projDir == 1 ? bullInternalTarget : na
 longTP2 = projDir == 1 ? (not na(bullExternalTarget) and bullExternalTarget > longTP1 ? bullExternalTarget : projTP2) : na
 longTP3 = projDir == 1 ? projTP3 : na
-
 shortTP1 = projDir == -1 ? bearInternalTarget : na
 shortTP2 = projDir == -1 ? (not na(bearExternalTarget) and bearExternalTarget < shortTP1 ? bearExternalTarget : projTP2) : na
 shortTP3 = projDir == -1 ? projTP3 : na
 
-//==================== SCORE ENGINE ====================//
+//==================== SCORE ENGINE & LOCK ====================//
 biasScore = (projDir == 1 and bullBias) or (projDir == -1 and bearBias) ? 18 : 0
 structureScore = (projDir == 1 and bullStructure) or (projDir == -1 and bearStructure) ? 14 : 0
 htfScore = (projDir == 1 and htfBullEntryOk) or (projDir == -1 and htfBearEntryOk) ? 14 : 0
@@ -844,12 +578,7 @@ sessionScore = judasBull or judasBear ? 16 : sessionOk ? 10 : inAsia ? 2 : -4
 grabScore = ctxState == 1 ? 6 : 0
 shiftScore = (projDir == 1 and bullMssEvent) or (projDir == -1 and bearMssEvent) ? 20 : ctxState >= 2 ? 14 : 0
 pdScore = (projDir == 1 and longPdOk) or (projDir == -1 and shortPdOk) ? 10 : 0
-poiScore = 0
-poiScore += projDir == 1 and bullObPoi ? 5 : 0
-poiScore += projDir == 1 and bullFvgPoi ? 5 : 0
-poiScore += projDir == -1 and bearObPoi ? 5 : 0
-poiScore += projDir == -1 and bearFvgPoi ? 5 : 0
-poiScore += confirmedZone ? 5 : 0
+poiScore = (projDir == 1 and bullObPoi ? 5 : 0) + (projDir == 1 and bullFvgPoi ? 5 : 0) + (projDir == -1 and bearObPoi ? 5 : 0) + (projDir == -1 and bearFvgPoi ? 5 : 0) + (confirmedZone ? 5 : 0)
 triggerScore = bullTrigger or bearTrigger ? 10 : inExecZone ? 6 : nearExecZone ? 4 : 0
 regimeScore = (trendUpRegime and projDir == 1) or (trendDownRegime and projDir == -1) ? 8 : expansionRegime ? 4 : rangeRegime ? -6 : 0
 volatilityPenalty = newsRegime ? 10 : 0
@@ -867,48 +596,30 @@ aggressiveOk = projActive and score >= setupThreshold and not projectedChase and
 setupAllowed = setupMode == "Conservative" ? conservativeOk : setupMode == "Balanced" ? balancedOk : aggressiveOk
 riskText = not projActive or ctxState == 6 ? "Invalid" : projectedChase ? "High Chase Risk" : score >= 75 ? "Low-Mid Risk" : score >= 60 ? "Medium Risk" : "High Risk"
 
+if not projActive
+    tradeLocked := false
+
+if (bullTrigger or bearTrigger) and setupAllowed
+    tradeLocked := true
+
+// Reset PROJ only if SL or TP1 hit
+resetProj = projActive and (
+     (projDir == 1 and close < longSL) or
+     (projDir == -1 and close > shortSL) or
+     (tradeLocked and projDir == 1 and high >= longTP1) or
+     (tradeLocked and projDir == -1 and low <= shortTP1))
+
+if resetProj
+    projDir := 0, projBar := na, projState := 0, projBreakType := 0, projOrigin := na, projBreakLevel := na, projSeedExtreme := na, projLegRange := na, projZoneLow := na, projZoneHigh := na, projFib382 := na, projFib500 := na, projFib618 := na, projFib705 := na, projFib786 := na, projTP1 := na, projTP2 := na, projTP3 := na, projActive := false, projTouched := false, projReason := "", tradeLocked := false
+
 //==================== STATUS / NARRATIVE ====================//
-execStatusText = not projActive ? (ctxState == 1 ? "WAIT SHIFT" : inAsia ? "BUILDING RANGE" : "WAIT") :
-     ctxState == 6 ? "INVALID" :
-     projectedChase ? (projDir == 1 ? "MISSED BUY / CHASE" : "MISSED SELL / CHASE") :
-     judasBull or judasBear ? "JUDAS WATCH" :
-     ctxState == 1 ? "GRAB DETECTED" :
-     ctxState == 2 ? "MSS READY" :
-     bullTrigger and setupAllowed ? "TRIGGER READY BUY" :
-     bearTrigger and setupAllowed ? "TRIGGER READY SELL" :
-     projDir == 1 and inExecZone ? "IN BUY ZONE" :
-     projDir == -1 and inExecZone ? "IN SELL ZONE" :
-     projDir == 1 and nearExecZone ? "NEAR BUY ZONE" :
-     projDir == -1 and nearExecZone ? "NEAR SELL ZONE" :
-     projDir == 1 ? "PROJECTED BUY ZONE" :
-     projDir == -1 ? "PROJECTED SELL ZONE" :
-     "WAIT"
+execStatusText = tradeLocked ? "LOCKED - IN TRADE" : not projActive ? (ctxState == 1 ? "WAIT SHIFT" : inAsia ? "BUILDING RANGE" : "WAIT") : ctxState == 6 ? "INVALID" : projectedChase ? (projDir == 1 ? "MISSED BUY / CHASE" : "MISSED SELL / CHASE") : judasBull or judasBear ? "JUDAS WATCH" : ctxState == 1 ? "GRAB DETECTED" : ctxState == 2 ? "MSS READY" : bullTrigger and setupAllowed ? "TRIGGER READY BUY" : bearTrigger and setupAllowed ? "TRIGGER READY SELL" : projDir == 1 and inExecZone ? "IN BUY ZONE" : projDir == -1 and inExecZone ? "IN SELL ZONE" : projDir == 1 and nearExecZone ? "NEAR BUY ZONE" : projDir == -1 and nearExecZone ? "NEAR SELL ZONE" : projDir == 1 ? "PROJECTED BUY ZONE" : projDir == -1 ? "PROJECTED SELL ZONE" : "WAIT"
 
-areaText = bullAsiaSweep ? "Low Asia disapu dan direclaim." :
-     bearAsiaSweep ? "High Asia disapu dan direclaim." :
-     pdText == "Discount" ? "Harga berada di area discount dari dealing range." :
-     pdText == "Premium" ? "Harga berada di area premium dari dealing range." :
-     weakBreakUp ? "Ada weak break di atas resistance." :
-     weakBreakDown ? "Ada weak break di bawah support." :
-     "Belum ada event likuiditas dominan."
+areaText = bullAsiaSweep ? "Low Asia disapu dan direclaim." : bearAsiaSweep ? "High Asia disapu dan direclaim." : pdText == "Discount" ? "Harga berada di area discount dari dealing range." : pdText == "Premium" ? "Harga berada di area premium dari dealing range." : weakBreakUp ? "Ada weak break di atas resistance." : weakBreakDown ? "Ada weak break di bawah support." : "Belum ada event likuiditas dominan."
 
-confirmText = ctxState == 1 and ctxDir == 1 ? "Liquidity grab bullish terdeteksi, menunggu break swing terdekat yang valid." :
-     ctxState == 1 and ctxDir == -1 ? "Liquidity grab bearish terdeteksi, menunggu break swing terdekat yang valid." :
-     ctxState == 2 and ctxDir == 1 ? "Bullish MSS/BMS valid setelah sweep." :
-     ctxState == 2 and ctxDir == -1 ? "Bearish MSS/BMS valid setelah sweep." :
-     ctxState == 3 and ctxDir == 1 ? "Retrace bullish valid ke area eksekusi." :
-     ctxState == 3 and ctxDir == -1 ? "Retrace bearish valid ke area eksekusi." :
-     ctxState == 4 and ctxDir == 1 ? "Liquidity run bullish mulai terbentuk." :
-     ctxState == 4 and ctxDir == -1 ? "Liquidity run bearish mulai terbentuk." :
-     ctxState == 5 and ctxDir == 1 ? "Harga sedang delivery ke buy-side liquidity." :
-     ctxState == 5 and ctxDir == -1 ? "Harga sedang delivery ke sell-side liquidity." :
-     ctxState == 6 and ctxDir == 1 ? "Setup bullish gagal hold level." :
-     ctxState == 6 and ctxDir == -1 ? "Setup bearish gagal hold level." :
-     "Konfirmasi belum terbentuk."
+confirmText = ctxState == 1 and ctxDir == 1 ? "Liquidity grab bullish terdeteksi, menunggu break swing terdekat yang valid." : ctxState == 1 and ctxDir == -1 ? "Liquidity grab bearish terdeteksi, menunggu break swing terdekat yang valid." : ctxState == 2 and ctxDir == 1 ? "Bullish MSS/BMS valid setelah sweep." : ctxState == 2 and ctxDir == -1 ? "Bearish MSS/BMS valid setelah sweep." : ctxState == 3 and ctxDir == 1 ? "Retrace bullish valid ke area eksekusi." : ctxState == 3 and ctxDir == -1 ? "Retrace bearish valid ke area eksekusi." : ctxState == 4 and ctxDir == 1 ? "Liquidity run bullish mulai terbentuk." : ctxState == 4 and ctxDir == -1 ? "Liquidity run bearish mulai terbentuk." : ctxState == 5 and ctxDir == 1 ? "Harga sedang delivery ke buy-side liquidity." : ctxState == 5 and ctxDir == -1 ? "Harga sedang delivery ke sell-side liquidity." : ctxState == 6 and ctxDir == 1 ? "Setup bullish gagal hold level." : ctxState == 6 and ctxDir == -1 ? "Setup bearish gagal hold level." : "Konfirmasi belum terbentuk."
 
-poiSummaryText = projDir == 1 ? (bullObPoi and bullFvgPoi ? "Bull OB + FVG" : bullObPoi ? "Bull OB" : bullFvgPoi ? "Bull FVG" : "No bull POI") :
-     projDir == -1 ? (bearObPoi and bearFvgPoi ? "Bear OB + FVG" : bearObPoi ? "Bear OB" : bearFvgPoi ? "Bear FVG" : "No bear POI") :
-     "No active POI"
+poiSummaryText = projDir == 1 ? (bullObPoi and bullFvgPoi ? "Bull OB + FVG" : bullObPoi ? "Bull OB" : bullFvgPoi ? "Bull FVG" : "No bull POI") : projDir == -1 ? (bearObPoi and bearFvgPoi ? "Bear OB + FVG" : bearObPoi ? "Bear OB" : bearFvgPoi ? "Bear FVG" : "No bear POI") : "No active POI"
 
 effectiveText = "Preset " + setupMode + " | Entry " + levelTf + " | Valid " + biasTf
 string planText = "Belum ada rencana eksekusi."
@@ -920,11 +631,7 @@ if projActive and projDir == 1
 else if projActive and projDir == -1
     planText := "PROJECTED SELL ZONE " + zoneTextProj + ".\nCONFIRMED ZONE " + zoneTextExec + ".\nSL di atas " + f_price(shortSL) + ".\nTP1 " + f_price(shortTP1) + " | TP2 " + f_price(shortTP2) + " | TP3 " + f_price(shortTP3) + "."
 
-narrativeText = projDir == 1 and projActive ? "Validasi M15 bullish, M5 menunggu retrace dan trigger ke zona buy." :
-     projDir == -1 and projActive ? "Validasi M15 bearish, M5 menunggu retrace dan trigger ke zona sell." :
-     bullBias ? "Bias HTF bullish, tunggu sweep lalu MSS valid." :
-     bearBias ? "Bias HTF bearish, tunggu sweep lalu MSS valid." :
-     "Market masih mixed."
+narrativeText = projDir == 1 and projActive ? "Validasi M15 bullish, M5 menunggu retrace dan trigger ke zona buy." : projDir == -1 and projActive ? "Validasi M15 bearish, M5 menunggu retrace dan trigger ke zona sell." : bullBias ? "Bias HTF bullish, tunggu sweep lalu MSS valid." : bearBias ? "Bias HTF bearish, tunggu sweep lalu MSS valid." : "Market masih mixed."
 
 //==================== VISUALS ====================//
 plot(showLevels ? activeSupport : na, "Active Support", color = color.new(color.blue, 0), style = plot.style_linebr, linewidth = 2)
@@ -972,8 +679,8 @@ plotshape(showSignals and bullGrabEvent, title = "Bull Grab", style = shape.circ
 plotshape(showSignals and bearGrabEvent, title = "Bear Grab", style = shape.circle, location = location.abovebar, color = color.new(color.red, 0), size = size.tiny)
 plotshape(showSignals and bullMssEvent, title = "Bull MSS", style = shape.labelup, location = location.belowbar, color = color.new(color.green, 0), text = "MSS", textcolor = color.white, size = size.tiny)
 plotshape(showSignals and bearMssEvent, title = "Bear MSS", style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), text = "MSS", textcolor = color.white, size = size.tiny)
-plotshape(showSignals and bullTrigger, title = "Bull Trigger", style = shape.triangleup, location = location.belowbar, color = color.new(color.green, 0), size = size.tiny)
-plotshape(showSignals and bearTrigger, title = "Bear Trigger", style = shape.triangledown, location = location.abovebar, color = color.new(color.red, 0), size = size.tiny)
+plotshape(showSignals and bullTrigger and not tradeLocked[1], title = "Bull Trigger", style = shape.triangleup, location = location.belowbar, color = color.new(color.green, 0), size = size.tiny)
+plotshape(showSignals and bearTrigger and not tradeLocked[1], title = "Bear Trigger", style = shape.triangledown, location = location.abovebar, color = color.new(color.red, 0), size = size.tiny)
 
 //==================== PROJECTED PATH ====================//
 var line projPath1 = na
@@ -981,11 +688,9 @@ var line projPath2 = na
 
 if barstate.islast
     if not na(projPath1)
-        line.delete(projPath1)
-        projPath1 := na
+        line.delete(projPath1), projPath1 := na
     if not na(projPath2)
-        line.delete(projPath2)
-        projPath2 := na
+        line.delete(projPath2), projPath2 := na
 
     if showProjectedPath and projActive and not projectedChase and not na(execZoneMid)
         pathColor = projDir == 1 ? color.new(color.green, 0) : color.new(color.black, 0)
@@ -1005,12 +710,10 @@ if showDashboard and (na(dash) or lastDashPos != dashboardPos or lastDashStyle !
     if not na(dash)
         table.delete(dash)
     dash := table.new(f_dashPos(dashboardPos), dashCols, dashRows, border_width = 1, border_color = color.rgb(90, 90, 90), frame_color = color.rgb(60, 60, 60), frame_width = 1)
-    lastDashPos := dashboardPos
-    lastDashStyle := dashboardStyle
+    lastDashPos := dashboardPos, lastDashStyle := dashboardStyle
 
 if not showDashboard and not na(dash)
-    table.delete(dash)
-    dash := na
+    table.delete(dash), dash := na
 
 if showDashboard and not na(dash) and barstate.islast
     table.clear(dash, 0, 0, dashCols - 1, dashRows - 1)
@@ -1019,10 +722,7 @@ if showDashboard and not na(dash) and barstate.islast
     keyBg = color.rgb(70, 70, 80)
     valueBg = color.rgb(210, 210, 210)
     biasBg = bullBias ? color.rgb(80, 130, 80) : bearBias ? color.rgb(145, 75, 75) : color.rgb(110, 110, 110)
-    stateBg = projectedChase ? color.rgb(170, 95, 50) :
-         ctxState == 6 or not projActive ? color.rgb(145, 75, 75) :
-         bullTrigger or bearTrigger or inExecZone ? color.rgb(80, 130, 80) :
-         color.rgb(170, 120, 50)
+    stateBg = tradeLocked ? color.rgb(50, 150, 50) : projectedChase ? color.rgb(170, 95, 50) : ctxState == 6 or not projActive ? color.rgb(145, 75, 75) : bullTrigger or bearTrigger or inExecZone ? color.rgb(80, 130, 80) : color.rgb(170, 120, 50)
 
     confidenceText = "Grade " + gradeText + " | Score " + str.tostring(score) + " | " + riskText
     marketModeText = regimeText + " | " + sessionShort + " | " + setupMode
@@ -1034,7 +734,7 @@ if showDashboard and not na(dash) and barstate.islast
     validLineText = "HTF " + htfPdText + " | Entry " + pdText
 
     if dashboardStyle == "Mobile"
-        table.cell(dash, 0, 0, "XAUUSD V9.1 | " + timeframe.period + " | " + marketModeText, text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
+        table.cell(dash, 0, 0, "XAUUSD V9.2 Locked | " + timeframe.period + " | " + marketModeText, text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
         table.cell(dash, 0, 1, "Bias: " + biasText + " | " + structureText, text_color = color.white, bgcolor = biasBg, text_size = size.tiny)
         table.cell(dash, 0, 2, "Preset: " + effectiveText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
         table.cell(dash, 0, 3, "Session: " + sessionModelText + " | Draw: " + drawLineText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
@@ -1045,32 +745,23 @@ if showDashboard and not na(dash) and barstate.islast
         table.cell(dash, 0, 8, "SL: " + invalidLineText + " | TP1 / TP2 / TP3: " + tpLineText + " | " + confidenceText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
         table.cell(dash, 0, 9, "Catatan: " + narrativeText + "\nKonfirmasi: " + confirmText + "\nRencana:\n" + planText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
     else
-        table.cell(dash, 0, 0, "XAUUSD CONTEXT V9.1", text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
+        table.cell(dash, 0, 0, "XAUUSD CONTEXT V9.2 Locked", text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
         table.cell(dash, 1, 0, timeframe.period + " | " + marketModeText, text_color = color.white, bgcolor = headerBg, text_size = size.tiny)
-
         table.cell(dash, 0, 1, "Bias", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 1, biasText + " | " + structureText, text_color = color.white, bgcolor = biasBg, text_size = size.tiny)
-
         table.cell(dash, 0, 2, "Preset", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 2, effectiveText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 3, "Session / Draw", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 3, sessionModelText + " | " + drawLineText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 4, "PD / Area", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 4, validLineText + " | " + areaText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 5, "State", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 5, stateText + " | " + sweepText + " | " + execStatusText, text_color = color.white, bgcolor = stateBg, text_size = size.tiny)
-
         table.cell(dash, 0, 6, "Shift / POI", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 6, mssText + " | " + poiSummaryText + " | " + projReason, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 7, "Zone", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 7, projectedZoneLine + " | " + confirmedZoneLine, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 8, "SL / TP / Score", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 8, "SL " + invalidLineText + " | TP " + tpLineText + " | " + confidenceText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
-
         table.cell(dash, 0, 9, "Catatan", text_color = color.white, bgcolor = keyBg, text_size = size.tiny)
         table.cell(dash, 1, 9, narrativeText + " | " + confirmText + " | " + planText, text_color = color.black, bgcolor = valueBg, text_size = size.tiny)
