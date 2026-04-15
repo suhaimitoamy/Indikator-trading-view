@@ -1,123 +1,53 @@
 //@version=6
-indicator("XAUUSD Price Action Master", overlay=true, max_labels_count=100, max_lines_count=100)
+indicator("XAUUSD SnR Breakout Base", overlay = true, max_labels_count = 500)
 
-//==================== 1. INPUTS & SESSIONS ====================//
-groupSess = "Sessions & Time"
-tzInput = input.string("Asia/Makassar", "Timezone", group = groupSess)
-asiaSess = input.session("0600-1400", "Asia Session", group = groupSess)
-londonSess = input.session("1500-2000", "London Session", group = groupSess)
-nySess = input.session("2030-0000", "New York Session", group = groupSess)
+//==================== 1. INPUTS ====================//
+grpSnR = "SnR Settings"
+levelTf = input.timeframe("5", "Structure Timeframe", group = grpSnR)
+swingLen = input.int(5, "Swing Length", minval = 1, group = grpSnR)
 
-groupBias = "Trend & Momentum"
-htfTf = input.timeframe("15", "HTF Bias TF", group=groupBias)
-rsiLen = input.int(14, "RSI Period", group=groupBias)
-rsiOb = input.int(70, "RSI Overbought", group=groupBias)
-rsiOs = input.int(30, "RSI Oversold", group=groupBias)
+grpBreak = "Breakout Filters"
+atrLen = input.int(14, "ATR Period", group = grpBreak)
+minBreakAtr = input.float(0.5, "Min Breakout Body (ATR)", minval = 0.1, step = 0.1, group = grpBreak)
 
-groupPA = "Price Action & S&R"
-swingLen = input.int(5, "Sensitivitas S&R (Pivot)", minval=2, group=groupPA)
-snrBuffer = input.float(0.15, "Zona Toleransi S&R (ATR)", step=0.05, group=groupPA)
+//==================== 2. CORE SNR LOGIC (Extracted from v7) ====================//
+levelTfIsHigher = timeframe.in_seconds(levelTf) > timeframe.in_seconds()
 
-//==================== 2. SESSIONS & BIAS ====================//
-f_inSess(_sess) => not na(time(timeframe.period, _sess, tzInput))
-inAsia = f_inSess(asiaSess)
-inLondon = f_inSess(londonSess)
-inNY = f_inSess(nySess)
-sessText = inNY ? "New York" : inLondon ? "London" : inAsia ? "Asia" : "Luar Sesi"
+// Pivot Detection (100% Anti-Repaint)
+levelPh = levelTfIsHigher ? request.security(syminfo.tickerid, levelTf, ta.pivothigh(high, swingLen, swingLen), lookahead = barmerge.lookahead_off) : ta.pivothigh(high, swingLen, swingLen)
+levelPl = levelTfIsHigher ? request.security(syminfo.tickerid, levelTf, ta.pivotlow(low, swingLen, swingLen), lookahead = barmerge.lookahead_off) : ta.pivotlow(low, swingLen, swingLen)
 
-// Bias Anti-Repaint
-htfEma = request.security(syminfo.tickerid, htfTf, ta.ema(close, 20)[1], lookahead = barmerge.lookahead_off)
-bullBias = close > htfEma
-bearBias = close < htfEma
-biasText = bullBias ? "BULLISH" : bearBias ? "BEARISH" : "FLAT"
+var float activeRes = na
+var float activeSup = na
 
-// RSI
-rsi = ta.rsi(close, rsiLen)
+// Update level hanya jika pivot baru terbentuk
+if not na(levelPh)
+    activeRes := levelPh
+if not na(levelPl)
+    activeSup := levelPl
 
-//==================== 3. SUPPORT & RESISTANCE ====================//
-atr = ta.atr(14)
-ph = ta.pivothigh(high, swingLen, swingLen)
-pl = ta.pivotlow(low, swingLen, swingLen)
-
-var float resLevel = na
-var float supLevel = na
-
-if not na(ph)
-    resLevel := ph
-if not na(pl)
-    supLevel := pl
-
-// Cek apakah harga sedang berada di dekat area S&R
-nearRes = not na(resLevel) and high >= (resLevel - (atr * snrBuffer)) and close <= (resLevel + (atr * snrBuffer))
-nearSup = not na(supLevel) and low <= (supLevel + (atr * snrBuffer)) and close >= (supLevel - (atr * snrBuffer))
-
-// Deteksi Breakout (Valid jika close menembus level S&R dengan tegas)
-bullBreakout = not na(resLevel) and close > resLevel and close[1] <= resLevel and close > open
-bearBreakout = not na(supLevel) and close < supLevel and close[1] >= supLevel and close < open
-
-//==================== 4. CANDLESTICK PATTERNS ====================//
+//==================== 3. DATA & VOLATILITY ====================//
+atr = ta.atr(atrLen)
 body = math.abs(close - open)
-upperWick = high - math.max(close, open)
-lowerWick = math.min(close, open) - low
+isBull = close > open
+isBear = close < open
 
-// Pinbar (Ekor panjang, body kecil di ujung)
-bullPinbar = lowerWick > (body * 2) and upperWick < body and close > open[1] // Rejection dari bawah
-bearPinbar = upperWick > (body * 2) and lowerWick < body and close < open[1] // Rejection dari atas
+//==================== 4. BREAKOUT DETECTION ====================//
+// Breakout SAH jika: 
+// 1. Close menembus level.
+// 2. Body candle lebih besar dari standar ATR (Bukan fakeout wick).
+// 3. Candle sudah benar-benar tertutup rapat (isconfirmed).
 
-// Engulfing (Body candle memakan body sebelumnya)
-bullEngulfing = close > open and close[1] < open[1] and close > open[1] and open < close[1]
-bearEngulfing = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+bool isBreakUp = not na(activeRes) and close > activeRes and isBull and body > (atr * minBreakAtr) and barstate.isconfirmed
+bool isBreakDown = not na(activeSup) and close < activeSup and isBear and body > (atr * minBreakAtr) and barstate.isconfirmed
 
-//==================== 5. SIGNAL LOGIC ====================//
-// Reversal: Terjadi di area S&R + Ada Pattern + Searah dengan Bias atau dibantu RSI Extreme
-bullReversal = nearSup and (bullPinbar or bullEngulfing) and barstate.isconfirmed
-bearReversal = nearRes and (bearPinbar or bearEngulfing) and barstate.isconfirmed
+//==================== 5. VISUALS ====================//
+// Gambar Garis SnR
+plot(activeRes, "Resistance", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 2)
+plot(activeSup, "Support", color = color.new(color.blue, 0), style = plot.style_linebr, linewidth = 2)
 
-// Eksekusi Signal
-buySignal = (bullReversal or (bullBreakout and bullBias)) and barstate.isconfirmed
-sellSignal = (bearReversal or (bearBreakout and bearBias)) and barstate.isconfirmed
-
-// Plot Signals
-plotshape(buySignal, title="BUY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), text="BUY", textcolor=color.white, size=size.small)
-plotshape(sellSignal, title="SELL", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.small)
-
-// Mark Breakout / Reversal pada chart untuk edukasi visual
-plotchar(bullReversal and not buySignal ? close : na, title="Bull Rev", char="R", location=location.belowbar, color=color.new(color.green, 0), size=size.tiny)
-plotchar(bearReversal and not sellSignal ? close : na, title="Bear Rev", char="R", location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
-
-//==================== 6. VISUAL S&R LINES ====================//
-plot(resLevel, "Resistance", color=color.new(color.red, 50), style=plot.style_linebr, linewidth=2)
-plot(supLevel, "Support", color=color.new(color.green, 50), style=plot.style_linebr, linewidth=2)
-
-//==================== 7. CONTEXT DASHBOARD ====================//
-var table dash = table.new(position.bottom_right, 2, 6, border_width=1, border_color=color.new(color.gray, 80))
-
-if barstate.islast
-    // Header (Menggunakan table.merge_cells sebagai pengganti colspan)
-    table.cell(dash, 0, 0, "PRICE ACTION MASTER", bgcolor=color.new(color.blue, 20), text_color=color.white, text_size=size.small)
-    table.merge_cells(dash, 0, 0, 1, 0)
-    
-    // Bias & Sesi
-    table.cell(dash, 0, 1, "Sesi Aktif", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    table.cell(dash, 1, 1, sessText, text_color=color.white, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    
-    table.cell(dash, 0, 2, "Arah HTF (Bias)", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    table.cell(dash, 1, 2, biasText, text_color=bullBias ? color.green : color.red, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-
-    // RSI Status
-    rsiText = rsi > rsiOb ? "Overbought" : rsi < rsiOs ? "Oversold" : "Netral"
-    rsiColor = rsi > rsiOb ? color.red : rsi < rsiOs ? color.green : color.yellow
-    table.cell(dash, 0, 3, "Momentum (RSI)", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    table.cell(dash, 1, 3, str.tostring(rsi, "#.##") + " (" + rsiText + ")", text_color=rsiColor, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-
-    // Proximity to S&R
-    locText = nearRes ? "Dekat Resistance" : nearSup ? "Dekat Support" : "Di Tengah Range"
-    locColor = nearRes ? color.red : nearSup ? color.green : color.white
-    table.cell(dash, 0, 4, "Lokasi Harga", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    table.cell(dash, 1, 4, locText, text_color=locColor, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-
-    // Action Plan Narrator
-    planText = buySignal ? "VALID BUY SIGNAL!" : sellSignal ? "VALID SELL SIGNAL!" : bullBreakout ? "Tembus Res (Wait & See)" : bearBreakout ? "Tembus Sup (Wait & See)" : nearSup ? "Pantau Pola Candle Buy" : nearRes ? "Pantau Pola Candle Sell" : "Wait & See"
-    planColor = buySignal ? color.green : sellSignal ? color.red : color.yellow
-    table.cell(dash, 0, 5, "Narasi Eksekusi", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.black, 40))
-    table.cell(dash, 1, 5, planText, text_color=planColor, text_size=size.tiny, bgcolor=color.new(color.black, 40))
+// Cetak Label Breakout
+if isBreakUp
+    label.new(bar_index, high, "BREAK\nUP", color = color.green, textcolor = color.white, style = label.style_label_down, size = size.tiny)
+if isBreakDown
+    label.new(bar_index, low, "BREAK\nDOWN", color = color.red, textcolor = color.white, style = label.style_label_up, size = size.tiny)
