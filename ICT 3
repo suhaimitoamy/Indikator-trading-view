@@ -1243,3 +1243,54 @@ if barstate.islast
     else
         // Kosongkan tabel jika di-off-kan di settings
         table.clear(pct_table, 0, 0)
+
+//==================== AUTO SUPPORT & RESISTANCE ====================//
+show_snr  = input.bool(true, title="Tampilkan Support & Resistance", group="Support & Resistance")
+leftBars  = input.int(15, title="Pivot Left Bars", group="Support & Resistance")
+rightBars = input.int(15, title="Pivot Right Bars", group="Support & Resistance")
+
+// Gunakan prefix snr_ agar tidak bentrok dengan variabel bawaan kodemu sebelumnya
+snr_ph = ta.pivothigh(high, leftBars, rightBars)
+snr_pl = ta.pivotlow(low, leftBars, rightBars)
+
+var float snr_resPrice = na
+var float snr_supPrice = na
+var int snr_resBar = na
+var int snr_supBar = na
+
+var line snr_resLine = na
+var line snr_supLine = na
+var label snr_resLabel = na
+var label snr_supLabel = na
+
+if show_snr
+    // Jika terdeteksi Pivot High (Resistance Baru)
+    if not na(snr_ph)
+        snr_resPrice := snr_ph
+        snr_resBar   := bar_index - rightBars
+        if not na(snr_resLine)
+            line.delete(snr_resLine)
+            label.delete(snr_resLabel)
+        
+        snr_resLine  := line.new(snr_resBar, snr_resPrice, bar_index, snr_resPrice, color=color.black, width=1)
+        snr_resLabel := label.new(bar_index, snr_resPrice, "Resistance", color=color.new(color.white, 100), textcolor=color.black, style=label.style_label_down, size=size.small)
+
+    // Jika terdeteksi Pivot Low (Support Baru)
+    if not na(snr_pl)
+        snr_supPrice := snr_pl
+        snr_supBar   := bar_index - rightBars
+        if not na(snr_supLine)
+            line.delete(snr_supLine)
+            label.delete(snr_supLabel)
+            
+        snr_supLine  := line.new(snr_supBar, snr_supPrice, bar_index, snr_supPrice, color=color.black, width=1)
+        snr_supLabel := label.new(bar_index, snr_supPrice, "Support", color=color.new(color.white, 100), textcolor=color.black, style=label.style_label_up, size=size.small)
+
+    // Memanjangkan garis secara dinamis ke candle terakhir + 5 bar ke kanan
+    if not na(snr_resLine)
+        line.set_x2(snr_resLine, bar_index + 5)
+        label.set_x(snr_resLabel, bar_index + 5)
+        
+    if not na(snr_supLine)
+        line.set_x2(snr_supLine, bar_index + 5)
+        label.set_x(snr_supLabel, bar_index + 5)
