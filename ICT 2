@@ -1175,7 +1175,6 @@ atrMult   = input.float(1.5, "ATR Multiplier (Untuk Jarak SL)", group="Take Prof
 rrRatio1  = input.float(1.0, "Risk:Reward Ratio TP 1", group="Take Profit & Stoploss")
 rrRatio2  = input.float(2.0, "Risk:Reward Ratio TP 2", group="Take Profit & Stoploss")
 
-// UBAH NAMA VARIABEL DI SINI MENJADI sl_atr
 sl_atr = ta.atr(atrLength)
 
 var float entryPrice = na
@@ -1196,14 +1195,14 @@ var label tp2Lbl   = na
 // Kalkulasi Harga Entry, SL, dan TP saat sinyal muncul
 if longEntry
     entryPrice := close
-    slPrice    := close - (sl_atr * atrMult) // Panggil sl_atr di sini
+    slPrice    := close - (sl_atr * atrMult)
     risk       = entryPrice - slPrice
     tp1Price   := entryPrice + (risk * rrRatio1)
     tp2Price   := entryPrice + (risk * rrRatio2)
 
 if shortEntry
     entryPrice := close
-    slPrice    := close + (sl_atr * atrMult) // Panggil sl_atr di sini
+    slPrice    := close + (sl_atr * atrMult)
     risk       = slPrice - entryPrice
     tp1Price   := entryPrice - (risk * rrRatio1)
     tp2Price   := entryPrice - (risk * rrRatio2)
