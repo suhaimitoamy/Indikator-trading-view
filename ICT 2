@@ -1140,33 +1140,6 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
-//==================== TIME BASE PENDING BOX ====================//
-inputBarsAhead = input.int(10, "Prediction Bars Ahead")
-
-var box buyBoxTime = na
-var box sellBoxTime = na
-
-futureHigh = ta.highest(high, inputBarsAhead)
-futureLow  = ta.lowest(low, inputBarsAhead)
-
-// Prediksi sebelum terjadi (time-based)
-preBull = MSS.dir == 1 and bFVG_UP.size() > 0 and bullish_ob.size() > 0
-preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
-
-if preBull
-    if not na(buyBoxTime)
-        box.delete(buyBoxTime)
-    // Penambahan border_style=line.style_dashed agar terlihat sebagai area antisipasi
-    buyBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
-     bgcolor=color.new(color.green, 90), border_color=color.green, border_style=line.style_dashed)
-
-if preBear
-    if not na(sellBoxTime)
-        box.delete(sellBoxTime)
-    // Penambahan border_style=line.style_dashed
-    sellBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
-     bgcolor=color.new(color.red, 90), border_color=color.red, border_style=line.style_dashed)
-
 //==================== ENTRY SIGNAL ====================//
 longEntry  = preBull and close <= futureLow
 shortEntry = preBear and close >= futureHigh
@@ -1248,4 +1221,3 @@ if not na(sr_levelPl)
 
 plot(sr_showLevels ? sr_activeSupport : na, "Active Support", color = color.new(color.blue, 0), style = plot.style_linebr, linewidth = 2)
 plot(sr_showLevels ? sr_activeResistance : na, "Active Resistance", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 2)
-
