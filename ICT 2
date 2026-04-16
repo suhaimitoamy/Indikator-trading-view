@@ -1140,100 +1140,79 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
-//==================== TIME BASE PENDING BOX ====================//
-inputBarsAhead = input.int(10, "Prediction Bars Ahead")
-var box buyBoxTime = na
-var box sellBoxTime = na
-futureHigh = ta.highest(high, inputBarsAhead)
-futureLow  = ta.lowest(low, inputBarsAhead)
+//==================== CUSTOM LUNCH GL VISUALS ====================//
+// 1. Logika Sinyal (Contoh: Bullish/Bearish Engulfing)
+// Kamu bisa mengubah logika ini nanti sesuai dengan strategi aslimu
+bool lgl_readyBuy  = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+bool lgl_readySell = close < open and close[1] > open[1] and close < open[1] and open > close[1]
 
-// Prediksi sebelum terjadi (time-based)
-preBull = MSS.dir == 1 and bFVG_UP.size() > 0 and bullish_ob.size() > 0
-preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
+// Sinyal eksekusi muncul 1 bar setelah "READY" jika arahnya terkonfirmasi
+bool lgl_buySignal  = lgl_readyBuy[1]  and close > high[1]
+bool lgl_sellSignal = lgl_readySell[1] and close < low[1]
 
-if preBull
-    if not na(buyBoxTime)
-        box.delete(buyBoxTime)
-    buyBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow, bgcolor=color.new(color.green, 90), border_color=color.green, border_style=line.style_dashed)
+// 2. Visualisasi Label "READY" dan Segitiga "BUY/SELL"
+// Label READY (Warna Hijau & Merah)
+plotshape(lgl_readyBuy,  title="READY BUY",  style=shape.labelup,   location=location.belowbar, color=color.new(#4CAF50, 10), text="READY", textcolor=color.white, size=size.small)
+plotshape(lgl_readySell, title="READY SELL", style=shape.labeldown, location=location.abovebar, color=color.new(#F44336, 10), text="READY", textcolor=color.white, size=size.small)
 
-if preBear
-    if not na(sellBoxTime)
-        box.delete(sellBoxTime)
-    sellBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow, bgcolor=color.new(color.red, 90), border_color=color.red, border_style=line.style_dashed)
+// Label BUY & SELL (Segitiga Hitam)
+plotshape(lgl_buySignal,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.black, size=size.small, text="BUY",  textcolor=color.black)
+plotshape(lgl_sellSignal, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.black, size=size.small, text="SELL", textcolor=color.black)
 
-//==================== ENTRY SIGNAL ====================//
-longEntry  = preBull and close <= futureLow
-shortEntry = preBear and close >= futureHigh
+// 3. Logika Take Profit & Stoploss (Garis dan Label Harga di Kanan)
+var float lgl_ep  = na
+var float lgl_sl  = na
+var float lgl_tp1 = na
+var float lgl_tp2 = na
 
-plotshape(longEntry, title="BUY", location=location.belowbar, color=color.new(#00E676, 0), style=shape.triangleup, size=size.small, text="BUY", textcolor=color.white)
-plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.new(#FF5252, 0), style=shape.triangledown, size=size.small, text="SELL", textcolor=color.white)
+var line l_ep  = na
+var line l_sl  = na
+var line l_tp1 = na
+var line l_tp2 = na
 
-//==================== TAKE PROFIT & STOPLOSS LOGIC ====================//
-// Input Setting untuk TP & SL
-atrLength = input.int(14, "ATR Length", group="Take Profit & Stoploss")
-atrMult   = input.float(1.5, "ATR Multiplier (Untuk Jarak SL)", group="Take Profit & Stoploss")
-rrRatio1  = input.float(1.0, "Risk:Reward Ratio TP 1", group="Take Profit & Stoploss")
-rrRatio2  = input.float(2.0, "Risk:Reward Ratio TP 2", group="Take Profit & Stoploss")
+var label lb_ep  = na
+var label lb_sl  = na
+var label lb_tp1 = na
+var label lb_tp2 = na
 
-sl_atr = ta.atr(atrLength)
+lgl_atr = ta.atr(14)
 
-var float entryPrice = na
-var float slPrice    = na
-var float tp1Price   = na
-var float tp2Price   = na
-
-var line entryLine = na
-var line slLine    = na
-var line tp1Line   = na
-var line tp2Line   = na
-
-var label entryLbl = na
-var label slLbl    = na
-var label tp1Lbl   = na
-var label tp2Lbl   = na
-
-// Kalkulasi Harga Entry, SL, dan TP saat sinyal muncul
-if longEntry
-    entryPrice := close
-    slPrice    := close - (sl_atr * atrMult)
-    risk       = entryPrice - slPrice
-    tp1Price   := entryPrice + (risk * rrRatio1)
-    tp2Price   := entryPrice + (risk * rrRatio2)
-
-if shortEntry
-    entryPrice := close
-    slPrice    := close + (sl_atr * atrMult)
-    risk       = slPrice - entryPrice
-    tp1Price   := entryPrice - (risk * rrRatio1)
-    tp2Price   := entryPrice - (risk * rrRatio2)
-
-// Visualisasi Garis dan Label
-if longEntry or shortEntry
-    // Hapus visualisasi sebelumnya agar chart tidak penuh
-    if not na(entryLine)
-        line.delete(entryLine), line.delete(slLine), line.delete(tp1Line), line.delete(tp2Line)
-        label.delete(entryLbl), label.delete(slLbl), label.delete(tp1Lbl), label.delete(tp2Lbl)
-
-    // Tentukan panjang garis ke depan (misal: 15 bar)
-    int ext = 15
+// Kalkulasi Harga Saat Sinyal Muncul
+if lgl_buySignal
+    lgl_ep  := close
+    lgl_sl  := close - (lgl_atr * 1.5)
+    lgl_tp1 := close + ((close - lgl_sl) * 1.0)
+    lgl_tp2 := close + ((close - lgl_sl) * 2.0)
     
-    // Gambar Garis
-    entryLine := line.new(bar_index, entryPrice, bar_index + ext, entryPrice, color=color.new(#FF9800, 0), style=line.style_solid, width=2)
-    slLine    := line.new(bar_index, slPrice, bar_index + ext, slPrice, color=color.new(#FF5252, 0), style=line.style_solid, width=2)
-    tp1Line   := line.new(bar_index, tp1Price, bar_index + ext, tp1Price, color=color.new(#2196F3, 0), style=line.style_solid, width=2)
-    tp2Line   := line.new(bar_index, tp2Price, bar_index + ext, tp2Price, color=color.new(#2196F3, 0), style=line.style_solid, width=2)
+if lgl_sellSignal
+    lgl_ep  := close
+    lgl_sl  := close + (lgl_atr * 1.5)
+    lgl_tp1 := close - ((lgl_sl - close) * 1.0)
+    lgl_tp2 := close - ((lgl_sl - close) * 2.0)
 
-    // Gambar Label
-    entryLbl := label.new(bar_index + ext, entryPrice, "Entry Line : " + str.tostring(entryPrice, "#.##"), color=color.new(#FF9800, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
-    slLbl    := label.new(bar_index + ext, slPrice, "Stoploss : " + str.tostring(slPrice, "#.##"), color=color.new(#FF5252, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
-    tp1Lbl   := label.new(bar_index + ext, tp1Price, "Take Profit 1 : " + str.tostring(tp1Price, "#.##"), color=color.new(#2196F3, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
-    tp2Lbl   := label.new(bar_index + ext, tp2Price, "Take Profit 2 : " + str.tostring(tp2Price, "#.##"), color=color.new(#2196F3, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
+// Menggambar Garis & Label
+if lgl_buySignal or lgl_sellSignal
+    // Hapus gambar lama agar tidak menumpuk
+    if not na(l_ep)
+        line.delete(l_ep), line.delete(l_sl), line.delete(l_tp1), line.delete(l_tp2)
+        label.delete(lb_ep), label.delete(lb_sl), label.delete(lb_tp1), label.delete(lb_tp2)
+        
+    int ext = 15 // Panjang garis ke depan
+    
+    // Warna sesuai screenshot: Entry (Oranye), SL (Merah), TP (Biru)
+    color col_ep = color.new(#D8734A, 0)
+    color col_sl = color.new(#D45D50, 0)
+    color col_tp = color.new(#4A90E2, 0)
 
-//==================== DASHBOARD ====================//
-var table dash = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.new(color.gray, 60))
+    // Buat Garis
+    l_ep  := line.new(bar_index, lgl_ep,  bar_index + ext, lgl_ep,  color=col_ep, style=line.style_solid)
+    l_sl  := line.new(bar_index, lgl_sl,  bar_index + ext, lgl_sl,  color=col_sl, style=line.style_solid)
+    l_tp1 := line.new(bar_index, lgl_tp1, bar_index + ext, lgl_tp1, color=col_tp, style=line.style_solid)
+    l_tp2 := line.new(bar_index, lgl_tp2, bar_index + ext, lgl_tp2, color=col_tp, style=line.style_solid)
 
-if barstate.islast
-    table.cell(dash, 0, 0, "Signal", text_color=color.white)
-    sigText = longEntry ? "BUY" : shortEntry ? "SELL" : "NONE"
-    sigBg   = longEntry ? color.new(#00E676, 40) : shortEntry ? color.new(#FF5252, 40) : color.new(color.gray, 80)
-    table.cell(dash, 1, 0, sigText, bgcolor=sigBg, text_color=color.white)
+    // Buat Label berbentuk Kotak (style_label_left)
+    lb_ep  := label.new(bar_index + ext, lgl_ep,  "Entry Line : " + str.tostring(lgl_ep, "#.##"),  color=col_ep, textcolor=color.white, style=label.style_label_left, size=size.small)
+    lb_sl  := label.new(bar_index + ext, lgl_sl,  "Stoploss : " + str.tostring(lgl_sl, "#.###"),   color=col_sl, textcolor=color.white, style=label.style_label_left, size=size.small)
+    lb_tp1 := label.new(bar_index + ext, lgl_tp1, "Take Profit : " + str.tostring(lgl_tp1, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
+    lb_tp2 := label.new(bar_index + ext, lgl_tp2, "Take Profit : " + str.tostring(lgl_tp2, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
+
