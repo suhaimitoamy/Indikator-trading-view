@@ -1,8 +1,5 @@
-// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
-// © LuxAlgo
-
 //@version=5
-indicator("ICT Concepts [LuxAlgo]", max_lines_count=500, max_boxes_count=500, max_labels_count=500, max_bars_back=3000, overlay=true)
+indicator("ICT Concepts [amygmgo]", max_lines_count=500, max_boxes_count=500, max_labels_count=500, max_bars_back=3000, overlay=true)
 //-----------------------------------------------------------------------------}
 //Strings
 //-----------------------------------------------------------------------------{
@@ -1159,31 +1156,72 @@ preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
 if preBull
     if not na(buyBoxTime)
         box.delete(buyBoxTime)
+    // Penambahan border_style=line.style_dashed agar terlihat sebagai area antisipasi
     buyBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
-     bgcolor=color.new(color.green, 90), border_color=color.green)
+     bgcolor=color.new(color.green, 90), border_color=color.green, border_style=line.style_dashed)
 
 if preBear
     if not na(sellBoxTime)
         box.delete(sellBoxTime)
+    // Penambahan border_style=line.style_dashed
     sellBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
-     bgcolor=color.new(color.red, 90), border_color=color.red)
+     bgcolor=color.new(color.red, 90), border_color=color.red, border_style=line.style_dashed)
 
 //==================== ENTRY SIGNAL ====================//
 longEntry  = preBull and close <= futureLow
 shortEntry = preBear and close >= futureHigh
 
-plotshape(longEntry,  title="BUY",  location=location.belowbar, color=color.green, style=shape.triangleup, size=size.small)
-plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.red,   style=shape.triangledown, size=size.small)
+// Perbaikan visual: warna lebih terang (neon) dan penambahan teks langsung pada plotshape
+plotshape(longEntry,  title="BUY",  location=location.belowbar, color=color.new(#00E676, 0), style=shape.triangleup, size=size.small, text="BUY", textcolor=color.white)
+plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.new(#FF5252, 0),   style=shape.triangledown, size=size.small, text="SELL", textcolor=color.white)
 
 //==================== DASHBOARD ====================//
-var table dash = table.new(position.top_right, 2, 3)
+// Perbaikan visual tabel: menambahkan latar belakang dasar hitam transparan dan garis pembatas
+var table dash = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.new(color.gray, 60))
 
 if barstate.islast
-    table.cell(dash, 0, 0, "Signal")
-    table.cell(dash, 1, 0, longEntry ? "BUY" : shortEntry ? "SELL" : "NONE")
+    // Baris 1: Sinyal
+    table.cell(dash, 0, 0, "Signal", text_color=color.white)
+    sigText = longEntry ? "BUY" : shortEntry ? "SELL" : "NONE"
+    sigBg   = longEntry ? color.new(#00E676, 40) : shortEntry ? color.new(#FF5252, 40) : color.new(color.gray, 80)
+    table.cell(dash, 1, 0, sigText, bgcolor=sigBg, text_color=color.white)
 
-    table.cell(dash, 0, 1, "MSS")
-    table.cell(dash, 1, 1, MSS.dir == 1 ? "BULL" : MSS.dir == -1 ? "BEAR" : "NONE")
+    // Baris 2: Market Structure Shift (MSS)
+    table.cell(dash, 0, 1, "MSS", text_color=color.white)
+    mssText = MSS.dir == 1 ? "BULL" : MSS.dir == -1 ? "BEAR" : "NONE"
+    mssBg   = MSS.dir == 1 ? color.new(#00E676, 40) : MSS.dir == -1 ? color.new(#FF5252, 40) : color.new(color.gray, 80)
+    table.cell(dash, 1, 1, mssText, bgcolor=mssBg, text_color=color.white)
 
-    table.cell(dash, 0, 2, "FVG/OB")
-    table.cell(dash, 1, 2, (bFVG_UP.size() > 0 or bFVG_DN.size() > 0) and (bullish_ob.size() > 0 or bearish_ob.size() > 0) ? "READY" : "NO")
+    // Baris 3: FVG / Order Blocks (Harga Spesifik)
+    table.cell(dash, 0, 2, "FVG/OB", text_color=color.white)
+    
+    // Variabel penampung teks harga
+    string obRange  = ""
+    string fvgRange = ""
+
+    // Mengambil rentang harga OB dan FVG berdasarkan arah trend MSS
+    if MSS.dir == 1 // Bullish
+        if bullish_ob.size() > 0
+            obRange := "OB: " + str.tostring(bullish_ob.get(0).btm, format.mintick) + " - " + str.tostring(bullish_ob.get(0).top, format.mintick)
+        if bFVG_UP.size() > 0
+            fvgRange := "FVG: " + str.tostring(bFVG_UP.get(0).box.get_bottom(), format.mintick) + " - " + str.tostring(bFVG_UP.get(0).box.get_top(), format.mintick)
+            
+    else if MSS.dir == -1 // Bearish
+        if bearish_ob.size() > 0
+            obRange := "OB: " + str.tostring(bearish_ob.get(0).btm, format.mintick) + " - " + str.tostring(bearish_ob.get(0).top, format.mintick)
+        if bFVG_DN.size() > 0
+            fvgRange := "FVG: " + str.tostring(bFVG_DN.get(0).box.get_bottom(), format.mintick) + " - " + str.tostring(bFVG_DN.get(0).box.get_top(), format.mintick)
+
+    // Logika warna dasar dan penggabungan teks dengan baris baru (\n)
+    fvgObReady = (bFVG_UP.size() > 0 or bFVG_DN.size() > 0) and (bullish_ob.size() > 0 or bearish_ob.size() > 0)
+    string fvgObText  = ""
+    
+    if obRange != "" or fvgRange != ""
+        fvgObText := obRange + (obRange != "" and fvgRange != "" ? "\n" : "") + fvgRange
+    else
+        fvgObText := "NO"
+
+    fvgObBg = fvgObReady ? color.new(#3e89fa, 40) : color.new(color.gray, 80)
+    
+    // text_size=size.small ditambahkan agar teks harga yang panjang tidak merusak bentuk tabel
+    table.cell(dash, 1, 2, fvgObText, bgcolor=fvgObBg, text_color=color.white, text_size=size.small)
