@@ -1140,92 +1140,100 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
-//==================== djdj ====================//
-futureHigh = ta.highest(high, 10)
-futureLow  = ta.lowest(low, 10)
+//==================== TIME BASE PENDING BOX ====================//
+inputBarsAhead = input.int(10, "Prediction Bars Ahead")
+var box buyBoxTime = na
+var box sellBoxTime = na
+futureHigh = ta.highest(high, inputBarsAhead)
+futureLow  = ta.lowest(low, inputBarsAhead)
 
 // Prediksi sebelum terjadi (time-based)
 preBull = MSS.dir == 1 and bFVG_UP.size() > 0 and bullish_ob.size() > 0
 preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
 
+if preBull
+    if not na(buyBoxTime)
+        box.delete(buyBoxTime)
+    buyBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow, bgcolor=color.new(color.green, 90), border_color=color.green, border_style=line.style_dashed)
+
+if preBear
+    if not na(sellBoxTime)
+        box.delete(sellBoxTime)
+    sellBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow, bgcolor=color.new(color.red, 90), border_color=color.red, border_style=line.style_dashed)
+
 //==================== ENTRY SIGNAL ====================//
 longEntry  = preBull and close <= futureLow
 shortEntry = preBear and close >= futureHigh
 
-// Perbaikan visual: warna lebih terang (neon) dan penambahan teks langsung pada plotshape
-plotshape(longEntry,  title="BUY",  location=location.belowbar, color=color.new(#00E676, 0), style=shape.triangleup, size=size.small, text="BUY", textcolor=color.white)
-plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.new(#FF5252, 0),   style=shape.triangledown, size=size.small, text="SELL", textcolor=color.white)
+plotshape(longEntry, title="BUY", location=location.belowbar, color=color.new(#00E676, 0), style=shape.triangleup, size=size.small, text="BUY", textcolor=color.white)
+plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.new(#FF5252, 0), style=shape.triangledown, size=size.small, text="SELL", textcolor=color.white)
+
+//==================== TAKE PROFIT & STOPLOSS LOGIC ====================//
+// Input Setting untuk TP & SL
+atrLength = input.int(14, "ATR Length", group="Take Profit & Stoploss")
+atrMult   = input.float(1.5, "ATR Multiplier (Untuk Jarak SL)", group="Take Profit & Stoploss")
+rrRatio1  = input.float(1.0, "Risk:Reward Ratio TP 1", group="Take Profit & Stoploss")
+rrRatio2  = input.float(2.0, "Risk:Reward Ratio TP 2", group="Take Profit & Stoploss")
+
+atr = ta.atr(atrLength)
+
+var float entryPrice = na
+var float slPrice    = na
+var float tp1Price   = na
+var float tp2Price   = na
+
+var line entryLine = na
+var line slLine    = na
+var line tp1Line   = na
+var line tp2Line   = na
+
+var label entryLbl = na
+var label slLbl    = na
+var label tp1Lbl   = na
+var label tp2Lbl   = na
+
+// Kalkulasi Harga Entry, SL, dan TP saat sinyal muncul
+if longEntry
+    entryPrice := close
+    slPrice    := close - (atr * atrMult)
+    risk       = entryPrice - slPrice
+    tp1Price   := entryPrice + (risk * rrRatio1)
+    tp2Price   := entryPrice + (risk * rrRatio2)
+
+if shortEntry
+    entryPrice := close
+    slPrice    := close + (atr * atrMult)
+    risk       = slPrice - entryPrice
+    tp1Price   := entryPrice - (risk * rrRatio1)
+    tp2Price   := entryPrice - (risk * rrRatio2)
+
+// Visualisasi Garis dan Label
+if longEntry or shortEntry
+    // Hapus visualisasi sebelumnya agar chart tidak penuh
+    if not na(entryLine)
+        line.delete(entryLine), line.delete(slLine), line.delete(tp1Line), line.delete(tp2Line)
+        label.delete(entryLbl), label.delete(slLbl), label.delete(tp1Lbl), label.delete(tp2Lbl)
+
+    // Tentukan panjang garis ke depan (misal: 15 bar)
+    int ext = 15
+    
+    // Gambar Garis
+    entryLine := line.new(bar_index, entryPrice, bar_index + ext, entryPrice, color=color.new(#FF9800, 0), style=line.style_solid, width=2)
+    slLine    := line.new(bar_index, slPrice, bar_index + ext, slPrice, color=color.new(#FF5252, 0), style=line.style_solid, width=2)
+    tp1Line   := line.new(bar_index, tp1Price, bar_index + ext, tp1Price, color=color.new(#2196F3, 0), style=line.style_solid, width=2)
+    tp2Line   := line.new(bar_index, tp2Price, bar_index + ext, tp2Price, color=color.new(#2196F3, 0), style=line.style_solid, width=2)
+
+    // Gambar Label
+    entryLbl := label.new(bar_index + ext, entryPrice, "Entry Line : " + str.tostring(entryPrice, "#.##"), color=color.new(#FF9800, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
+    slLbl    := label.new(bar_index + ext, slPrice, "Stoploss : " + str.tostring(slPrice, "#.##"), color=color.new(#FF5252, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
+    tp1Lbl   := label.new(bar_index + ext, tp1Price, "Take Profit 1 : " + str.tostring(tp1Price, "#.##"), color=color.new(#2196F3, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
+    tp2Lbl   := label.new(bar_index + ext, tp2Price, "Take Profit 2 : " + str.tostring(tp2Price, "#.##"), color=color.new(#2196F3, 10), textcolor=color.white, style=label.style_label_left, size=size.small)
 
 //==================== DASHBOARD ====================//
-// Perbaikan visual tabel: menambahkan latar belakang dasar hitam transparan dan garis pembatas
 var table dash = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.new(color.gray, 60))
 
 if barstate.islast
-    // Baris 1: Sinyal
     table.cell(dash, 0, 0, "Signal", text_color=color.white)
     sigText = longEntry ? "BUY" : shortEntry ? "SELL" : "NONE"
     sigBg   = longEntry ? color.new(#00E676, 40) : shortEntry ? color.new(#FF5252, 40) : color.new(color.gray, 80)
     table.cell(dash, 1, 0, sigText, bgcolor=sigBg, text_color=color.white)
-
-    // Baris 2: Market Structure Shift (MSS)
-    table.cell(dash, 0, 1, "MSS", text_color=color.white)
-    mssText = MSS.dir == 1 ? "BULL" : MSS.dir == -1 ? "BEAR" : "NONE"
-    mssBg   = MSS.dir == 1 ? color.new(#00E676, 40) : MSS.dir == -1 ? color.new(#FF5252, 40) : color.new(color.gray, 80)
-    table.cell(dash, 1, 1, mssText, bgcolor=mssBg, text_color=color.white)
-
-    // Baris 3: FVG / Order Blocks (Harga Spesifik)
-    table.cell(dash, 0, 2, "FVG/OB", text_color=color.white)
-    
-    // Variabel penampung teks harga
-    string obRange  = ""
-    string fvgRange = ""
-
-    // Mengambil rentang harga OB dan FVG berdasarkan arah trend MSS
-    if MSS.dir == 1 // Bullish
-        if bullish_ob.size() > 0
-            obRange := "OB: " + str.tostring(bullish_ob.get(0).btm, format.mintick) + " - " + str.tostring(bullish_ob.get(0).top, format.mintick)
-        if bFVG_UP.size() > 0
-            fvgRange := "FVG: " + str.tostring(bFVG_UP.get(0).box.get_bottom(), format.mintick) + " - " + str.tostring(bFVG_UP.get(0).box.get_top(), format.mintick)
-            
-    else if MSS.dir == -1 // Bearish
-        if bearish_ob.size() > 0
-            obRange := "OB: " + str.tostring(bearish_ob.get(0).btm, format.mintick) + " - " + str.tostring(bearish_ob.get(0).top, format.mintick)
-        if bFVG_DN.size() > 0
-            fvgRange := "FVG: " + str.tostring(bFVG_DN.get(0).box.get_bottom(), format.mintick) + " - " + str.tostring(bFVG_DN.get(0).box.get_top(), format.mintick)
-
-    // Logika warna dasar dan penggabungan teks dengan baris baru (\n)
-    fvgObReady = (bFVG_UP.size() > 0 or bFVG_DN.size() > 0) and (bullish_ob.size() > 0 or bearish_ob.size() > 0)
-    string fvgObText  = ""
-    
-    if obRange != "" or fvgRange != ""
-        fvgObText := obRange + (obRange != "" and fvgRange != "" ? "\n" : "") + fvgRange
-    else
-        fvgObText := "NO"
-
-    fvgObBg = fvgObReady ? color.new(#3e89fa, 40) : color.new(color.gray, 80)
-    
-    // text_size=size.small ditambahkan agar teks harga yang panjang tidak merusak bentuk tabel
-    table.cell(dash, 1, 2, fvgObText, bgcolor=fvgObBg, text_color=color.white, text_size=size.small)
-//==================== SUPPORT & RESISTANCE ====================//
-sr_levelTf = input.timeframe("5", "Structure Timeframe", group = "Support & Resistance")
-sr_swingLen = input.int(3, "Swing Length", minval = 1, group = "Support & Resistance")
-sr_showLevels = input.bool(true, "Show S/R Levels", group = "Support & Resistance")
-
-sr_chartTfSec = timeframe.in_seconds()
-sr_levelTfSec = timeframe.in_seconds(sr_levelTf)
-sr_levelTfIsHigher = sr_levelTfSec > sr_chartTfSec
-
-sr_levelPh = sr_levelTfIsHigher ? request.security(syminfo.tickerid, sr_levelTf, ta.pivothigh(high, sr_swingLen, sr_swingLen), lookahead = barmerge.lookahead_off) : ta.pivothigh(high, sr_swingLen, sr_swingLen)
-sr_levelPl = sr_levelTfIsHigher ? request.security(syminfo.tickerid, sr_levelTf, ta.pivotlow(low, sr_swingLen, sr_swingLen), lookahead = barmerge.lookahead_off) : ta.pivotlow(low, sr_swingLen, sr_swingLen)
-
-var float sr_activeResistance = na
-var float sr_activeSupport = na
-
-if not na(sr_levelPh)
-    sr_activeResistance := sr_levelPh
-
-if not na(sr_levelPl)
-    sr_activeSupport := sr_levelPl
-
-plot(sr_showLevels ? sr_activeSupport : na, "Active Support", color = color.new(color.blue, 0), style = plot.style_linebr, linewidth = 2)
-plot(sr_showLevels ? sr_activeResistance : na, "Active Resistance", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 2)
