@@ -1140,6 +1140,14 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
+//==================== djdj ====================//
+futureHigh = ta.highest(high, 10)
+futureLow  = ta.lowest(low, 10)
+
+// Prediksi sebelum terjadi (time-based)
+preBull = MSS.dir == 1 and bFVG_UP.size() > 0 and bullish_ob.size() > 0
+preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
+
 //==================== ENTRY SIGNAL ====================//
 longEntry  = preBull and close <= futureLow
 shortEntry = preBear and close >= futureHigh
