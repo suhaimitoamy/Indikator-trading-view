@@ -1142,3 +1142,48 @@ bgcolor  (per    ? ldn_close ? ldncCss : na : na, editable = false)
 bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
+
+//==================== TIME BASE PENDING BOX ====================//
+inputBarsAhead = input.int(10, "Prediction Bars Ahead")
+
+var box buyBoxTime = na
+var box sellBoxTime = na
+
+futureHigh = ta.highest(high, inputBarsAhead)
+futureLow  = ta.lowest(low, inputBarsAhead)
+
+// Prediksi sebelum terjadi (time-based)
+preBull = MSS.dir == 1 and bFVG_UP.size() > 0 and bullish_ob.size() > 0
+preBear = MSS.dir == -1 and bFVG_DN.size() > 0 and bearish_ob.size() > 0
+
+if preBull
+    if not na(buyBoxTime)
+        box.delete(buyBoxTime)
+    buyBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
+     bgcolor=color.new(color.green, 90), border_color=color.green)
+
+if preBear
+    if not na(sellBoxTime)
+        box.delete(sellBoxTime)
+    sellBoxTime := box.new(left=bar_index, right=bar_index + inputBarsAhead, top=futureHigh, bottom=futureLow,
+     bgcolor=color.new(color.red, 90), border_color=color.red)
+
+//==================== ENTRY SIGNAL ====================//
+longEntry  = preBull and close <= futureLow
+shortEntry = preBear and close >= futureHigh
+
+plotshape(longEntry,  title="BUY",  location=location.belowbar, color=color.green, style=shape.triangleup, size=size.small)
+plotshape(shortEntry, title="SELL", location=location.abovebar, color=color.red,   style=shape.triangledown, size=size.small)
+
+//==================== DASHBOARD ====================//
+var table dash = table.new(position.top_right, 2, 3)
+
+if barstate.islast
+    table.cell(dash, 0, 0, "Signal")
+    table.cell(dash, 1, 0, longEntry ? "BUY" : shortEntry ? "SELL" : "NONE")
+
+    table.cell(dash, 0, 1, "MSS")
+    table.cell(dash, 1, 1, MSS.dir == 1 ? "BULL" : MSS.dir == -1 ? "BEAR" : "NONE")
+
+    table.cell(dash, 0, 2, "FVG/OB")
+    table.cell(dash, 1, 2, (bFVG_UP.size() > 0 or bFVG_DN.size() > 0) and (bullish_ob.size() > 0 or bearish_ob.size() > 0) ? "READY" : "NO")
