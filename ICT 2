@@ -1141,8 +1141,22 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 //-----------------------------------------------------------------------------}
 
 //==================== CUSTOM LUNCH GL VISUALS ====================//
+// Input Setting untuk On/Off di Menu Pengaturan Indikator
+show_lgl = input.bool(true, title="Tampilkan Lunch GL Visuals", group="Custom Visuals")
+
+// Input Setting Risk Management (Hybrid Mode)
+use_ict_rm = input.bool(true, title="Gunakan ICT Structural Levels", group="Risk Management")
+atrMult    = input.float(1.5, title="ATR Multiplier (Fallback SL)", group="Risk Management")
+rrTp1      = input.float(1.0, title="Risk/Reward TP 1 (Fallback)", group="Risk Management")
+rrTp2      = input.float(2.0, title="Risk/Reward TP 2 (Fallback)", group="Risk Management")
+
+// Input Visibilitas Garis & Label
+extBar     = input.int(15, title="Jarak Label (Bars)", group="Custom Visuals")
+show_sl    = input.bool(true, title="Tampilkan Stoploss", group="Custom Visuals")
+show_tp1   = input.bool(true, title="Tampilkan Take Profit 1", group="Custom Visuals")
+show_tp2   = input.bool(true, title="Tampilkan Take Profit 2", group="Custom Visuals")
+
 // 1. Logika Sinyal (Contoh: Bullish/Bearish Engulfing)
-// Kamu bisa mengubah logika ini nanti sesuai dengan strategi aslimu
 bool lgl_readyBuy  = close > open and close[1] < open[1] and close > open[1] and open < close[1]
 bool lgl_readySell = close < open and close[1] > open[1] and close < open[1] and open > close[1]
 
@@ -1151,15 +1165,13 @@ bool lgl_buySignal  = lgl_readyBuy[1]  and close > high[1]
 bool lgl_sellSignal = lgl_readySell[1] and close < low[1]
 
 // 2. Visualisasi Label "READY" dan Segitiga "BUY/SELL"
-// Label READY (Warna Hijau & Merah)
-plotshape(lgl_readyBuy,  title="READY BUY",  style=shape.labelup,   location=location.belowbar, color=color.new(#4CAF50, 10), text="READY", textcolor=color.white, size=size.small)
-plotshape(lgl_readySell, title="READY SELL", style=shape.labeldown, location=location.abovebar, color=color.new(#F44336, 10), text="READY", textcolor=color.white, size=size.small)
+plotshape(show_lgl ? lgl_readyBuy : na,  title="READY BUY",  style=shape.labelup,   location=location.belowbar, color=color.new(#4CAF50, 10), text="READY", textcolor=color.white, size=size.small)
+plotshape(show_lgl ? lgl_readySell : na, title="READY SELL", style=shape.labeldown, location=location.abovebar, color=color.new(#F44336, 10), text="READY", textcolor=color.white, size=size.small)
 
-// Label BUY & SELL (Segitiga Hitam)
-plotshape(lgl_buySignal,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.black, size=size.small, text="BUY",  textcolor=color.black)
-plotshape(lgl_sellSignal, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.black, size=size.small, text="SELL", textcolor=color.black)
+plotshape(show_lgl ? lgl_buySignal : na,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.black, size=size.small, text="BUY",  textcolor=color.black)
+plotshape(show_lgl ? lgl_sellSignal : na, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.black, size=size.small, text="SELL", textcolor=color.black)
 
-// 3. Logika Take Profit & Stoploss (Garis dan Label Harga di Kanan)
+// 3. Logika Take Profit & Stoploss (Mode Hybrid ICT & ATR)
 var float lgl_ep  = na
 var float lgl_sl  = na
 var float lgl_tp1 = na
@@ -1175,44 +1187,122 @@ var label lb_sl  = na
 var label lb_tp1 = na
 var label lb_tp2 = na
 
+var string txt_sl  = ""
+var string txt_tp1 = ""
+var string txt_tp2 = ""
+
 lgl_atr = ta.atr(14)
 
 // Kalkulasi Harga Saat Sinyal Muncul
 if lgl_buySignal
-    lgl_ep  := close
-    lgl_sl  := close - (lgl_atr * 1.5)
-    lgl_tp1 := close + ((close - lgl_sl) * 1.0)
-    lgl_tp2 := close + ((close - lgl_sl) * 2.0)
-    
-if lgl_sellSignal
-    lgl_ep  := close
-    lgl_sl  := close + (lgl_atr * 1.5)
-    lgl_tp1 := close - ((lgl_sl - close) * 1.0)
-    lgl_tp2 := close - ((lgl_sl - close) * 2.0)
+    lgl_ep := close
+    // Default Fallback ATR
+    lgl_sl  := close - (lgl_atr * atrMult)
+    lgl_tp1 := close + ((close - lgl_sl) * rrTp1)
+    lgl_tp2 := close + ((close - lgl_sl) * rrTp2)
+    txt_sl  := "Stoploss (" + str.tostring(atrMult) + "x ATR)"
+    txt_tp1 := "Take Profit 1 (" + str.tostring(rrTp1) + "R)"
+    txt_tp2 := "Take Profit 2 (" + str.tostring(rrTp2) + "R)"
 
-// Menggambar Garis & Label
-if lgl_buySignal or lgl_sellSignal
-    // Hapus gambar lama agar tidak menumpuk
+    // Mode ICT Structural Levels
+    if use_ict_rm
+        // Scan SL: Nearest Bullish OB atau Liquidity Sweep S
+        if bullish_ob.size() > 0
+            lgl_sl := bullish_ob.get(0).btm
+            txt_sl := "Stoploss (Below OB)"
+        else if b_liq_S.size() > 0
+            lgl_sl := b_liq_S.get(0).bx.get_bottom()
+            txt_sl := "Stoploss (Liq Sweep)"
+            
+        // Scan TP1: Nearest Bearish FVG atau Liquidity B
+        if bFVG_DN.size() > 0
+            lgl_tp1 := bFVG_DN.get(0).box.get_bottom()
+            txt_tp1 := "Take Profit 1 (FVG)"
+            
+        // Scan TP2: Nearest Bearish OB
+        if bearish_ob.size() > 0
+            lgl_tp2 := bearish_ob.get(0).btm
+            txt_tp2 := "Take Profit 2 (Next OB)"
+        else if b_liq_B.size() > 0
+            lgl_tp2 := b_liq_B.get(0).bx.get_bottom()
+            txt_tp2 := "Take Profit 2 (Liq Pool)"
+
+if lgl_sellSignal
+    lgl_ep := close
+    // Default Fallback ATR
+    lgl_sl  := close + (lgl_atr * atrMult)
+    lgl_tp1 := close - ((lgl_sl - close) * rrTp1)
+    lgl_tp2 := close - ((lgl_sl - close) * rrTp2)
+    txt_sl  := "Stoploss (" + str.tostring(atrMult) + "x ATR)"
+    txt_tp1 := "Take Profit 1 (" + str.tostring(rrTp1) + "R)"
+    txt_tp2 := "Take Profit 2 (" + str.tostring(rrTp2) + "R)"
+
+    // Mode ICT Structural Levels
+    if use_ict_rm
+        // Scan SL: Nearest Bearish OB atau Liquidity Sweep B
+        if bearish_ob.size() > 0
+            lgl_sl := bearish_ob.get(0).top
+            txt_sl := "Stoploss (Above OB)"
+        else if b_liq_B.size() > 0
+            lgl_sl := b_liq_B.get(0).bx.get_top()
+            txt_sl := "Stoploss (Liq Sweep)"
+            
+        // Scan TP1: Nearest Bullish FVG atau Liquidity S
+        if bFVG_UP.size() > 0
+            lgl_tp1 := bFVG_UP.get(0).box.get_top()
+            txt_tp1 := "Take Profit 1 (FVG)"
+            
+        // Scan TP2: Nearest Bullish OB
+        if bullish_ob.size() > 0
+            lgl_tp2 := bullish_ob.get(0).top
+            txt_tp2 := "Take Profit 2 (Next OB)"
+        else if b_liq_S.size() > 0
+            lgl_tp2 := b_liq_S.get(0).bx.get_top()
+            txt_tp2 := "Take Profit 2 (Liq Pool)"
+
+// Menggambar Garis & Label (Dieksekusi jika show_lgl On)
+if show_lgl and (lgl_buySignal or lgl_sellSignal)
+    // Sistem Sapu Bersih (Hapus gambar lama agar chart bersih)
     if not na(l_ep)
         line.delete(l_ep), line.delete(l_sl), line.delete(l_tp1), line.delete(l_tp2)
         label.delete(lb_ep), label.delete(lb_sl), label.delete(lb_tp1), label.delete(lb_tp2)
         
-    int ext = 15 // Panjang garis ke depan
-    
-    // Warna sesuai screenshot: Entry (Oranye), SL (Merah), TP (Biru)
     color col_ep = color.new(#D8734A, 0)
     color col_sl = color.new(#D45D50, 0)
     color col_tp = color.new(#4A90E2, 0)
 
-    // Buat Garis
-    l_ep  := line.new(bar_index, lgl_ep,  bar_index + ext, lgl_ep,  color=col_ep, style=line.style_solid)
-    l_sl  := line.new(bar_index, lgl_sl,  bar_index + ext, lgl_sl,  color=col_sl, style=line.style_solid)
-    l_tp1 := line.new(bar_index, lgl_tp1, bar_index + ext, lgl_tp1, color=col_tp, style=line.style_solid)
-    l_tp2 := line.new(bar_index, lgl_tp2, bar_index + ext, lgl_tp2, color=col_tp, style=line.style_solid)
+    // Buat Garis Entry (Selalu Ditampilkan)
+    l_ep  := line.new(bar_index, lgl_ep,  bar_index + extBar, lgl_ep,  color=col_ep, style=line.style_solid, extend=extend.right)
+    lb_ep  := label.new(bar_index + extBar, lgl_ep,  "Entry Line : " + str.tostring(lgl_ep, "#.##"),  color=col_ep, textcolor=color.white, style=label.style_label_left, size=size.small)
 
-    // Buat Label berbentuk Kotak (style_label_left)
-    lb_ep  := label.new(bar_index + ext, lgl_ep,  "Entry Line : " + str.tostring(lgl_ep, "#.##"),  color=col_ep, textcolor=color.white, style=label.style_label_left, size=size.small)
-    lb_sl  := label.new(bar_index + ext, lgl_sl,  "Stoploss : " + str.tostring(lgl_sl, "#.###"),   color=col_sl, textcolor=color.white, style=label.style_label_left, size=size.small)
-    lb_tp1 := label.new(bar_index + ext, lgl_tp1, "Take Profit : " + str.tostring(lgl_tp1, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
-    lb_tp2 := label.new(bar_index + ext, lgl_tp2, "Take Profit : " + str.tostring(lgl_tp2, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
+    // Buat Garis SL & TP Berdasarkan Input Visibilitas Individual
+    if show_sl
+        l_sl  := line.new(bar_index, lgl_sl,  bar_index + extBar, lgl_sl,  color=col_sl, style=line.style_solid, extend=extend.right)
+        lb_sl  := label.new(bar_index + extBar, lgl_sl,  txt_sl + " : " + str.tostring(lgl_sl, "#.###"),   color=col_sl, textcolor=color.white, style=label.style_label_left, size=size.small)
+    
+    if show_tp1
+        l_tp1 := line.new(bar_index, lgl_tp1, bar_index + extBar, lgl_tp1, color=col_tp, style=line.style_solid, extend=extend.right)
+        lb_tp1 := label.new(bar_index + extBar, lgl_tp1, txt_tp1 + " : " + str.tostring(lgl_tp1, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
+    
+    if show_tp2
+        l_tp2 := line.new(bar_index, lgl_tp2, bar_index + extBar, lgl_tp2, color=col_tp, style=line.style_solid, extend=extend.right)
+        lb_tp2 := label.new(bar_index + extBar, lgl_tp2, txt_tp2 + " : " + str.tostring(lgl_tp2, "#.##"),color=col_tp, textcolor=color.white, style=label.style_label_left, size=size.small)
 
+//==================== BUY/SELL PERCENTAGE DASHBOARD ====================//
+show_pct_dash = input.bool(true, title="Tampilkan Persentase Meter", group="Custom Visuals")
+pct_lookback  = input.int(20, title="Periode Kalkulasi Meter", group="Custom Visuals")
+
+bull_count = math.sum(close > open ? 1 : 0, pct_lookback)
+float pct_buy  = (bull_count / pct_lookback) * 100
+float pct_sell = 100 - pct_buy
+
+color dash_bg = pct_buy >= 50 ? color.new(#81C784, 0) : color.new(#F48FB1, 0)
+
+var table pct_table = table.new(position.top_right, 1, 1)
+
+if barstate.islast 
+    if show_pct_dash
+        string txt = "BUY: " + str.tostring(pct_buy, "#.#") + "%\n" + "SELL: " + str.tostring(pct_sell, "#.#") + "%"
+        table.cell(pct_table, 0, 0, txt, text_color=color.white, bgcolor=dash_bg, text_size=size.huge)
+    else
+        table.clear(pct_table, 0, 0)
