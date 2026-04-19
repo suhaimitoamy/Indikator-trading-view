@@ -1171,7 +1171,7 @@ htf_dir = close > htf_ema ? 1 : close < htf_ema ? -1 : 0
 bool htf_bull_ok = use_mtf ? (htf_dir == 1) : true
 bool htf_bear_ok = use_mtf ? (htf_dir == -1) : true
 
-//==================== AUTO SUPPORT & RESISTANCE (DIPINDAHKAN KE ATAS AGAR TERBACA LOGIKA TRIGGER) ====================//
+//==================== AUTO SUPPORT & RESISTANCE ====================//
 show_snr  = input.bool(true, title="Tampilkan Support & Resistance", group="Support & Resistance")
 leftBars  = input.int(15, title="Pivot Left Bars", group="Support & Resistance")
 rightBars = input.int(15, title="Pivot Right Bars", group="Support & Resistance")
@@ -1227,8 +1227,9 @@ if show_snr
 // Deteksi MSS M15 (Menggunakan Pivot sederhana)
 htf_ph = request.security(syminfo.tickerid, htf_res, ta.pivothigh(high, 3, 3))
 htf_pl = request.security(syminfo.tickerid, htf_res, ta.pivotlow(low, 3, 3))
-var float last_htf_ph = na
-var float last_htf_pl = na
+var float last_htf_ph = high // Inisialisasi awal agar tidak NA
+var float last_htf_pl = low  // Inisialisasi awal agar tidak NA
+
 if not na(htf_ph)
     last_htf_ph := htf_ph
 if not na(htf_pl)
@@ -1271,22 +1272,26 @@ bool t_ts_bull = low < snr_supPrice and close > snr_supPrice
 bool t_ts_bear = high > snr_resPrice and close < snr_resPrice
 
 // 3. MSS & 4. BOS M5 (Pecah Struktur Internal)
-var float m5_sh = na
-var float m5_sl = na
+var float m5_sh = high // Inisialisasi dengan high saat ini (menghindari error NA)
+var float m5_sl = low  // Inisialisasi dengan low saat ini (menghindari error NA)
+
 if not na(snr_ph)
     m5_sh := snr_ph
 if not na(snr_pl)
     m5_sl := snr_pl
+
 bool t_mss_bull = ta.crossover(close, m5_sh)
 bool t_mss_bear = ta.crossunder(close, m5_sl)
 
 // 5. CISD M5 (Perubahan Warna)
-var float last_red_h = na
-var float last_green_l = na
+var float last_red_h = high
+var float last_green_l = low
+
 if close < open
     last_red_h := high
 if close > open
     last_green_l := low
+
 bool t_cisd_bull = ta.crossover(close, last_red_h)
 bool t_cisd_bear = ta.crossunder(close, last_green_l)
 
@@ -1344,8 +1349,8 @@ if lgl_buySignal
     lgl_tp2 := close + tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Invalidasi Dinamis: Jika Turtle Soup, ambil Low saat ini (sweep). Jika bukan, ambil pivot low terakhir.
-    lgl_inv := t_ts_bull ? low : na(m5_sl) ? math.min(low[1], low[2]) : m5_sl 
+    // Invalidasi Dinamis yang sudah diperbaiki (tidak menggunakan na())
+    lgl_inv := t_ts_bull ? low : m5_sl 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
     txt_tp1 := "Take Profit 1 (" + str.tostring(tp1_pts) + " pts)"
@@ -1375,8 +1380,8 @@ if lgl_sellSignal
     lgl_tp2 := close - tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Invalidasi Dinamis: Jika Turtle Soup, ambil High saat ini (sweep). Jika bukan, ambil pivot high terakhir.
-    lgl_inv := t_ts_bear ? high : na(m5_sh) ? math.max(high[1], high[2]) : m5_sh 
+    // Invalidasi Dinamis yang sudah diperbaiki (tidak menggunakan na())
+    lgl_inv := t_ts_bear ? high : m5_sh 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
     txt_tp1 := "Take Profit 1 (" + str.tostring(tp1_pts) + " pts)"
@@ -1467,4 +1472,3 @@ if barstate.islast
     else
         table.clear(pct_table, 0, 0)
         table.clear(pct_table, 0, 1)
-
