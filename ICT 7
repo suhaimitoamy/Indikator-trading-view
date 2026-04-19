@@ -1472,4 +1472,3 @@ if barstate.islast
     else
         table.clear(pct_table, 0, 0)
         table.clear(pct_table, 0, 1)
-
