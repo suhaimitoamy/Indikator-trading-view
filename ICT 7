@@ -1115,8 +1115,7 @@ if barstate.islast
         _1618.setLine(rt, _0 + m1618, rt + plus, _0 + m1618)
 
 //-----------------------------------------------------------------------------}
-//Displacement
-//-----------------------------------------------------------------------------{
+//Displacement//-----------------------------------------------------------------------------{
 plotshape(sDispl ? per       ? 
      L_bodyUP    ? low  : na : na : na
      , title     = 'Displacement UP'
@@ -1304,32 +1303,36 @@ bool any_m5_bear_trigger = t_fvg_bear or t_ts_bear or t_mss_bear or t_cisd_bear
 bool lgl_buySignal  = any_m5_bull_trigger and is_m15_bull_active and htf_bull_ok
 bool lgl_sellSignal = any_m5_bear_trigger and is_m15_bear_active and htf_bear_ok
 
-// Penamaan Label Dinamis
-string buy_lbl = ""
+// Penamaan Label Dinamis (Disimpan untuk ditampilkan di garis Entry)
+var string active_trigger_name = ""
 if lgl_buySignal
+    string temp = ""
     if t_fvg_bull
-        buy_lbl := buy_lbl + "FVG "
+        temp += "FVG "
     if t_ts_bull
-        buy_lbl := buy_lbl + "TS "
+        temp += "TS "
     if t_mss_bull
-        buy_lbl := buy_lbl + "MSS "
+        temp += "MSS "
     if t_cisd_bull
-        buy_lbl := buy_lbl + "CISD "
+        temp += "CISD "
+    active_trigger_name := temp
 
-string sell_lbl = ""
 if lgl_sellSignal
+    string temp = ""
     if t_fvg_bear
-        sell_lbl := sell_lbl + "FVG "
+        temp += "FVG "
     if t_ts_bear
-        sell_lbl := sell_lbl + "TS "
+        temp += "TS "
     if t_mss_bear
-        sell_lbl := sell_lbl + "MSS "
+        temp += "MSS "
     if t_cisd_bear
-        sell_lbl := sell_lbl + "CISD "
+        temp += "CISD "
+    active_trigger_name := temp
 
 //==================== 2. VISUALISASI ====================//
-plotshape(show_lgl ? lgl_buySignal : na,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.black, size=size.small, text=buy_lbl,  textcolor=color.black)
-plotshape(show_lgl ? lgl_sellSignal : na, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.black, size=size.small, text=sell_lbl, textcolor=color.black)
+// Perbaikan: plotshape hanya menerima string mati ("BUY" / "SELL")
+plotshape(show_lgl ? lgl_buySignal : na,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.black, size=size.small, text="BUY",  textcolor=color.black)
+plotshape(show_lgl ? lgl_sellSignal : na, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.black, size=size.small, text="SELL", textcolor=color.black)
 
 //==================== 3. LOGIKA TAKE PROFIT, STOPLOSS & INVALIDATION ====================//
 var float lgl_ep = na, var float lgl_sl = na, var float lgl_tp1 = na, var float lgl_tp2 = na, var float lgl_tp3 = na, var float lgl_inv = na
@@ -1349,7 +1352,7 @@ if lgl_buySignal
     lgl_tp2 := close + tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Perbaikan fungsi na() untuk m5_sl
+    // Invalidasi Dinamis
     lgl_inv := t_ts_bull ? low : na(m5_sl) ? math.min(low[1], low[2]) : m5_sl 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
@@ -1380,7 +1383,7 @@ if lgl_sellSignal
     lgl_tp2 := close - tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Perbaikan fungsi na() untuk m5_sh
+    // Invalidasi Dinamis
     lgl_inv := t_ts_bear ? high : na(m5_sh) ? math.max(high[1], high[2]) : m5_sh 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
@@ -1416,7 +1419,9 @@ if show_lgl and (lgl_buySignal or lgl_sellSignal)
     color col_inv= color.new(#FF9800, 0) // Warna oranye untuk Invalidation Level
 
     l_ep  := line.new(bar_index, lgl_ep,  bar_index + extBar, lgl_ep,  color=col_ep, style=line.style_solid, extend=extend.right)
-    lb_ep  := label.new(bar_index + extBar, lgl_ep,  "Entry Line : " + str.tostring(lgl_ep, "#.##"),  color=col_ep, textcolor=color.white, style=label.style_label_left, size=size.small)
+    
+    // Perbaikan: Menempelkan nama trigger dinamis di label garis Entry
+    lb_ep  := label.new(bar_index + extBar, lgl_ep,  "Entry [" + active_trigger_name + "] : " + str.tostring(lgl_ep, "#.##"),  color=col_ep, textcolor=color.white, style=label.style_label_left, size=size.small)
 
     if show_sl
         l_sl  := line.new(bar_index, lgl_sl,  bar_index + extBar, lgl_sl,  color=col_sl, style=line.style_solid, extend=extend.right)
