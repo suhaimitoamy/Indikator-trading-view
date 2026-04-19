@@ -1272,8 +1272,8 @@ bool t_ts_bull = low < snr_supPrice and close > snr_supPrice
 bool t_ts_bear = high > snr_resPrice and close < snr_resPrice
 
 // 3. MSS & 4. BOS M5 (Pecah Struktur Internal)
-var float m5_sh = high // Inisialisasi dengan high saat ini (menghindari error NA)
-var float m5_sl = low  // Inisialisasi dengan low saat ini (menghindari error NA)
+var float m5_sh = high // Inisialisasi dengan high saat ini
+var float m5_sl = low  // Inisialisasi dengan low saat ini
 
 if not na(snr_ph)
     m5_sh := snr_ph
@@ -1349,8 +1349,8 @@ if lgl_buySignal
     lgl_tp2 := close + tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Invalidasi Dinamis yang sudah diperbaiki (tidak menggunakan na())
-    lgl_inv := t_ts_bull ? low : m5_sl 
+    // Perbaikan fungsi na() untuk m5_sl
+    lgl_inv := t_ts_bull ? low : na(m5_sl) ? math.min(low[1], low[2]) : m5_sl 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
     txt_tp1 := "Take Profit 1 (" + str.tostring(tp1_pts) + " pts)"
@@ -1380,8 +1380,8 @@ if lgl_sellSignal
     lgl_tp2 := close - tp2_pts
     lgl_tp3 := na // Reset TP3
     
-    // Invalidasi Dinamis yang sudah diperbaiki (tidak menggunakan na())
-    lgl_inv := t_ts_bear ? high : m5_sh 
+    // Perbaikan fungsi na() untuk m5_sh
+    lgl_inv := t_ts_bear ? high : na(m5_sh) ? math.max(high[1], high[2]) : m5_sh 
     
     txt_sl  := "Stoploss (" + str.tostring(sl_pts) + " pts)"
     txt_tp1 := "Take Profit 1 (" + str.tostring(tp1_pts) + " pts)"
@@ -1472,3 +1472,4 @@ if barstate.islast
     else
         table.clear(pct_table, 0, 0)
         table.clear(pct_table, 0, 1)
+
