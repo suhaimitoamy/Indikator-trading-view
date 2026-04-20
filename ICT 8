@@ -1630,6 +1630,152 @@ if nx_show_plan and barstate.isconfirmed
             color nx_col_ep  = nx_new_dir == 1 ? color.new(color.orange, 0) : color.new(color.orange, 0)
             color nx_col_sl  = color.new(color.red, 0)
             color nx_col_tp  = color.new(color.blue, 0)
+
+//==================== SECTION 4 - TRADE PLAN VISUALS ====================//
+groupNX4 = "NX 4. Trade Plan Visuals"
+nx_show_plan      = input.bool(true,  "Tampilkan trade plan visuals",         group=groupNX4)
+nx_plan_bars      = input.int(25,     "Jarak label/garis (bars)", minval=5,   group=groupNX4)
+nx_show_path      = input.bool(true,  "Tampilkan projected path",             group=groupNX4)
+nx_show_proj_zone = input.bool(true,  "Tampilkan projected zone",             group=groupNX4)
+nx_show_exec_zone = input.bool(true,  "Tampilkan execution zone",             group=groupNX4)
+
+// ===== VISUAL LEVELS =====
+plot(nx_show_levels and nx_dr_valid ? nx_active_sup : na, "NX Active Support", color=color.new(color.blue, 0), style=plot.style_linebr, linewidth=2)
+plot(nx_show_levels and nx_dr_valid ? nx_active_res : na, "NX Active Resistance", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
+plot(nx_show_asia_range and nx_asia_locked ? nx_asia_high : na, "NX Asia High", color=color.new(color.purple, 40), style=plot.style_linebr)
+plot(nx_show_asia_range and nx_asia_locked ? nx_asia_low  : na, "NX Asia Low",  color=color.new(color.purple, 40), style=plot.style_linebr)
+
+nx_buy_proj_low_plot  = plot(nx_show_proj_zone and nx_show_zones and nx_bull_setup_armed ? nx_buy_zone_low : na, "NX Buy Proj Low", color=color.new(color.green, 80), style=plot.style_linebr, linewidth=1)
+nx_buy_proj_high_plot = plot(nx_show_proj_zone and nx_show_zones and nx_bull_setup_armed ? nx_buy_zone_high : na, "NX Buy Proj High", color=color.new(color.green, 80), style=plot.style_linebr, linewidth=1)
+fill(nx_buy_proj_low_plot, nx_buy_proj_high_plot, color=color.new(color.green, 92), title="NX Buy Proj Fill")
+
+nx_sell_proj_low_plot  = plot(nx_show_proj_zone and nx_show_zones and nx_bear_setup_armed ? nx_sell_zone_low : na, "NX Sell Proj Low", color=color.new(color.red, 80), style=plot.style_linebr, linewidth=1)
+nx_sell_proj_high_plot = plot(nx_show_proj_zone and nx_show_zones and nx_bear_setup_armed ? nx_sell_zone_high : na, "NX Sell Proj High", color=color.new(color.red, 80), style=plot.style_linebr, linewidth=1)
+fill(nx_sell_proj_low_plot, nx_sell_proj_high_plot, color=color.new(color.red, 92), title="NX Sell Proj Fill")
+
+nx_buy_exec_low_plot  = plot(nx_show_exec_zone and nx_show_zones and nx_bull_setup_armed ? nx_buy_exec_low : na, "NX Buy Exec Low", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+nx_buy_exec_high_plot = plot(nx_show_exec_zone and nx_show_zones and nx_bull_setup_armed ? nx_buy_exec_high : na, "NX Buy Exec High", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+fill(nx_buy_exec_low_plot, nx_buy_exec_high_plot, color=color.new(color.green, 84), title="NX Buy Exec Fill")
+
+nx_sell_exec_low_plot  = plot(nx_show_exec_zone and nx_show_zones and nx_bear_setup_armed ? nx_sell_exec_low : na, "NX Sell Exec Low", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
+nx_sell_exec_high_plot = plot(nx_show_exec_zone and nx_show_zones and nx_bear_setup_armed ? nx_sell_exec_high : na, "NX Sell Exec High", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
+fill(nx_sell_exec_low_plot, nx_sell_exec_high_plot, color=color.new(color.red, 84), title="NX Sell Exec Fill")
+
+plotshape(nx_show_signals and nx_ready_buy,  title="NX READY BUY",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="BUY",  textcolor=color.white)
+plotshape(nx_show_signals and nx_ready_sell, title="NX READY SELL", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),   size=size.small, text="SELL", textcolor=color.white)
+
+// ===== OBJECT STORAGE =====
+var line  nx_ln_ep   = na
+var line  nx_ln_sl   = na
+var line  nx_ln_tp1  = na
+var line  nx_ln_tp2  = na
+var line  nx_ln_tp3  = na
+
+var label nx_lb_ep   = na
+var label nx_lb_sl   = na
+var label nx_lb_tp1  = na
+var label nx_lb_tp2  = na
+var label nx_lb_tp3  = na
+
+var line  nx_path_1  = na
+var line  nx_path_2  = na
+
+var int   nx_plan_dir   = 0
+var bool  nx_plan_ready = false
+var float nx_plan_ep    = na
+var float nx_plan_sl    = na
+var float nx_plan_tp1   = na
+var float nx_plan_tp2   = na
+var float nx_plan_tp3   = na
+
+// ===== BUILD / REFRESH PLAN =====
+if barstate.isconfirmed
+    int nx_new_dir =
+         nx_ready_buy  ? 1 :
+         nx_ready_sell ? -1 :
+         nx_bull_setup_armed ? 1 :
+         nx_bear_setup_armed ? -1 : 0
+
+    bool nx_new_ready = nx_ready_buy or nx_ready_sell
+
+    float nx_new_ep =
+         nx_new_dir == 1  ? nx_buy_exec_mid :
+         nx_new_dir == -1 ? nx_sell_exec_mid : na
+
+    float nx_new_sl =
+         nx_new_dir == 1  ? nx_long_invalid :
+         nx_new_dir == -1 ? nx_short_invalid : na
+
+    float nx_new_tp1 =
+         nx_new_dir == 1  ? nx_long_tp1 :
+         nx_new_dir == -1 ? nx_short_tp1 : na
+
+    float nx_new_tp2 =
+         nx_new_dir == 1  ? nx_long_tp2 :
+         nx_new_dir == -1 ? nx_short_tp2 : na
+
+    float nx_new_tp3 =
+         nx_new_dir == 1  ? nx_long_tp3 :
+         nx_new_dir == -1 ? nx_short_tp3 : na
+
+    bool nx_refresh = false
+    nx_refresh :=
+         nx_new_dir != nx_plan_dir or
+         nx_new_ready != nx_plan_ready or
+         (nx_new_dir != 0 and (
+             na(nx_plan_ep) or
+             math.abs(nx_new_ep - nx_plan_ep) > syminfo.mintick * 2 or
+             math.abs(nx_new_sl - nx_plan_sl) > syminfo.mintick * 2
+         ))
+
+    if nx_refresh
+        // delete old lines
+        if not na(nx_ln_ep)
+            line.delete(nx_ln_ep)
+            nx_ln_ep := na
+        if not na(nx_ln_sl)
+            line.delete(nx_ln_sl)
+            nx_ln_sl := na
+        if not na(nx_ln_tp1)
+            line.delete(nx_ln_tp1)
+            nx_ln_tp1 := na
+        if not na(nx_ln_tp2)
+            line.delete(nx_ln_tp2)
+            nx_ln_tp2 := na
+        if not na(nx_ln_tp3)
+            line.delete(nx_ln_tp3)
+            nx_ln_tp3 := na
+
+        // delete old labels
+        if not na(nx_lb_ep)
+            label.delete(nx_lb_ep)
+            nx_lb_ep := na
+        if not na(nx_lb_sl)
+            label.delete(nx_lb_sl)
+            nx_lb_sl := na
+        if not na(nx_lb_tp1)
+            label.delete(nx_lb_tp1)
+            nx_lb_tp1 := na
+        if not na(nx_lb_tp2)
+            label.delete(nx_lb_tp2)
+            nx_lb_tp2 := na
+        if not na(nx_lb_tp3)
+            label.delete(nx_lb_tp3)
+            nx_lb_tp3 := na
+
+        // delete old path
+        if not na(nx_path_1)
+            line.delete(nx_path_1)
+            nx_path_1 := na
+        if not na(nx_path_2)
+            line.delete(nx_path_2)
+            nx_path_2 := na
+
+        // draw new plan
+        if nx_show_plan and nx_new_dir != 0 and not na(nx_new_ep)
+            color nx_col_ep  = color.new(color.orange, 0)
+            color nx_col_sl  = color.new(color.red, 0)
+            color nx_col_tp  = color.new(color.blue, 0)
             color nx_col_tp3 = color.new(color.purple, 0)
 
             string nx_ep_text = nx_new_ready ? (nx_new_dir == 1 ? "READY BUY" : "READY SELL") : (nx_new_dir == 1 ? "PLAN BUY" : "PLAN SELL")
@@ -1641,17 +1787,18 @@ if nx_show_plan and barstate.isconfirmed
             nx_ln_tp2 := line.new(bar_index, nx_new_tp2, bar_index + nx_plan_bars, nx_new_tp2, color=nx_col_tp,  style=line.style_solid,  extend=extend.right)
             nx_ln_tp3 := line.new(bar_index, nx_new_tp3, bar_index + nx_plan_bars, nx_new_tp3, color=nx_col_tp3, style=line.style_dashed, extend=extend.right)
 
-            nx_lb_ep  := label.new(bar_index + nx_plan_bars, nx_new_ep,  nx_ep_text + nx_ep_note + " : " + nx_price(nx_new_ep),  color=nx_col_ep,  textcolor=color.white, style=label.style_label_left, size=size.small)
-            nx_lb_sl  := label.new(bar_index + nx_plan_bars, nx_new_sl,  "Invalidation : " + nx_price(nx_new_sl),                color=nx_col_sl,  textcolor=color.white, style=label.style_label_left, size=size.small)
-            nx_lb_tp1 := label.new(bar_index + nx_plan_bars, nx_new_tp1, "TP1 : " + nx_price(nx_new_tp1),                        color=nx_col_tp,  textcolor=color.white, style=label.style_label_left, size=size.small)
-            nx_lb_tp2 := label.new(bar_index + nx_plan_bars, nx_new_tp2, "TP2 : " + nx_price(nx_new_tp2),                        color=nx_col_tp,  textcolor=color.white, style=label.style_label_left, size=size.small)
-            nx_lb_tp3 := label.new(bar_index + nx_plan_bars, nx_new_tp3, "TP3 : " + nx_price(nx_new_tp3),                        color=nx_col_tp3, textcolor=color.white, style=label.style_label_left, size=size.small)
+            nx_lb_ep  := label.new(bar_index + nx_plan_bars, nx_new_ep,  nx_ep_text + nx_ep_note + " : " + nx_price(nx_new_ep), color=nx_col_ep,  textcolor=color.white, style=label.style_label_left, size=size.small)
+            nx_lb_sl  := label.new(bar_index + nx_plan_bars, nx_new_sl,  "Invalidation : " + nx_price(nx_new_sl),               color=nx_col_sl,  textcolor=color.white, style=label.style_label_left, size=size.small)
+            nx_lb_tp1 := label.new(bar_index + nx_plan_bars, nx_new_tp1, "TP1 : " + nx_price(nx_new_tp1),                       color=nx_col_tp,  textcolor=color.white, style=label.style_label_left, size=size.small)
+            nx_lb_tp2 := label.new(bar_index + nx_plan_bars, nx_new_tp2, "TP2 : " + nx_price(nx_new_tp2),                       color=nx_col_tp,  textcolor=color.white, style=label.style_label_left, size=size.small)
+            nx_lb_tp3 := label.new(bar_index + nx_plan_bars, nx_new_tp3, "TP3 : " + nx_price(nx_new_tp3),                       color=nx_col_tp3, textcolor=color.white, style=label.style_label_left, size=size.small)
 
             if nx_show_path
                 float nx_path_mid = nx_new_dir == 1 ? nx_buy_exec_mid : nx_sell_exec_mid
                 float nx_path_tp  = nx_new_dir == 1 ? nx_long_tp1 : nx_short_tp1
                 color nx_path_col = nx_new_dir == 1 ? color.new(color.green, 0) : color.new(color.red, 0)
-                nx_path_1 := line.new(bar_index, close, bar_index + 8, nx_path_mid, xloc=xloc.bar_index, extend=extend.none, color=nx_path_col, width=2, style=line.style_dotted)
+
+                nx_path_1 := line.new(bar_index, close, bar_index + 8,  nx_path_mid, xloc=xloc.bar_index, extend=extend.none, color=nx_path_col, width=2, style=line.style_dotted)
                 nx_path_2 := line.new(bar_index + 8, nx_path_mid, bar_index + 20, nx_path_tp, xloc=xloc.bar_index, extend=extend.none, color=color.new(color.blue, 0), width=2, style=line.style_dashed)
 
         nx_plan_dir   := nx_new_dir
@@ -1661,6 +1808,7 @@ if nx_show_plan and barstate.isconfirmed
         nx_plan_tp1   := nx_new_tp1
         nx_plan_tp2   := nx_new_tp2
         nx_plan_tp3   := nx_new_tp3
+
 
 //==================== SECTION 5 - SMART DASHBOARD ====================//
 groupNX5 = "NX 5. Smart Dashboard"
