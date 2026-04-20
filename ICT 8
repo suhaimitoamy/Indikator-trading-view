@@ -112,7 +112,7 @@ i_FVG      = input.string(           'FVG'        , title = o                   
 
 ,                                                                           tooltip = 'Fair Value Gaps\nor\nImplied Fair Value Gaps'                        )
 
-visBxs     = input.int   (             2          , title = '# Visible FVG's'       ,   group = 'Fair Value Gaps'
+visBxs     = input.int   (             2          , title = '# Visible FVG\'s'       ,   group = 'Fair Value Gaps'
 
 ,                                       minval = 1         , maxval = 20  , tooltip = 'In the same direction'                                               )
 
@@ -2472,17 +2472,17 @@ active_atr = use_mtf ? htf_atr : ta.atr(14)
 
 // Kalkulasi Harga Saat Sinyal Muncul
 
-if lgl_buySignal
+if lgl_buySignal and na(lgl_ep)
 
-lgl_ep := close
+    lgl_ep := close
 
-// 1. Setup Fixed Points SL, TP1, TP2 & Invalidation
+    // 1. Setup Fixed Points SL, TP1, TP2 & Invalidation
 
-lgl_sl  := close - sl_pts
+    lgl_sl  := close - sl_pts
 
-lgl_tp1 := close + tp1_pts
+    lgl_tp1 := close + tp1_pts
 
-lgl_tp2 := close + tp2_pts
+    lgl_tp2 := close + tp2_pts
 
 lgl_tp3 := na // Reset TP3
 
@@ -2532,17 +2532,17 @@ if use_ict_tp3
 
                 break
 
-if lgl_sellSignal
+if lgl_sellSignal and na(lgl_ep)
 
-lgl_ep := close
+    lgl_ep := close
 
-// 1. Setup Fixed Points SL, TP1, TP2 & Invalidation
+    // 1. Setup Fixed Points SL, TP1, TP2 & Invalidation
 
-lgl_sl  := close + sl_pts
+    lgl_sl  := close + sl_pts
 
-lgl_tp1 := close - tp1_pts
+    lgl_tp1 := close - tp1_pts
 
-lgl_tp2 := close - tp2_pts
+    lgl_tp2 := close - tp2_pts
 
 lgl_tp3 := na // Reset TP3
 
@@ -2591,6 +2591,14 @@ if use_ict_tp3
                 txt_tp3 := "Take Profit 3 (Next OB)"
 
                 break
+
+if not (lgl_buySignal or lgl_sellSignal)
+    lgl_ep := na
+    lgl_sl := na
+    lgl_tp1 := na
+    lgl_tp2 := na
+    lgl_tp3 := na
+    lgl_inv := na
 
 // Menggambar Garis & Label
 
