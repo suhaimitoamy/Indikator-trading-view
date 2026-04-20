@@ -112,7 +112,7 @@ i_FVG      = input.string(           'FVG'        , title = o                   
 
 ,                                                                           tooltip = 'Fair Value Gaps\nor\nImplied Fair Value Gaps'                        )
 
-visBxs     = input.int   (             2          , title = '# Visible FVG's'       ,   group = 'Fair Value Gaps'
+visBxs     = input.int   (             2          , title = '# Visible FVG\'s'       ,   group = 'Fair Value Gaps'
 
 ,                                       minval = 1         , maxval = 20  , tooltip = 'In the same direction'                                               )
 
