@@ -1230,23 +1230,11 @@ nx_in_ldn_open_core  = not na(time(timeframe.period, "0700-1000", "Europe/London
 nx_in_ldn_close_core = not na(time(timeframe.period, "1500-1700", "Europe/London"))
 nx_in_asia_core      = not na(time(timeframe.period, "1000-1400", "Asia/Tokyo"))
 
-nx_session_context_ok =
-    (nx_use_asia_context and nx_in_asia_core) or
-    (nx_use_london_open and nx_in_ldn_open_core) or
-    (nx_use_newyork and nx_in_ny_core) or
-    (nx_use_london_close and nx_in_ldn_close_core)
+nx_session_context_ok = (nx_use_asia_context and nx_in_asia_core) or (nx_use_london_open and nx_in_ldn_open_core) or (nx_use_newyork and nx_in_ny_core) or (nx_use_london_close and nx_in_ldn_close_core)
 
-nx_session_entry_ok =
-    (nx_use_london_open and nx_in_ldn_open_core) or
-    (nx_use_newyork and nx_in_ny_core) or
-    (nx_use_london_close and nx_in_ldn_close_core) or
-    (nx_allow_asia_entry and nx_in_asia_core)
+nx_session_entry_ok = (nx_use_london_open and nx_in_ldn_open_core) or (nx_use_newyork and nx_in_ny_core) or (nx_use_london_close and nx_in_ldn_close_core) or (nx_allow_asia_entry and nx_in_asia_core)
 
-nx_session_text =
-    nx_in_ny_core ? "NY" :
-    nx_in_ldn_open_core ? "London Open" :
-    nx_in_ldn_close_core ? "London Close" :
-    nx_in_asia_core ? "Asia" : "Off"
+nx_session_text = nx_in_ny_core ? "NY" : nx_in_ldn_open_core ? "London Open" : nx_in_ldn_close_core ? "London Close" : nx_in_asia_core ? "Asia" : "Off"
 
 var float nx_asia_high = na
 var float nx_asia_low  = na
