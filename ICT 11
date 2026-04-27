@@ -1140,7 +1140,7 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 //-----------------------------------------------------------------------------}
 
 //-----------------------------------------------------------------------------}
-// ICT 11 MARKET INFORMANT - PHASE 1
+// ICT 11 MARKET INFORMANT - EVENT ANALYSIS DASHBOARD
 //-----------------------------------------------------------------------------{
 
 // Settings
@@ -1159,17 +1159,23 @@ mi_pos = mi_posInput == "Top Right" ? position.top_right :
      mi_posInput == "Bottom Right" ? position.bottom_right :
      position.bottom_left
 
-// Point formatter
+//-----------------------------------------------------------------------------}
+// Helpers
+//-----------------------------------------------------------------------------{
 mi_fmt(float v) =>
     na(v) ? "n/a" : str.tostring(v, format.mintick)
+
+mi_point(float v) =>
+    na(v) ? "n/a" : str.tostring(v, "#.##") + " point"
 
 mi_dist(float v) =>
     na(v) ? "n/a" : str.tostring(math.abs(close - v), "#.##") + " point"
 
+//-----------------------------------------------------------------------------}
 // Asia Range
-mi_inAsia = not na(time(timeframe.period, mi_asiaSess, mi_tz))
+//-----------------------------------------------------------------------------{
+mi_inAsia  = not na(time(timeframe.period, mi_asiaSess, mi_tz))
 mi_newAsia = mi_inAsia and not mi_inAsia[1]
-mi_endAsia = not mi_inAsia and mi_inAsia[1]
 
 var float mi_asiaHigh = na
 var float mi_asiaLow  = na
@@ -1185,12 +1191,20 @@ if mi_inAsia
 
 mi_asiaEQ := not na(mi_asiaHigh) and not na(mi_asiaLow) ? math.avg(mi_asiaHigh, mi_asiaLow) : na
 
+mi_asiaHighSwept = not na(mi_asiaHigh) and high > mi_asiaHigh and close < mi_asiaHigh
+mi_asiaLowSwept  = not na(mi_asiaLow)  and low  < mi_asiaLow  and close > mi_asiaLow
+
+mi_asiaBreakUp = not na(mi_asiaHigh) and close > mi_asiaHigh
+mi_asiaBreakDn = not na(mi_asiaLow)  and close < mi_asiaLow
+
 mi_asiaStatus =
      na(mi_asiaHigh) or na(mi_asiaLow) ? "Belum Ada" :
-     close > mi_asiaHigh ? "Break Above Asia" :
-     close < mi_asiaLow ? "Break Below Asia" :
-     high > mi_asiaHigh and close < mi_asiaHigh ? "Buyside Swept" :
-     low < mi_asiaLow and close > mi_asiaLow ? "Sellside Swept" :
+     mi_asiaHighSwept ? "Buyside Swept | close balik range" :
+     mi_asiaLowSwept ? "Sellside Swept | close balik range" :
+     mi_asiaBreakUp ? "Break Above Asia" :
+     mi_asiaBreakDn ? "Break Below Asia" :
+     close > mi_asiaEQ ? "Active | harga di atas EQ" :
+     close < mi_asiaEQ ? "Active | harga di bawah EQ" :
      "Active"
 
 // Asia lines
@@ -1223,10 +1237,18 @@ if showAsiaLn and barstate.islast and not na(mi_asiaHigh) and not na(mi_asiaLow)
     mi_asiaLowLbl  := label.new(bar_index, mi_asiaLow,  "Asia Low",  style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 70))
     mi_asiaEQLbl   := label.new(bar_index, mi_asiaEQ,   "Asia EQ",   style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 80))
 
-// Daily levels
+//-----------------------------------------------------------------------------}
+// Daily Levels
+//-----------------------------------------------------------------------------{
 mi_dailyOpen = request.security(syminfo.tickerid, "D", open, lookahead=barmerge.lookahead_on)
 mi_pdh       = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
 mi_pdl       = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
+
+mi_pdhTaken = not na(mi_pdh) and high >= mi_pdh
+mi_pdlTaken = not na(mi_pdl) and low  <= mi_pdl
+
+mi_pdhSwept = not na(mi_pdh) and high > mi_pdh and close < mi_pdh
+mi_pdlSwept = not na(mi_pdl) and low  < mi_pdl and close > mi_pdl
 
 var line mi_doLine  = na
 var line mi_pdhLine = na
@@ -1257,7 +1279,27 @@ if showDayLvls and barstate.islast
     mi_pdhLbl := label.new(bar_index, mi_pdh,       "PDH",        style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 75))
     mi_pdlLbl := label.new(bar_index, mi_pdl,       "PDL",        style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 75))
 
-// Nearest OB info
+//-----------------------------------------------------------------------------}
+// Session / Killzone
+//-----------------------------------------------------------------------------{
+mi_londonOpen = not na(time(timeframe.period, "0700-1000", "Europe/London"))
+mi_londonClose = not na(time(timeframe.period, "1500-1700", "Europe/London"))
+mi_nyAM = not na(time(timeframe.period, "0700-1000", "America/New_York"))
+mi_nyPM = not na(time(timeframe.period, "1300-1600", "America/New_York"))
+
+mi_session =
+     mi_inAsia ? "Asia | liquidity build" :
+     mi_londonOpen ? "London Open | Killzone aktif" :
+     mi_nyAM ? "New York AM | Killzone aktif" :
+     mi_londonClose ? "London Close | retracement risk" :
+     mi_nyPM ? "New York PM" :
+     "Off Session"
+
+mi_killzoneActive = mi_londonOpen or mi_nyAM or mi_londonClose
+
+//-----------------------------------------------------------------------------}
+// OB / FVG info
+//-----------------------------------------------------------------------------{
 mi_bullObTop = bullish_ob.size() > 0 ? bullish_ob.get(0).top : na
 mi_bullObBtm = bullish_ob.size() > 0 ? bullish_ob.get(0).btm : na
 mi_bearObTop = bearish_ob.size() > 0 ? bearish_ob.get(0).top : na
@@ -1271,10 +1313,9 @@ mi_bearObDist = na(mi_bearObMid) ? na : math.abs(close - mi_bearObMid)
 
 mi_nearOB =
      na(mi_bullObDist) and na(mi_bearObDist) ? "n/a" :
-     na(mi_bearObDist) or mi_bullObDist < mi_bearObDist ? "Bullish OB " + mi_fmt(mi_bullObBtm) + " - " + mi_fmt(mi_bullObTop) :
-     "Bearish OB " + mi_fmt(mi_bearObBtm) + " - " + mi_fmt(mi_bearObTop)
+     na(mi_bearObDist) or mi_bullObDist < mi_bearObDist ? "Bullish OB " + mi_fmt(mi_bullObBtm) + "-" + mi_fmt(mi_bullObTop) + " | " + mi_point(mi_bullObDist) :
+     "Bearish OB " + mi_fmt(mi_bearObBtm) + "-" + mi_fmt(mi_bearObTop) + " | " + mi_point(mi_bearObDist)
 
-// Nearest FVG info
 mi_bullFvgTop = bFVG_UP.size() > 0 ? bFVG_UP.get(0).box.get_top() : na
 mi_bullFvgBtm = bFVG_UP.size() > 0 ? bFVG_UP.get(0).box.get_bottom() : na
 mi_bearFvgTop = bFVG_DN.size() > 0 ? bFVG_DN.get(0).box.get_top() : na
@@ -1288,10 +1329,12 @@ mi_bearFvgDist = na(mi_bearFvgMid) ? na : math.abs(close - mi_bearFvgMid)
 
 mi_nearFVG =
      na(mi_bullFvgDist) and na(mi_bearFvgDist) ? "n/a" :
-     na(mi_bearFvgDist) or mi_bullFvgDist < mi_bearFvgDist ? "Bullish FVG " + mi_fmt(mi_bullFvgBtm) + " - " + mi_fmt(mi_bullFvgTop) :
-     "Bearish FVG " + mi_fmt(mi_bearFvgBtm) + " - " + mi_fmt(mi_bearFvgTop)
+     na(mi_bearFvgDist) or mi_bullFvgDist < mi_bearFvgDist ? "Bullish FVG " + mi_fmt(mi_bullFvgBtm) + "-" + mi_fmt(mi_bullFvgTop) + " | " + mi_point(mi_bullFvgDist) :
+     "Bearish FVG " + mi_fmt(mi_bearFvgBtm) + "-" + mi_fmt(mi_bearFvgTop) + " | " + mi_point(mi_bearFvgDist)
 
+//-----------------------------------------------------------------------------}
 // Candle Pattern
+//-----------------------------------------------------------------------------{
 mi_body = math.abs(close - open)
 mi_range = high - low
 mi_upperWick = high - math.max(open, close)
@@ -1316,55 +1359,196 @@ mi_pattern =
      mi_doji ? "Doji" :
      "None"
 
-// Market State simple
+mi_patternReason =
+     mi_bullDisp ? "candle kuat naik / continuation clue" :
+     mi_bearDisp ? "candle kuat turun / continuation clue" :
+     mi_bullEngulf ? "engulfing bullish / pressure naik" :
+     mi_bearEngulf ? "engulfing bearish / pressure turun" :
+     mi_bullPin ? "rejection wick bawah" :
+     mi_bearPin ? "rejection wick atas" :
+     mi_doji ? "indecision / belum jelas" :
+     "belum ada candle konfirmasi"
+
+//-----------------------------------------------------------------------------}
+// Market State / Bias
+//-----------------------------------------------------------------------------{
 mi_atr = ta.atr(14)
 mi_range5 = ta.highest(high, 5) - ta.lowest(low, 5)
-mi_marketState =
-     mi_range5 <= mi_atr * 0.75 ? "Kompresi" :
-     mi_body >= mi_avgBody5 * 1.5 ? "Ekspansi" :
-     "Ranging"
 
-// Bias simple
+mi_marketState =
+     mi_range5 <= mi_atr * 0.75 ? "Ranging" :
+     mi_body >= mi_avgBody5 * 1.5 ? "Ekspansi" :
+     "Kompresi"
+
+mi_marketInfo = mi_marketState + " | Range " + mi_point(mi_range5) + " | ATR " + mi_point(mi_atr)
+
+mi_doBull = close > mi_dailyOpen
+mi_asiaBull = not na(mi_asiaEQ) and close > mi_asiaEQ
+mi_doBear = close < mi_dailyOpen
+mi_asiaBear = not na(mi_asiaEQ) and close < mi_asiaEQ
+
 mi_bias =
-     close > mi_dailyOpen and close > mi_asiaEQ ? "Bullish" :
-     close < mi_dailyOpen and close < mi_asiaEQ ? "Bearish" :
-     "Netral"
+     mi_doBull and mi_asiaBull ? "Bullish | DO bullish, Asia EQ bullish" :
+     mi_doBear and mi_asiaBear ? "Bearish | DO bearish, Asia EQ bearish" :
+     mi_doBull and mi_asiaBear ? "Netral | DO bullish, Asia EQ bearish" :
+     mi_doBear and mi_asiaBull ? "Netral | DO bearish, Asia EQ bullish" :
+     "Netral | belum jelas"
+
+mi_conflict = str.contains(mi_bias, "Netral")
+
+//-----------------------------------------------------------------------------}
+// Key Levels / Protected
+//-----------------------------------------------------------------------------{
+mi_pivotHigh = ta.pivothigh(high, 3, 1)
+mi_pivotLow  = ta.pivotlow(low, 3, 1)
+
+var float mi_protectedHigh = na
+var float mi_protectedLow  = na
+
+if not na(mi_pivotHigh)
+    mi_protectedHigh := mi_pivotHigh
+
+if not na(mi_pivotLow)
+    mi_protectedLow := mi_pivotLow
+
+mi_upperKey = not na(mi_protectedHigh) ? mi_protectedHigh : mi_asiaHigh
+mi_lowerKey = not na(mi_protectedLow) ? mi_protectedLow : mi_asiaLow
+
+mi_breakUp = not na(mi_upperKey) and close > mi_upperKey
+mi_breakDn = not na(mi_lowerKey) and close < mi_lowerKey
+
+mi_rejectTop = not na(mi_upperKey) and high > mi_upperKey and close < mi_upperKey
+mi_rejectBtm = not na(mi_lowerKey) and low < mi_lowerKey and close > mi_lowerKey
+
+mi_breakLine = ">" + mi_fmt(mi_upperKey) + " lanjut naik | <" + mi_fmt(mi_lowerKey) + " lanjut turun"
+mi_protectedLine = "PH " + mi_fmt(mi_protectedHigh) + " | PL " + mi_fmt(mi_protectedLow)
+
+mi_rejectionLine =
+     mi_rejectTop ? "Test " + mi_fmt(mi_upperKey) + " gagal = reject atas forming" :
+     mi_rejectBtm ? "Test " + mi_fmt(mi_lowerKey) + " gagal = reject bawah forming" :
+     "Belum ada rejection jelas"
+
+//-----------------------------------------------------------------------------}
+// Event Engine
+//-----------------------------------------------------------------------------{
+mi_judasBear = (mi_londonOpen or mi_nyAM) and mi_asiaHighSwept and (mi_bearPin or mi_bearEngulf or mi_doji)
+mi_judasBull = (mi_londonOpen or mi_nyAM) and mi_asiaLowSwept and (mi_bullPin or mi_bullEngulf or mi_doji)
+
+mi_event =
+     mi_judasBear ? "Judas Swing Risk" :
+     mi_judasBull ? "Judas Swing Risk" :
+     not na(mi_protectedHigh) and close > mi_protectedHigh ? "Protected High Broken" :
+     not na(mi_protectedLow) and close < mi_protectedLow ? "Protected Low Broken" :
+     mi_pdhSwept ? "PDH Taken" :
+     mi_pdlSwept ? "PDL Taken" :
+     mi_asiaHighSwept ? "Asia High Swept" :
+     mi_asiaLowSwept ? "Asia Low Swept" :
+     mi_breakUp ? "Break Level Valid" :
+     mi_breakDn ? "Break Level Valid" :
+     mi_rejectTop or mi_rejectBtm ? "Rejection Forming" :
+     mi_marketState == "Ekspansi" ? "Expansion Running" :
+     mi_marketState == "Kompresi" ? "Liquidity Build" :
+     "No Major Event"
+
+mi_info =
+     mi_event == "Judas Swing Risk" and mi_judasBear ? "Sweep Asia High saat Killzone, close balik range" :
+     mi_event == "Judas Swing Risk" and mi_judasBull ? "Sweep Asia Low saat Killzone, close balik range" :
+     mi_event == "Protected High Broken" ? "Body close tembus Protected High, bearish structure gugur" :
+     mi_event == "Protected Low Broken" ? "Body close tembus Protected Low, bullish structure gugur" :
+     mi_event == "PDH Taken" ? "Harga sudah mengambil liquidity di atas PDH" :
+     mi_event == "PDL Taken" ? "Harga sudah mengambil liquidity di bawah PDL" :
+     mi_event == "Asia High Swept" ? "Harga sweep Asia High lalu close balik range" :
+     mi_event == "Asia Low Swept" ? "Harga sweep Asia Low lalu close balik range" :
+     mi_event == "Break Level Valid" and mi_breakUp ? "Body close tembus level atas" :
+     mi_event == "Break Level Valid" and mi_breakDn ? "Body close tembus level bawah" :
+     mi_event == "Rejection Forming" ? "Harga test level kunci tapi gagal close tembus" :
+     mi_event == "Expansion Running" ? "Candle besar sedang dorong harga keluar range" :
+     mi_event == "Liquidity Build" ? "Harga masih kompresi, liquidity sedang build" :
+     "Belum ada event besar, tunggu reaksi di level kunci"
+
+mi_scenario =
+     mi_event == "Judas Swing Risk" ? "Tunggu MSS / displacement setelah sweep" :
+     mi_event == "Protected High Broken" ? "Jika follow-through kuat, potensi lanjut naik" :
+     mi_event == "Protected Low Broken" ? "Jika follow-through kuat, potensi lanjut turun" :
+     mi_event == "PDH Taken" ? "Jika close bertahan di atas PDH, potensi lanjut naik" :
+     mi_event == "PDL Taken" ? "Jika close bertahan di bawah PDL, potensi lanjut turun" :
+     mi_event == "Asia High Swept" ? "Jika close balik bawah Asia High, rejection risk naik" :
+     mi_event == "Asia Low Swept" ? "Jika close balik atas Asia Low, rejection risk naik" :
+     mi_event == "Break Level Valid" and mi_breakUp ? "Jika follow-through kuat, potensi lanjut naik" :
+     mi_event == "Break Level Valid" and mi_breakDn ? "Jika follow-through kuat, potensi lanjut turun" :
+     mi_event == "Rejection Forming" ? "Tunggu candle lanjutan untuk validasi rejection" :
+     mi_event == "Expansion Running" ? "Pantau follow-through dan pullback sehat" :
+     mi_event == "Liquidity Build" ? "Tunggu close body keluar level kunci" :
+     "Tunggu close body di luar level penting"
 
 mi_warning =
-     mi_asiaStatus == "Buyside Swept" ? "Buyside Swept" :
-     mi_asiaStatus == "Sellside Swept" ? "Sellside Swept" :
-     mi_marketState == "Kompresi" ? "Liquidity Build" :
-     mi_marketState == "Ekspansi" ? "Tekanan Breakout" :
-     "Risiko Fake Break"
+     mi_event == "Judas Swing Risk" ? "Awas manipulasi awal sesi" :
+     mi_event == "PDH Taken" or mi_event == "PDL Taken" ? "Awas rejection jika close balik level" :
+     mi_event == "Asia High Swept" or mi_event == "Asia Low Swept" ? "Awas false break Asia Range" :
+     mi_event == "Rejection Forming" ? "Awas rejection belum valid tanpa candle lanjutan" :
+     mi_conflict ? "Bias konflik, market belum bersih" :
+     "Tidak ada warning besar"
 
-mi_next =
-     mi_marketState == "Kompresi" ? "Breakout / Breakdown Forming" :
-     mi_marketState == "Ekspansi" ? "Expansion Possible" :
-     "Retest Possible"
+mi_wait =
+     mi_event == "Judas Swing Risk" ? "MSS / displacement setelah sweep" :
+     mi_event == "Break Level Valid" ? "follow-through + candle bersih" :
+     mi_event == "Rejection Forming" ? "close lanjutan searah rejection" :
+     mi_event == "Liquidity Build" ? "body close keluar range" :
+     "reaksi market berikutnya"
 
-mi_confirm =
-     mi_bullDisp or mi_bearDisp ? "Displacement" :
-     mi_asiaStatus == "Break Above Asia" or mi_asiaStatus == "Break Below Asia" ? "Valid Break" :
-     "Belum Ada Konfirmasi"
+mi_evidence =
+     mi_pattern != "None" ? "Pattern: " + mi_pattern + " | " + mi_patternReason :
+     mi_event == "PDH Taken" or mi_event == "PDL Taken" ? "Liquidity sudah diambil, confirmation belum lengkap" :
+     mi_event == "Break Level Valid" ? "Body close tembus level, tunggu follow-through" :
+     "Confirmation belum lengkap"
 
+//-----------------------------------------------------------------------------}
+// Quality / Confidence
+//-----------------------------------------------------------------------------{
+mi_score = 0
+mi_score += mi_killzoneActive ? 15 : 0
+mi_score += mi_event != "No Major Event" ? 20 : 0
+mi_score += mi_bullDisp or mi_bearDisp ? 20 : 0
+mi_score += mi_asiaHighSwept or mi_asiaLowSwept or mi_pdhTaken or mi_pdlTaken ? 15 : 0
+mi_score += mi_breakUp or mi_breakDn ? 15 : 0
+mi_score -= mi_conflict ? 15 : 0
+mi_score -= mi_marketState == "Ranging" ? 10 : 0
+
+mi_confidence = math.max(0, math.min(100, mi_score))
+mi_quality =
+     mi_confidence >= 70 ? "Kuat" :
+     mi_confidence >= 40 ? "Sedang" :
+     "Lemah"
+
+mi_qualityLine = mi_quality + " | Confidence " + str.tostring(mi_confidence) + "%"
+
+//-----------------------------------------------------------------------------}
 // Dashboard
-var table mi_dash = table.new(mi_pos, 2, 10, border_width=1)
+//-----------------------------------------------------------------------------{
+var table mi_dash = table.new(mi_pos, 2, 16, border_width=1)
 
 mi_cell(int row, string left, string right) =>
     table.cell(mi_dash, 0, row, left, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
     table.cell(mi_dash, 1, row, right, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
 
 if showMI and barstate.islast
-    table.clear(mi_dash, 0, 0, 1, 9)
+    table.clear(mi_dash, 0, 0, 1, 15)
     table.cell(mi_dash, 0, 0, "ICT 11", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
-    table.cell(mi_dash, 1, 0, "MARKET INFORMANT", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
+    table.cell(mi_dash, 1, 0, "EVENT ANALYSIS", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
 
-    mi_cell(1, "Market", mi_marketState)
-    mi_cell(2, "Asia", mi_asiaStatus)
-    mi_cell(3, "OB Dekat", mi_nearOB)
-    mi_cell(4, "FVG Dekat", mi_nearFVG)
-    mi_cell(5, "Pattern", mi_pattern)
-    mi_cell(6, "Bias", mi_bias)
-    mi_cell(7, "Warning", mi_warning)
-    mi_cell(8, "Next", mi_next)
-    mi_cell(9, "Confirm", mi_confirm)  
+    mi_cell(1, "Market", mi_marketInfo)
+    mi_cell(2, "Session", mi_session)
+    mi_cell(3, "Asia", mi_asiaStatus)
+    mi_cell(4, "Bias", mi_bias)
+    mi_cell(5, "Quality", mi_qualityLine)
+
+    mi_cell(6, "Event Aktif", mi_event)
+    mi_cell(7, "Info", mi_info)
+    mi_cell(8, "Skenario", mi_scenario)
+    mi_cell(9, "Break", mi_breakLine)
+    mi_cell(10, "Protected", mi_protectedLine)
+    mi_cell(11, "Rejection", mi_rejectionLine)
+    mi_cell(12, "Pattern", mi_pattern + " | " + mi_patternReason)
+    mi_cell(13, "Awas", mi_warning)
+    mi_cell(14, "Tunggu", mi_wait)
+    mi_cell(15, "Bukti", mi_evidence)
