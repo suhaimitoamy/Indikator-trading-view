@@ -1139,4 +1139,232 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
-  
+//-----------------------------------------------------------------------------}
+// ICT 11 MARKET INFORMANT - PHASE 1
+//-----------------------------------------------------------------------------{
+
+// Settings
+gICT11 = "ICT 11 Market Informant"
+
+showMI      = input.bool(true, "Show Dashboard", group=gICT11)
+showAsiaLn  = input.bool(true, "Show Asia High / EQ / Low", group=gICT11)
+showDayLvls = input.bool(true, "Show Daily Open / PDH / PDL", group=gICT11)
+
+mi_posInput = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=gICT11)
+mi_asiaSess = input.session("0700-1300", "Asia Session", group=gICT11)
+mi_tz       = input.string("Asia/Jakarta", "Timezone", options=["Asia/Jakarta", "Asia/Singapore", "Asia/Tokyo", "America/New_York", "Etc/UTC"], group=gICT11)
+
+mi_pos = mi_posInput == "Top Right" ? position.top_right :
+     mi_posInput == "Top Left" ? position.top_left :
+     mi_posInput == "Bottom Right" ? position.bottom_right :
+     position.bottom_left
+
+// Point formatter
+mi_fmt(float v) =>
+    na(v) ? "n/a" : str.tostring(v, format.mintick)
+
+mi_dist(float v) =>
+    na(v) ? "n/a" : str.tostring(math.abs(close - v), "#.##") + " point"
+
+// Asia Range
+mi_inAsia = not na(time(timeframe.period, mi_asiaSess, mi_tz))
+mi_newAsia = mi_inAsia and not mi_inAsia[1]
+mi_endAsia = not mi_inAsia and mi_inAsia[1]
+
+var float mi_asiaHigh = na
+var float mi_asiaLow  = na
+var float mi_asiaEQ   = na
+
+if mi_newAsia
+    mi_asiaHigh := high
+    mi_asiaLow  := low
+
+if mi_inAsia
+    mi_asiaHigh := na(mi_asiaHigh) ? high : math.max(mi_asiaHigh, high)
+    mi_asiaLow  := na(mi_asiaLow)  ? low  : math.min(mi_asiaLow, low)
+
+mi_asiaEQ := not na(mi_asiaHigh) and not na(mi_asiaLow) ? math.avg(mi_asiaHigh, mi_asiaLow) : na
+
+mi_asiaStatus =
+     na(mi_asiaHigh) or na(mi_asiaLow) ? "Belum Ada" :
+     close > mi_asiaHigh ? "Break Above Asia" :
+     close < mi_asiaLow ? "Break Below Asia" :
+     high > mi_asiaHigh and close < mi_asiaHigh ? "Buyside Swept" :
+     low < mi_asiaLow and close > mi_asiaLow ? "Sellside Swept" :
+     "Active"
+
+// Asia lines
+var line mi_asiaHighLine = na
+var line mi_asiaLowLine  = na
+var line mi_asiaEQLine   = na
+
+var label mi_asiaHighLbl = na
+var label mi_asiaLowLbl  = na
+var label mi_asiaEQLbl   = na
+
+if showAsiaLn and barstate.islast and not na(mi_asiaHigh) and not na(mi_asiaLow)
+    if na(mi_asiaHighLine)
+        mi_asiaHighLine := line.new(bar_index, mi_asiaHigh, bar_index + 1, mi_asiaHigh, extend=extend.right)
+        mi_asiaLowLine  := line.new(bar_index, mi_asiaLow,  bar_index + 1, mi_asiaLow,  extend=extend.right)
+        mi_asiaEQLine   := line.new(bar_index, mi_asiaEQ,   bar_index + 1, mi_asiaEQ,   extend=extend.right)
+    else
+        line.set_xy1(mi_asiaHighLine, bar_index, mi_asiaHigh)
+        line.set_xy2(mi_asiaHighLine, bar_index + 1, mi_asiaHigh)
+        line.set_xy1(mi_asiaLowLine, bar_index, mi_asiaLow)
+        line.set_xy2(mi_asiaLowLine, bar_index + 1, mi_asiaLow)
+        line.set_xy1(mi_asiaEQLine, bar_index, mi_asiaEQ)
+        line.set_xy2(mi_asiaEQLine, bar_index + 1, mi_asiaEQ)
+
+    label.delete(mi_asiaHighLbl)
+    label.delete(mi_asiaLowLbl)
+    label.delete(mi_asiaEQLbl)
+
+    mi_asiaHighLbl := label.new(bar_index, mi_asiaHigh, "Asia High", style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 70))
+    mi_asiaLowLbl  := label.new(bar_index, mi_asiaLow,  "Asia Low",  style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 70))
+    mi_asiaEQLbl   := label.new(bar_index, mi_asiaEQ,   "Asia EQ",   style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 80))
+
+// Daily levels
+mi_dailyOpen = request.security(syminfo.tickerid, "D", open, lookahead=barmerge.lookahead_on)
+mi_pdh       = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
+mi_pdl       = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
+
+var line mi_doLine  = na
+var line mi_pdhLine = na
+var line mi_pdlLine = na
+
+var label mi_doLbl  = na
+var label mi_pdhLbl = na
+var label mi_pdlLbl = na
+
+if showDayLvls and barstate.islast
+    if na(mi_doLine)
+        mi_doLine  := line.new(bar_index, mi_dailyOpen, bar_index + 1, mi_dailyOpen, extend=extend.right)
+        mi_pdhLine := line.new(bar_index, mi_pdh,       bar_index + 1, mi_pdh,       extend=extend.right)
+        mi_pdlLine := line.new(bar_index, mi_pdl,       bar_index + 1, mi_pdl,       extend=extend.right)
+    else
+        line.set_xy1(mi_doLine, bar_index, mi_dailyOpen)
+        line.set_xy2(mi_doLine, bar_index + 1, mi_dailyOpen)
+        line.set_xy1(mi_pdhLine, bar_index, mi_pdh)
+        line.set_xy2(mi_pdhLine, bar_index + 1, mi_pdh)
+        line.set_xy1(mi_pdlLine, bar_index, mi_pdl)
+        line.set_xy2(mi_pdlLine, bar_index + 1, mi_pdl)
+
+    label.delete(mi_doLbl)
+    label.delete(mi_pdhLbl)
+    label.delete(mi_pdlLbl)
+
+    mi_doLbl  := label.new(bar_index, mi_dailyOpen, "Daily Open", style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 75))
+    mi_pdhLbl := label.new(bar_index, mi_pdh,       "PDH",        style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 75))
+    mi_pdlLbl := label.new(bar_index, mi_pdl,       "PDL",        style=label.style_label_left, textcolor=color.white, color=color.new(color.gray, 75))
+
+// Nearest OB info
+mi_bullObTop = bullish_ob.size() > 0 ? bullish_ob.get(0).top : na
+mi_bullObBtm = bullish_ob.size() > 0 ? bullish_ob.get(0).btm : na
+mi_bearObTop = bearish_ob.size() > 0 ? bearish_ob.get(0).top : na
+mi_bearObBtm = bearish_ob.size() > 0 ? bearish_ob.get(0).btm : na
+
+mi_bullObMid = not na(mi_bullObTop) and not na(mi_bullObBtm) ? math.avg(mi_bullObTop, mi_bullObBtm) : na
+mi_bearObMid = not na(mi_bearObTop) and not na(mi_bearObBtm) ? math.avg(mi_bearObTop, mi_bearObBtm) : na
+
+mi_bullObDist = na(mi_bullObMid) ? na : math.abs(close - mi_bullObMid)
+mi_bearObDist = na(mi_bearObMid) ? na : math.abs(close - mi_bearObMid)
+
+mi_nearOB =
+     na(mi_bullObDist) and na(mi_bearObDist) ? "n/a" :
+     na(mi_bearObDist) or mi_bullObDist < mi_bearObDist ? "Bullish OB " + mi_fmt(mi_bullObBtm) + " - " + mi_fmt(mi_bullObTop) :
+     "Bearish OB " + mi_fmt(mi_bearObBtm) + " - " + mi_fmt(mi_bearObTop)
+
+// Nearest FVG info
+mi_bullFvgTop = bFVG_UP.size() > 0 ? bFVG_UP.get(0).box.get_top() : na
+mi_bullFvgBtm = bFVG_UP.size() > 0 ? bFVG_UP.get(0).box.get_bottom() : na
+mi_bearFvgTop = bFVG_DN.size() > 0 ? bFVG_DN.get(0).box.get_top() : na
+mi_bearFvgBtm = bFVG_DN.size() > 0 ? bFVG_DN.get(0).box.get_bottom() : na
+
+mi_bullFvgMid = not na(mi_bullFvgTop) and not na(mi_bullFvgBtm) ? math.avg(mi_bullFvgTop, mi_bullFvgBtm) : na
+mi_bearFvgMid = not na(mi_bearFvgTop) and not na(mi_bearFvgBtm) ? math.avg(mi_bearFvgTop, mi_bearFvgBtm) : na
+
+mi_bullFvgDist = na(mi_bullFvgMid) ? na : math.abs(close - mi_bullFvgMid)
+mi_bearFvgDist = na(mi_bearFvgMid) ? na : math.abs(close - mi_bearFvgMid)
+
+mi_nearFVG =
+     na(mi_bullFvgDist) and na(mi_bearFvgDist) ? "n/a" :
+     na(mi_bearFvgDist) or mi_bullFvgDist < mi_bearFvgDist ? "Bullish FVG " + mi_fmt(mi_bullFvgBtm) + " - " + mi_fmt(mi_bullFvgTop) :
+     "Bearish FVG " + mi_fmt(mi_bearFvgBtm) + " - " + mi_fmt(mi_bearFvgTop)
+
+// Candle Pattern
+mi_body = math.abs(close - open)
+mi_range = high - low
+mi_upperWick = high - math.max(open, close)
+mi_lowerWick = math.min(open, close) - low
+mi_avgBody5 = ta.sma(mi_body, 5)
+
+mi_bullEngulf = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+mi_bearEngulf = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+mi_bullPin = mi_lowerWick > mi_body * 2 and mi_upperWick < mi_body
+mi_bearPin = mi_upperWick > mi_body * 2 and mi_lowerWick < mi_body
+mi_doji = mi_range > 0 and mi_body <= mi_range * 0.2
+mi_bullDisp = close > open and mi_body >= mi_avgBody5 * 1.5
+mi_bearDisp = close < open and mi_body >= mi_avgBody5 * 1.5
+
+mi_pattern =
+     mi_bullDisp ? "Bullish Displacement" :
+     mi_bearDisp ? "Bearish Displacement" :
+     mi_bullEngulf ? "Bullish Engulfing" :
+     mi_bearEngulf ? "Bearish Engulfing" :
+     mi_bullPin ? "Bullish Pin Bar" :
+     mi_bearPin ? "Bearish Pin Bar" :
+     mi_doji ? "Doji" :
+     "None"
+
+// Market State simple
+mi_atr = ta.atr(14)
+mi_range5 = ta.highest(high, 5) - ta.lowest(low, 5)
+mi_marketState =
+     mi_range5 <= mi_atr * 0.75 ? "Kompresi" :
+     mi_body >= mi_avgBody5 * 1.5 ? "Ekspansi" :
+     "Ranging"
+
+// Bias simple
+mi_bias =
+     close > mi_dailyOpen and close > mi_asiaEQ ? "Bullish" :
+     close < mi_dailyOpen and close < mi_asiaEQ ? "Bearish" :
+     "Netral"
+
+mi_warning =
+     mi_asiaStatus == "Buyside Swept" ? "Buyside Swept" :
+     mi_asiaStatus == "Sellside Swept" ? "Sellside Swept" :
+     mi_marketState == "Kompresi" ? "Liquidity Build" :
+     mi_marketState == "Ekspansi" ? "Tekanan Breakout" :
+     "Risiko Fake Break"
+
+mi_next =
+     mi_marketState == "Kompresi" ? "Breakout / Breakdown Forming" :
+     mi_marketState == "Ekspansi" ? "Expansion Possible" :
+     "Retest Possible"
+
+mi_confirm =
+     mi_bullDisp or mi_bearDisp ? "Displacement" :
+     mi_asiaStatus == "Break Above Asia" or mi_asiaStatus == "Break Below Asia" ? "Valid Break" :
+     "Belum Ada Konfirmasi"
+
+// Dashboard
+var table mi_dash = table.new(mi_pos, 2, 10, border_width=1)
+
+mi_cell(int row, string left, string right) =>
+    table.cell(mi_dash, 0, row, left, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(mi_dash, 1, row, right, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+
+if showMI and barstate.islast
+    table.clear(mi_dash, 0, 0, 1, 9)
+    table.cell(mi_dash, 0, 0, "ICT 11", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
+    table.cell(mi_dash, 1, 0, "MARKET INFORMANT", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
+
+    mi_cell(1, "Market", mi_marketState)
+    mi_cell(2, "Asia", mi_asiaStatus)
+    mi_cell(3, "OB Dekat", mi_nearOB)
+    mi_cell(4, "FVG Dekat", mi_nearFVG)
+    mi_cell(5, "Pattern", mi_pattern)
+    mi_cell(6, "Bias", mi_bias)
+    mi_cell(7, "Warning", mi_warning)
+    mi_cell(8, "Next", mi_next)
+    mi_cell(9, "Confirm", mi_confirm)  
