@@ -1168,9 +1168,6 @@ mi_fmt(float v) =>
 mi_point(float v) =>
     na(v) ? "n/a" : str.tostring(v, "#.##") + " point"
 
-mi_dist(float v) =>
-    na(v) ? "n/a" : str.tostring(math.abs(close - v), "#.##") + " point"
-
 //-----------------------------------------------------------------------------}
 // Asia Range
 //-----------------------------------------------------------------------------{
@@ -1207,7 +1204,6 @@ mi_asiaStatus =
      close < mi_asiaEQ ? "Active | harga di bawah EQ" :
      "Active"
 
-// Asia lines
 var line mi_asiaHighLine = na
 var line mi_asiaLowLine  = na
 var line mi_asiaEQLine   = na
@@ -1332,6 +1328,12 @@ mi_nearFVG =
      na(mi_bearFvgDist) or mi_bullFvgDist < mi_bearFvgDist ? "Bullish FVG " + mi_fmt(mi_bullFvgBtm) + "-" + mi_fmt(mi_bullFvgTop) + " | " + mi_point(mi_bullFvgDist) :
      "Bearish FVG " + mi_fmt(mi_bearFvgBtm) + "-" + mi_fmt(mi_bearFvgTop) + " | " + mi_point(mi_bearFvgDist)
 
+mi_nearContext =
+     str.contains(mi_nearOB, "n/a") and str.contains(mi_nearFVG, "n/a") ? "level break / protected level" :
+     str.contains(mi_nearOB, "n/a") ? mi_nearFVG :
+     str.contains(mi_nearFVG, "n/a") ? mi_nearOB :
+     mi_nearOB + " / " + mi_nearFVG
+
 //-----------------------------------------------------------------------------}
 // Candle Pattern
 //-----------------------------------------------------------------------------{
@@ -1387,14 +1389,19 @@ mi_asiaBull = not na(mi_asiaEQ) and close > mi_asiaEQ
 mi_doBear = close < mi_dailyOpen
 mi_asiaBear = not na(mi_asiaEQ) and close < mi_asiaEQ
 
+mi_biasRaw =
+     mi_doBull and mi_asiaBull ? 1 :
+     mi_doBear and mi_asiaBear ? -1 :
+     0
+
 mi_bias =
-     mi_doBull and mi_asiaBull ? "Bullish | DO bullish, Asia EQ bullish" :
-     mi_doBear and mi_asiaBear ? "Bearish | DO bearish, Asia EQ bearish" :
+     mi_biasRaw == 1 ? "Bullish | DO bullish, Asia EQ bullish" :
+     mi_biasRaw == -1 ? "Bearish | DO bearish, Asia EQ bearish" :
      mi_doBull and mi_asiaBear ? "Netral | DO bullish, Asia EQ bearish" :
      mi_doBear and mi_asiaBull ? "Netral | DO bearish, Asia EQ bullish" :
      "Netral | belum jelas"
 
-mi_conflict = str.contains(mi_bias, "Netral")
+mi_conflict = mi_biasRaw == 0
 
 //-----------------------------------------------------------------------------}
 // Key Levels / Protected
@@ -1450,6 +1457,16 @@ mi_event =
      mi_marketState == "Kompresi" ? "Liquidity Build" :
      "No Major Event"
 
+mi_focus =
+     mi_event == "Protected Low Broken" or mi_event == "Break Level Valid" and mi_breakDn or mi_bearDisp or mi_biasRaw == -1 ? "Fokus SELL" :
+     mi_event == "Protected High Broken" or mi_event == "Break Level Valid" and mi_breakUp or mi_bullDisp or mi_biasRaw == 1 ? "Fokus BUY" :
+     "WAIT"
+
+mi_focusReason =
+     mi_focus == "Fokus SELL" ? "struktur/bias cenderung turun, jangan kejar harga" :
+     mi_focus == "Fokus BUY" ? "struktur/bias cenderung naik, jangan kejar harga" :
+     "arah belum bersih, tunggu reaksi level"
+
 mi_info =
      mi_event == "Judas Swing Risk" and mi_judasBear ? "Sweep Asia High saat Killzone, close balik range" :
      mi_event == "Judas Swing Risk" and mi_judasBull ? "Sweep Asia Low saat Killzone, close balik range" :
@@ -1481,6 +1498,21 @@ mi_scenario =
      mi_event == "Liquidity Build" ? "Tunggu close body keluar level kunci" :
      "Tunggu close body di luar level penting"
 
+mi_areaFocus =
+     mi_focus == "Fokus SELL" ? "Pullback/retest ke " + mi_fmt(mi_lowerKey) + " / " + mi_nearContext :
+     mi_focus == "Fokus BUY" ? "Pullback/retest ke " + mi_fmt(mi_upperKey) + " / " + mi_nearContext :
+     "Tunggu harga mendekati level kunci"
+
+mi_trigger =
+     mi_focus == "Fokus SELL" ? "rejection di area fokus + close turun" :
+     mi_focus == "Fokus BUY" ? "rejection di area fokus + close naik" :
+     "body close jelas / displacement"
+
+mi_invalid =
+     mi_focus == "Fokus SELL" ? "close body balik di atas " + mi_fmt(mi_lowerKey) :
+     mi_focus == "Fokus BUY" ? "close body balik di bawah " + mi_fmt(mi_upperKey) :
+     "belum ada invalidasi jelas"
+
 mi_warning =
      mi_event == "Judas Swing Risk" ? "Awas manipulasi awal sesi" :
      mi_event == "PDH Taken" or mi_event == "PDL Taken" ? "Awas rejection jika close balik level" :
@@ -1488,13 +1520,6 @@ mi_warning =
      mi_event == "Rejection Forming" ? "Awas rejection belum valid tanpa candle lanjutan" :
      mi_conflict ? "Bias konflik, market belum bersih" :
      "Tidak ada warning besar"
-
-mi_wait =
-     mi_event == "Judas Swing Risk" ? "MSS / displacement setelah sweep" :
-     mi_event == "Break Level Valid" ? "follow-through + candle bersih" :
-     mi_event == "Rejection Forming" ? "close lanjutan searah rejection" :
-     mi_event == "Liquidity Build" ? "body close keluar range" :
-     "reaksi market berikutnya"
 
 mi_evidence =
      mi_pattern != "None" ? "Pattern: " + mi_pattern + " | " + mi_patternReason :
@@ -1525,14 +1550,14 @@ mi_qualityLine = mi_quality + " | Confidence " + str.tostring(mi_confidence) + "
 //-----------------------------------------------------------------------------}
 // Dashboard
 //-----------------------------------------------------------------------------{
-var table mi_dash = table.new(mi_pos, 2, 16, border_width=1)
+var table mi_dash = table.new(mi_pos, 2, 19, border_width=1)
 
 mi_cell(int row, string left, string right) =>
     table.cell(mi_dash, 0, row, left, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
     table.cell(mi_dash, 1, row, right, text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
 
 if showMI and barstate.islast
-    table.clear(mi_dash, 0, 0, 1, 15)
+    table.clear(mi_dash, 0, 0, 1, 18)
     table.cell(mi_dash, 0, 0, "ICT 11", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
     table.cell(mi_dash, 1, 0, "EVENT ANALYSIS", text_color=color.white, bgcolor=color.new(color.blue, 20), text_size=size.small)
 
@@ -1542,13 +1567,16 @@ if showMI and barstate.islast
     mi_cell(4, "Bias", mi_bias)
     mi_cell(5, "Quality", mi_qualityLine)
 
-    mi_cell(6, "Event Aktif", mi_event)
-    mi_cell(7, "Info", mi_info)
-    mi_cell(8, "Skenario", mi_scenario)
-    mi_cell(9, "Break", mi_breakLine)
-    mi_cell(10, "Protected", mi_protectedLine)
-    mi_cell(11, "Rejection", mi_rejectionLine)
-    mi_cell(12, "Pattern", mi_pattern + " | " + mi_patternReason)
-    mi_cell(13, "Awas", mi_warning)
-    mi_cell(14, "Tunggu", mi_wait)
-    mi_cell(15, "Bukti", mi_evidence)
+    mi_cell(6, "Arah Fokus", mi_focus + " | " + mi_focusReason)
+    mi_cell(7, "OB Dekat", mi_nearOB)
+    mi_cell(8, "FVG Dekat", mi_nearFVG)
+    mi_cell(9, "Event Aktif", mi_event)
+    mi_cell(10, "Info", mi_info)
+    mi_cell(11, "Skenario", mi_scenario)
+    mi_cell(12, "Area Fokus", mi_areaFocus)
+    mi_cell(13, "Trigger", mi_trigger)
+    mi_cell(14, "Invalidasi", mi_invalid)
+    mi_cell(15, "Protected", mi_protectedLine)
+    mi_cell(16, "Rejection", mi_rejectionLine)
+    mi_cell(17, "Pattern", mi_pattern + " | " + mi_patternReason)
+    mi_cell(18, "Bukti", mi_evidence)
