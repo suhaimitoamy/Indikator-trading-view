@@ -1,0 +1,282 @@
+//@version=5
+indicator("NeoFib Flow Matrix 2026 v2.0", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=50)
+
+// ============================================================================
+// NeoFib Flow Matrix 2026 v2.0
+// ============================================================================
+
+// ------------------------- Inputs -------------------------------------------
+groupCore = "Core Settings"
+pivotLen = input.int(5, "Wave Pivot Length", minval=2, maxval=50, group=groupCore)
+minScore = input.int(80, "Minimum Signal Score", minval=50, maxval=100, group=groupCore)
+confirmOnClose = input.bool(true, "Confirm Signal On Candle Close", group=groupCore)
+projectionBars = input.int(5, "Projection Candles", minval=1, maxval=50, group=groupCore)
+
+groupFib = "Fibonacci Settings"
+zoneAtrBuffer = input.float(0.25, "Fib Zone ATR Buffer", minval=0.0, maxval=2.0, step=0.05, group=groupFib)
+showFib = input.bool(true, "Show Fibonacci Zones", group=groupFib)
+showTargets = input.bool(true, "Show TP/SL Lines", group=groupFib)
+
+groupFlow = "Order Flow Proxy Settings"
+volLen = input.int(20, "Volume Baseline Length", minval=5, maxval=200, group=groupFlow)
+volSpikeMult = input.float(1.3, "Volume Spike Multiplier", minval=0.5, maxval=5.0, step=0.1, group=groupFlow)
+cvdLookback = input.int(5, "CVD Trend Lookback", minval=1, maxval=50, group=groupFlow)
+imbalanceMult = input.float(0.8, "Delta Imbalance Multiplier", minval=0.1, maxval=5.0, step=0.1, group=groupFlow)
+sweepLookback = input.int(10, "Liquidity Sweep Lookback", minval=3, maxval=100, group=groupFlow)
+
+groupVol = "Market Condition Filter"
+atrLen = input.int(14, "ATR Fast Length", minval=1, maxval=100, group=groupVol)
+atrSlowLen = input.int(100, "ATR Slow Length", minval=20, maxval=500, group=groupVol)
+extremeVolMult = input.float(2.2, "Extreme Volatility ATR Multiplier", minval=1.0, maxval=10.0, step=0.1, group=groupVol)
+bigCandleMult = input.float(2.5, "Extreme Candle ATR Multiplier", minval=1.0, maxval=10.0, step=0.1, group=groupVol)
+chaosFlipLimit = input.int(3, "CVD Chaos Flip Limit", minval=1, maxval=10, group=groupVol)
+manualNoTrade = input.bool(false, "Manual No-Trade Mode", group=groupVol)
+useSessionFilter = input.bool(false, "Use Session Filter", group=groupVol)
+sessionInput = input.session("0700-2300", "Allowed Session", group=groupVol)
+
+groupVisual = "Visual Settings"
+showWaveLabels = input.bool(true, "Show Wave Labels", group=groupVisual)
+showProjection = input.bool(true, "Show Projection", group=groupVisual)
+showDashboard = input.bool(true, "Show Dashboard", group=groupVisual)
+showSignals = input.bool(true, "Show Buy/Sell Signals", group=groupVisual)
+
+// ------------------------- Core calculations --------------------------------
+atrFast = ta.atr(atrLen)
+atrSlow = ta.atr(atrSlowLen)
+barRange = high - low
+bodySize = math.abs(close - open)
+
+extremeVol = atrFast > atrSlow * extremeVolMult
+extremeCandle = barRange > atrFast * bigCandleMult
+sessionOk = not useSessionFilter or not na(time(timeframe.period, sessionInput))
+confirmed = confirmOnClose ? barstate.isconfirmed : true
+
+// ------------------------- Order flow proxy ---------------------------------
+safeRange = math.max(high - low, syminfo.mintick)
+buyPressure = volume * (close - low) / safeRange
+sellPressure = volume * (high - close) / safeRange
+delta = buyPressure - sellPressure
+deltaEma = ta.ema(delta, 5)
+cvd = ta.cum(delta)
+
+cvdRising = cvd > cvd[cvdLookback]
+cvdFalling = cvd < cvd[cvdLookback]
+
+absDeltaAvg = ta.sma(math.abs(delta), volLen)
+volumeAvg = ta.sma(volume, volLen)
+volumeSpike = volume > volumeAvg * volSpikeMult
+
+buyImbalance = delta > absDeltaAvg * imbalanceMult
+sellImbalance = delta < -absDeltaAvg * imbalanceMult
+
+priorLow = ta.lowest(low[1], sweepLookback)
+priorHigh = ta.highest(high[1], sweepLookback)
+
+sellSideSweep = low < priorLow and close > priorLow and volumeSpike
+buySideSweep = high > priorHigh and close < priorHigh and volumeSpike
+
+sellerAbsorption = sellSideSweep and close > open and deltaEma > deltaEma[1]
+buyerAbsorption = buySideSweep and close < open and deltaEma < deltaEma[1]
+
+deltaSign = delta > 0 ? 1 : delta < 0 ? -1 : 0
+deltaFlip = deltaSign != 0 and deltaSign[1] != 0 and deltaSign != deltaSign[1] ? 1 : 0
+cvdChaos = math.sum(deltaFlip, 10) >= chaosFlipLimit
+
+noTrade = manualNoTrade or not sessionOk or extremeVol or extremeCandle or cvdChaos
+
+// ------------------------- NeoWave-inspired pivot structure -----------------
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low, pivotLen, pivotLen)
+
+var float lastHigh = na
+var float lastLow = na
+var int lastHighBar = na
+var int lastLowBar = na
+var int waveCount = 0
+
+if not na(ph)
+    lastHigh := ph
+    lastHighBar := bar_index - pivotLen
+    waveCount += 1
+    if showWaveLabels
+        label.new(lastHighBar, lastHigh, "W" + str.tostring(waveCount), style=label.style_label_down, textcolor=color.white, color=color.new(color.red, 0), size=size.tiny)
+
+if not na(pl)
+    lastLow := pl
+    lastLowBar := bar_index - pivotLen
+    waveCount += 1
+    if showWaveLabels
+        label.new(lastLowBar, lastLow, "W" + str.tostring(waveCount), style=label.style_label_up, textcolor=color.white, color=color.new(color.green, 0), size=size.tiny)
+
+upSwing = not na(lastHigh) and not na(lastLow) and lastHighBar > lastLowBar
+downSwing = not na(lastHigh) and not na(lastLow) and lastLowBar > lastHighBar
+swingRange = upSwing or downSwing ? lastHigh - lastLow : na
+validRange = not na(swingRange) and swingRange > syminfo.mintick
+
+neoBuyValid = upSwing and validRange and close > lastLow
+neoSellValid = downSwing and validRange and close < lastHigh
+
+waveInvalidBuy = upSwing and close <= lastLow
+waveInvalidSell = downSwing and close >= lastHigh
+
+complexCorrectionBuy = upSwing and validRange and close < lastHigh - swingRange * 0.786 and close > lastLow
+complexCorrectionSell = downSwing and validRange and close > lastLow + swingRange * 0.786 and close < lastHigh
+
+// ------------------------- Fibonacci zones ----------------------------------
+buffer = atrFast * zoneAtrBuffer
+
+buyFib50 = upSwing and validRange ? lastHigh - swingRange * 0.5 : na
+buyFib786 = upSwing and validRange ? lastHigh - swingRange * 0.786 : na
+buyZoneTop = upSwing and validRange ? buyFib50 + buffer : na
+buyZoneBottom = upSwing and validRange ? buyFib786 - buffer : na
+buyTarget127 = upSwing and validRange ? lastHigh + swingRange * 0.272 : na
+buyTarget161 = upSwing and validRange ? lastHigh + swingRange * 0.618 : na
+
+sellFib50 = downSwing and validRange ? lastLow + swingRange * 0.5 : na
+sellFib786 = downSwing and validRange ? lastLow + swingRange * 0.786 : na
+sellZoneBottom = downSwing and validRange ? sellFib50 - buffer : na
+sellZoneTop = downSwing and validRange ? sellFib786 + buffer : na
+sellTarget127 = downSwing and validRange ? lastLow - swingRange * 0.272 : na
+sellTarget161 = downSwing and validRange ? lastLow - swingRange * 0.618 : na
+
+inBuyZone = upSwing and validRange and low <= buyZoneTop and high >= buyZoneBottom
+inSellZone = downSwing and validRange and high >= sellZoneBottom and low <= sellZoneTop
+
+// ------------------------- Scoring ------------------------------------------
+buyScore = 0
+buyScore += neoBuyValid ? 30 : 0
+buyScore += inBuyZone ? 20 : 0
+buyScore += (sellSideSweep or sellerAbsorption) ? 15 : 0
+buyScore += (delta > 0 and deltaEma > 0) ? 15 : 0
+buyScore += (buyImbalance and cvdRising) ? 10 : 0
+buyScore += not noTrade ? 10 : 0
+
+sellScore = 0
+sellScore += neoSellValid ? 30 : 0
+sellScore += inSellZone ? 20 : 0
+sellScore += (buySideSweep or buyerAbsorption) ? 15 : 0
+sellScore += (delta < 0 and deltaEma < 0) ? 15 : 0
+sellScore += (sellImbalance and cvdFalling) ? 10 : 0
+sellScore += not noTrade ? 10 : 0
+
+buySignal = confirmed and not noTrade and buyScore >= minScore and buyScore > sellScore
+sellSignal = confirmed and not noTrade and sellScore >= minScore and sellScore > buyScore
+
+activeBias = buyScore > sellScore ? "BUY" : sellScore > buyScore ? "SELL" : "NEUTRAL"
+
+marketRegime = manualNoTrade ? "MANUAL NO TRADE" : not sessionOk ? "OUT OF SESSION" : extremeVol ? "EXTREME VOL" : extremeCandle ? "EXTREME CANDLE" : cvdChaos ? "CVD CHAOS" : atrFast > atrSlow * 1.3 ? "HIGH VOL" : "NORMAL"
+
+wavePhase = waveInvalidBuy or waveInvalidSell ? "INVALID" : complexCorrectionBuy or complexCorrectionSell ? "COMPLEX CORRECTION" : upSwing or downSwing ? "CORRECTION" : "WAITING"
+
+// ------------------------- Visual objects -----------------------------------
+var line buyTopLine = na
+var line buyBottomLine = na
+var line sellTopLine = na
+var line sellBottomLine = na
+var line slLine = na
+var line tp1Line = na
+var line tp2Line = na
+var line projectionLine = na
+var label projectionLabel = na
+
+if showFib and upSwing and validRange
+    if na(buyTopLine)
+        buyTopLine := line.new(bar_index - 1, buyZoneTop, bar_index, buyZoneTop, extend=extend.right, color=color.new(color.green, 0), style=line.style_dashed)
+    else
+        line.set_xy1(buyTopLine, bar_index - 1, buyZoneTop)
+        line.set_xy2(buyTopLine, bar_index, buyZoneTop)
+
+    if na(buyBottomLine)
+        buyBottomLine := line.new(bar_index - 1, buyZoneBottom, bar_index, buyZoneBottom, extend=extend.right, color=color.new(color.green, 0), style=line.style_dashed)
+    else
+        line.set_xy1(buyBottomLine, bar_index - 1, buyZoneBottom)
+        line.set_xy2(buyBottomLine, bar_index, buyZoneBottom)
+else
+    if not na(buyTopLine)
+        line.delete(buyTopLine)
+        buyTopLine := na
+    if not na(buyBottomLine)
+        line.delete(buyBottomLine)
+        buyBottomLine := na
+
+if showFib and downSwing and validRange
+    if na(sellTopLine)
+        sellTopLine := line.new(bar_index - 1, sellZoneTop, bar_index, sellZoneTop, extend=extend.right, color=color.new(color.red, 0), style=line.style_dashed)
+    else
+        line.set_xy1(sellTopLine, bar_index - 1, sellZoneTop)
+        line.set_xy2(sellTopLine, bar_index, sellZoneTop)
+
+    if na(sellBottomLine)
+        sellBottomLine := line.new(bar_index - 1, sellZoneBottom, bar_index, sellZoneBottom, extend=extend.right, color=color.new(color.red, 0), style=line.style_dashed)
+    else
+        line.set_xy1(sellBottomLine, bar_index - 1, sellZoneBottom)
+        line.set_xy2(sellBottomLine, bar_index, sellZoneBottom)
+else
+    if not na(sellTopLine)
+        line.delete(sellTopLine)
+        sellTopLine := na
+    if not na(sellBottomLine)
+        line.delete(sellBottomLine)
+        sellBottomLine := na
+
+if (buySignal or sellSignal) and showTargets
+    line.delete(slLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+
+    sl = buySignal ? lastLow : lastHigh
+    tp1 = buySignal ? buyTarget127 : sellTarget127
+    tp2 = buySignal ? buyTarget161 : sellTarget161
+
+    slLine := line.new(bar_index, sl, bar_index + projectionBars, sl, color=color.new(color.red, 0), style=line.style_solid, width=2)
+    tp1Line := line.new(bar_index, tp1, bar_index + projectionBars, tp1, color=color.new(color.blue, 0), style=line.style_solid, width=2)
+    tp2Line := line.new(bar_index, tp2, bar_index + projectionBars, tp2, color=color.new(color.blue, 30), style=line.style_dotted, width=2)
+
+if (buySignal or sellSignal) and showProjection
+    line.delete(projectionLine)
+    label.delete(projectionLabel)
+
+    target = buySignal ? buyTarget127 : sellTarget127
+
+    projectionLine := line.new(bar_index, close, bar_index + projectionBars, target, color=buySignal ? color.new(color.green, 0) : color.new(color.red, 0), style=line.style_arrow_right, width=2)
+    projectionLabel := label.new(bar_index + projectionBars, target, "Projection " + str.tostring(projectionBars) + " candles", style=label.style_label_left, textcolor=color.white, color=buySignal ? color.new(color.green, 0) : color.new(color.red, 0), size=size.small)
+
+// ------------------------- Plots and signals --------------------------------
+plotshape(showSignals and buySignal, title="BUY", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), text="BUY", textcolor=color.white, size=size.small)
+plotshape(showSignals and sellSignal, title="SELL", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.small)
+
+plot(showSignals ? buyScore : na, title="Buy Score", color=color.new(color.green, 0), display=display.data_window)
+plot(showSignals ? sellScore : na, title="Sell Score", color=color.new(color.red, 0), display=display.data_window)
+
+// ------------------------- Dashboard ----------------------------------------
+var table dash = table.new(position.top_right, 2, 8, border_width=1)
+
+if showDashboard and barstate.islast
+    table.cell(dash, 0, 0, "NeoFib Flow v2.0", text_color=color.white, bgcolor=color.new(color.blue, 0))
+    table.cell(dash, 1, 0, syminfo.ticker, text_color=color.white, bgcolor=color.new(color.blue, 0))
+
+    table.cell(dash, 0, 1, "Bias", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 1, activeBias, text_color=color.white, bgcolor=activeBias == "BUY" ? color.new(color.green, 0) : activeBias == "SELL" ? color.new(color.red, 0) : color.new(color.gray, 0))
+
+    table.cell(dash, 0, 2, "Buy Score", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 2, str.tostring(buyScore), text_color=color.white, bgcolor=buyScore >= minScore ? color.new(color.green, 0) : color.new(color.gray, 40))
+
+    table.cell(dash, 0, 3, "Sell Score", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 3, str.tostring(sellScore), text_color=color.white, bgcolor=sellScore >= minScore ? color.new(color.red, 0) : color.new(color.gray, 40))
+
+    table.cell(dash, 0, 4, "Wave Phase", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 4, wavePhase, text_color=color.white, bgcolor=wavePhase == "INVALID" ? color.new(color.red, 0) : color.new(color.gray, 40))
+
+    table.cell(dash, 0, 5, "Regime", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 5, marketRegime, text_color=color.white, bgcolor=noTrade ? color.new(color.red, 0) : color.new(color.green, 25))
+
+    table.cell(dash, 0, 6, "Delta", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 6, delta > 0 ? "Positive" : delta < 0 ? "Negative" : "Flat", text_color=color.white, bgcolor=delta > 0 ? color.new(color.green, 40) : delta < 0 ? color.new(color.red, 40) : color.new(color.gray, 40))
+
+    table.cell(dash, 0, 7, "No Trade", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 7, noTrade ? "YES" : "NO", text_color=color.white, bgcolor=noTrade ? color.new(color.red, 0) : color.new(color.green, 0))
+
+// ------------------------- Alerts ------------------------------------------
+alertcondition(buySignal, title="NeoFib BUY", message="NeoFib Flow Matrix 2026 v2.0 BUY on {{ticker}} | Price: {{close}}")
+alertcondition(sellSignal, title="NeoFib SELL", message="NeoFib Flow Matrix 2026 v2.0 SELL on {{ticker}} | Price: {{close}}")
+alertcondition(noTrade, title="NeoFib NO TRADE", message="NeoFib Flow Matrix 2026 v2.0 NO-TRADE condition active on {{ticker}}")
