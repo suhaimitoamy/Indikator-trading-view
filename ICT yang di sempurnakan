@@ -1,8 +1,5 @@
-// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
-// © LuxAlgo
-
 //@version=5
-indicator("ICT Concepts [LuxAlgo]", max_lines_count=500, max_boxes_count=500, max_labels_count=500, max_bars_back=3000, overlay=true)
+indicator("ICT Concepts [amygmgo]", max_lines_count=500, max_boxes_count=500, max_labels_count=500, max_bars_back=3000, overlay=true)
 //-----------------------------------------------------------------------------}
 //Strings
 //-----------------------------------------------------------------------------{
@@ -1143,243 +1140,247 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
-//==================== CUSTOM CONTEXT ENTRY ENGINE ====================//
-lgl_groupCore = "Custom Warning + Entry"
-lgl_show = input.bool(true, "Enable Custom Warning + Entry", group=lgl_groupCore)
-lgl_confirmOnClose = input.bool(true, "Confirm On Candle Close", group=lgl_groupCore)
-lgl_requireKillzone = input.bool(true, "Require LuxAlgo Killzone", group=lgl_groupCore)
-lgl_warningWindow = input.int(8, "Warning Valid Bars", minval=1, maxval=50, group=lgl_groupCore)
-lgl_cooldownBars = input.int(5, "Entry Cooldown Bars", minval=0, maxval=100, group=lgl_groupCore)
+//==================== CUSTOM CONTEXT DASHBOARD ====================//
+ctx_groupDash = "Custom Context Dashboard"
+ctx_showDashboard = input.bool(true, "Show Context Dashboard", group=ctx_groupDash)
+ctx_dashPositionInput = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=ctx_groupDash)
+ctx_minContextScore = input.int(4, "Minimum Context Score", minval=1, maxval=10, group=ctx_groupDash)
 
-lgl_groupFilter = "Custom Context Filters"
-lgl_useMSS = input.bool(true, "Use LuxAlgo MSS Direction", group=lgl_groupFilter)
-lgl_useLiquidity = input.bool(true, "Use LuxAlgo Liquidity Sweep", group=lgl_groupFilter)
-lgl_useFVG = input.bool(true, "Use LuxAlgo FVG", group=lgl_groupFilter)
-lgl_useOB = input.bool(true, "Use LuxAlgo Order Block", group=lgl_groupFilter)
-lgl_minScore = input.int(3, "Minimum Context Score", minval=1, maxval=8, group=lgl_groupFilter)
+ctx_dashPos(_pos) =>
+    _pos == "Top Left" ? position.top_left :
+     _pos == "Bottom Right" ? position.bottom_right :
+     _pos == "Bottom Left" ? position.bottom_left :
+     position.top_right
 
-lgl_groupRisk = "Custom TP / SL"
-lgl_atrLen = input.int(14, "ATR Length", minval=1, group=lgl_groupRisk)
-lgl_slAtrPad = input.float(0.30, "SL Padding ATR", minval=0.0, step=0.05, group=lgl_groupRisk)
-lgl_rr1 = input.float(1.0, "TP1 RR", minval=0.5, step=0.1, group=lgl_groupRisk)
-lgl_rr2 = input.float(2.0, "TP2 RR", minval=0.5, step=0.1, group=lgl_groupRisk)
+ctx_price(_x) =>
+    na(_x) ? "-" : str.tostring(_x, format.mintick)
 
-lgl_groupVis = "Custom Visuals"
-lgl_showWarnings = input.bool(true, "Show READY Labels", group=lgl_groupVis)
-lgl_showSignals = input.bool(true, "Show BUY / SELL Labels", group=lgl_groupVis)
-lgl_showTradeLevels = input.bool(true, "Show Entry / SL / TP", group=lgl_groupVis)
-lgl_levelBars = input.int(20, "Level Projection Bars", minval=5, maxval=100, group=lgl_groupVis)
+ctx_range(_a, _b) =>
+    na(_a) or na(_b) ? "-" : ctx_price(math.min(_a, _b)) + " - " + ctx_price(math.max(_a, _b))
 
-//==================== LUXALGO CONTEXT BRIDGE ====================//
-lgl_confirmed = lgl_confirmOnClose ? barstate.isconfirmed : true
-lgl_inKillzone = ny or ldn_open or ldn_close or asian
-lgl_killzoneOk = lgl_requireKillzone ? lgl_inKillzone : true
+ctx_join(_a, _b) =>
+    _a == "" ? _b : _b == "" ? _a : _a + " + " + _b
 
-lgl_bullMSS = MSS.dir == 1
-lgl_bearMSS = MSS.dir == -1
+//==================== READ LUXALGO CONTEXT ====================//
+ctx_mssBull = MSS.dir == 1
+ctx_mssBear = MSS.dir == -1
+ctx_mssText = ctx_mssBull ? "BULLISH" : ctx_mssBear ? "BEARISH" : "NEUTRAL"
 
-box lgl_buysideBox = na
-box lgl_sellsideBox = na
+ctx_inKillzone = ny or ldn_open or ldn_close or asian
+ctx_killzoneText = ny ? "New York" :
+     ldn_open ? "London Open" :
+     ldn_close ? "London Close" :
+     asian ? "Asian" :
+     "Off"
+
+//==================== LIQUIDITY CONTEXT ====================//
+box ctx_buysideBox = na
+box ctx_sellsideBox = na
+bool ctx_buysideBroken = false
+bool ctx_sellsideBroken = false
 
 if b_liq_B.size() > 0
-    lgl_buysideBox := b_liq_B.get(0).bx
+    ctx_buyside = b_liq_B.get(0)
+    ctx_buysideBox := ctx_buyside.bx
+    ctx_buysideBroken := ctx_buyside.broken
 
 if b_liq_S.size() > 0
-    lgl_sellsideBox := b_liq_S.get(0).bx
+    ctx_sellside = b_liq_S.get(0)
+    ctx_sellsideBox := ctx_sellside.bx
+    ctx_sellsideBroken := ctx_sellside.broken
 
-lgl_hasBuyside = not na(lgl_buysideBox)
-lgl_hasSellside = not na(lgl_sellsideBox)
+ctx_hasBuyside = not na(ctx_buysideBox)
+ctx_hasSellside = not na(ctx_sellsideBox)
 
-lgl_buysideTop = lgl_hasBuyside ? lgl_buysideBox.get_top() : na
-lgl_buysideBottom = lgl_hasBuyside ? lgl_buysideBox.get_bottom() : na
-lgl_sellsideTop = lgl_hasSellside ? lgl_sellsideBox.get_top() : na
-lgl_sellsideBottom = lgl_hasSellside ? lgl_sellsideBox.get_bottom() : na
+ctx_buysideTop = ctx_hasBuyside ? ctx_buysideBox.get_top() : na
+ctx_buysideBottom = ctx_hasBuyside ? ctx_buysideBox.get_bottom() : na
+ctx_sellsideTop = ctx_hasSellside ? ctx_sellsideBox.get_top() : na
+ctx_sellsideBottom = ctx_hasSellside ? ctx_sellsideBox.get_bottom() : na
 
-lgl_buysideSweep = lgl_useLiquidity and lgl_hasBuyside and high > lgl_buysideTop and close < lgl_buysideTop
-lgl_sellsideSweep = lgl_useLiquidity and lgl_hasSellside and low < lgl_sellsideBottom and close > lgl_sellsideBottom
+ctx_buysideSweep = ctx_hasBuyside and high > ctx_buysideTop and close < ctx_buysideTop
+ctx_sellsideSweep = ctx_hasSellside and low < ctx_sellsideBottom and close > ctx_sellsideBottom
 
-box lgl_bullFvgBox = na
-box lgl_bearFvgBox = na
-bool lgl_bullFvgActive = false
-bool lgl_bearFvgActive = false
+ctx_buysideText = ctx_hasBuyside ? "Buyside " + (ctx_buysideBroken or ctx_buysideSweep ? "Swept " : "Active ") + ctx_range(ctx_buysideTop, ctx_buysideBottom) : ""
+ctx_sellsideText = ctx_hasSellside ? "Sellside " + (ctx_sellsideBroken or ctx_sellsideSweep ? "Swept " : "Active ") + ctx_range(ctx_sellsideTop, ctx_sellsideBottom) : ""
+ctx_liquidityText = ctx_join(ctx_buysideText, ctx_sellsideText)
+ctx_liquidityText := ctx_liquidityText == "" ? "None" : ctx_liquidityText
+
+//==================== FVG CONTEXT ====================//
+box ctx_bullFvgBox = na
+box ctx_bearFvgBox = na
+bool ctx_bullFvgActive = false
+bool ctx_bearFvgActive = false
 
 if bFVG_UP.size() > 0
-    lgl_bullFvgBox := bFVG_UP.get(0).box
-    lgl_bullFvgActive := bFVG_UP.get(0).active and not na(lgl_bullFvgBox)
+    ctx_bullFvg = bFVG_UP.get(0)
+    ctx_bullFvgBox := ctx_bullFvg.box
+    ctx_bullFvgActive := ctx_bullFvg.active and not na(ctx_bullFvgBox)
 
 if bFVG_DN.size() > 0
-    lgl_bearFvgBox := bFVG_DN.get(0).box
-    lgl_bearFvgActive := bFVG_DN.get(0).active and not na(lgl_bearFvgBox)
+    ctx_bearFvg = bFVG_DN.get(0)
+    ctx_bearFvgBox := ctx_bearFvg.box
+    ctx_bearFvgActive := ctx_bearFvg.active and not na(ctx_bearFvgBox)
 
-lgl_bullFvgTop = lgl_bullFvgActive ? lgl_bullFvgBox.get_top() : na
-lgl_bullFvgBottom = lgl_bullFvgActive ? lgl_bullFvgBox.get_bottom() : na
-lgl_bearFvgTop = lgl_bearFvgActive ? lgl_bearFvgBox.get_top() : na
-lgl_bearFvgBottom = lgl_bearFvgActive ? lgl_bearFvgBox.get_bottom() : na
+ctx_bullFvgTop = ctx_bullFvgActive ? ctx_bullFvgBox.get_top() : na
+ctx_bullFvgBottom = ctx_bullFvgActive ? ctx_bullFvgBox.get_bottom() : na
+ctx_bearFvgTop = ctx_bearFvgActive ? ctx_bearFvgBox.get_top() : na
+ctx_bearFvgBottom = ctx_bearFvgActive ? ctx_bearFvgBox.get_bottom() : na
 
-lgl_inBullFvg = lgl_useFVG and lgl_bullFvgActive and low <= lgl_bullFvgTop and high >= lgl_bullFvgBottom
-lgl_inBearFvg = lgl_useFVG and lgl_bearFvgActive and high >= lgl_bearFvgBottom and low <= lgl_bearFvgTop
+ctx_bullFvgText = ctx_bullFvgActive ? "Bull FVG " + ctx_range(ctx_bullFvgTop, ctx_bullFvgBottom) : ""
+ctx_bearFvgText = ctx_bearFvgActive ? "Bear FVG " + ctx_range(ctx_bearFvgTop, ctx_bearFvgBottom) : ""
+ctx_fvgText = ctx_join(ctx_bullFvgText, ctx_bearFvgText)
+ctx_fvgText := ctx_fvgText == "" ? "None" : ctx_fvgText
 
-float lgl_bullObTop = na
-float lgl_bullObBottom = na
-float lgl_bearObTop = na
-float lgl_bearObBottom = na
+//==================== ORDER BLOCK CONTEXT ====================//
+float ctx_bullObTop = na
+float ctx_bullObBottom = na
+float ctx_bearObTop = na
+float ctx_bearObBottom = na
+bool ctx_bullObBreaker = false
+bool ctx_bearObBreaker = false
 
 if bullish_ob.size() > 0
-    lgl_bullObTop := bullish_ob.get(0).top
-    lgl_bullObBottom := bullish_ob.get(0).btm
+    ctx_bullOb = bullish_ob.get(0)
+    ctx_bullObTop := ctx_bullOb.top
+    ctx_bullObBottom := ctx_bullOb.btm
+    ctx_bullObBreaker := ctx_bullOb.breaker
 
 if bearish_ob.size() > 0
-    lgl_bearObTop := bearish_ob.get(0).top
-    lgl_bearObBottom := bearish_ob.get(0).btm
+    ctx_bearOb = bearish_ob.get(0)
+    ctx_bearObTop := ctx_bearOb.top
+    ctx_bearObBottom := ctx_bearOb.btm
+    ctx_bearObBreaker := ctx_bearOb.breaker
 
-lgl_hasBullOb = not na(lgl_bullObTop) and not na(lgl_bullObBottom)
-lgl_hasBearOb = not na(lgl_bearObTop) and not na(lgl_bearObBottom)
+ctx_hasBullOb = not na(ctx_bullObTop) and not na(ctx_bullObBottom)
+ctx_hasBearOb = not na(ctx_bearObTop) and not na(ctx_bearObBottom)
 
-lgl_inBullOb = lgl_useOB and lgl_hasBullOb and low <= lgl_bullObTop and high >= lgl_bullObBottom
-lgl_inBearOb = lgl_useOB and lgl_hasBearOb and high >= lgl_bearObBottom and low <= lgl_bearObTop
+ctx_bullObText = ctx_hasBullOb ? (ctx_bullObBreaker ? "Bull Breaker " : "Bull OB ") + ctx_range(ctx_bullObTop, ctx_bullObBottom) : ""
+ctx_bearObText = ctx_hasBearOb ? (ctx_bearObBreaker ? "Bear Breaker " : "Bear OB ") + ctx_range(ctx_bearObTop, ctx_bearObBottom) : ""
+ctx_obText = ctx_join(ctx_bullObText, ctx_bearObText)
+ctx_obText := ctx_obText == "" ? "None" : ctx_obText
 
-//==================== CUSTOM WARNING ENGINE ====================//
-lgl_bullBody = close > open
-lgl_bearBody = close < open
-lgl_body = math.abs(close - open)
-lgl_range = math.max(high - low, syminfo.mintick)
-lgl_upperWick = high - math.max(open, close)
-lgl_lowerWick = math.min(open, close) - low
+//==================== PRICE ACTION CONTEXT ====================//
+ctx_bodySafe = math.max(body, syminfo.mintick)
+ctx_barRange = math.max(high - low, syminfo.mintick)
+ctx_upperWick = high - math.max(open, close)
+ctx_lowerWick = math.min(open, close) - low
 
-lgl_bullEngulfing = close > open and close[1] < open[1] and close > open[1] and open <= close[1]
-lgl_bearEngulfing = close < open and close[1] > open[1] and close < open[1] and open >= close[1]
-lgl_bullPinbar = lgl_lowerWick > lgl_body * 1.5 and close > open and close > low + lgl_range * 0.60
-lgl_bearPinbar = lgl_upperWick > lgl_body * 1.5 and close < open and close < high - lgl_range * 0.60
+ctx_bullEngulfing = close > open and close[1] < open[1] and close > open[1] and open <= close[1]
+ctx_bearEngulfing = close < open and close[1] > open[1] and close < open[1] and open >= close[1]
 
-lgl_buyScore = 0
-lgl_buyScore += lgl_useMSS and lgl_bullMSS ? 1 : 0
-lgl_buyScore += lgl_sellsideSweep ? 2 : 0
-lgl_buyScore += lgl_inBullFvg ? 1 : 0
-lgl_buyScore += lgl_inBullOb ? 1 : 0
-lgl_buyScore += lgl_inKillzone ? 1 : 0
-lgl_buyScore += lgl_bullEngulfing or lgl_bullPinbar ? 1 : 0
+ctx_bullPinbar = ctx_lowerWick > ctx_bodySafe * 1.5 and close > open and close > low + ctx_barRange * 0.60
+ctx_bearPinbar = ctx_upperWick > ctx_bodySafe * 1.5 and close < open and close < high - ctx_barRange * 0.60
 
-lgl_sellScore = 0
-lgl_sellScore += lgl_useMSS and lgl_bearMSS ? 1 : 0
-lgl_sellScore += lgl_buysideSweep ? 2 : 0
-lgl_sellScore += lgl_inBearFvg ? 1 : 0
-lgl_sellScore += lgl_inBearOb ? 1 : 0
-lgl_sellScore += lgl_inKillzone ? 1 : 0
-lgl_sellScore += lgl_bearEngulfing or lgl_bearPinbar ? 1 : 0
+ctx_bullRejection = ctx_lowerWick > ctx_bodySafe and close > open
+ctx_bearRejection = ctx_upperWick > ctx_bodySafe and close < open
 
-lgl_buyContext = lgl_show and lgl_confirmed and lgl_killzoneOk and lgl_buyScore >= lgl_minScore and (lgl_sellsideSweep or lgl_inBullFvg or lgl_inBullOb)
-lgl_sellContext = lgl_show and lgl_confirmed and lgl_killzoneOk and lgl_sellScore >= lgl_minScore and (lgl_buysideSweep or lgl_inBearFvg or lgl_inBearOb)
+ctx_displacementText = L_bodyUP ? "Bullish Displacement" : L_bodyDN ? "Bearish Displacement" : "None"
 
-var int lgl_lastBuyWarningBar = na
-var int lgl_lastSellWarningBar = na
+ctx_priceActionText = ""
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bullEngulfing ? "Bull Engulfing" : "")
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bearEngulfing ? "Bear Engulfing" : "")
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bullPinbar ? "Bull Pinbar" : "")
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bearPinbar ? "Bear Pinbar" : "")
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bullRejection ? "Bull Rejection" : "")
+ctx_priceActionText := ctx_join(ctx_priceActionText, ctx_bearRejection ? "Bear Rejection" : "")
+ctx_priceActionText := ctx_priceActionText == "" ? "None" : ctx_priceActionText
 
-lgl_buyWarning = lgl_buyContext and (na(lgl_lastBuyWarningBar) or bar_index - lgl_lastBuyWarningBar > lgl_cooldownBars)
-lgl_sellWarning = lgl_sellContext and (na(lgl_lastSellWarningBar) or bar_index - lgl_lastSellWarningBar > lgl_cooldownBars)
+//==================== CONTEXT SCORE ====================//
+ctx_buyScore = 0
+ctx_buyScore += ctx_mssBull ? 2 : 0
+ctx_buyScore += ctx_inKillzone ? 1 : 0
+ctx_buyScore += ctx_hasSellside and not ctx_sellsideBroken ? 1 : 0
+ctx_buyScore += ctx_sellsideSweep ? 2 : 0
+ctx_buyScore += ctx_bullFvgActive ? 1 : 0
+ctx_buyScore += ctx_hasBullOb and not ctx_bullObBreaker ? 1 : 0
+ctx_buyScore += L_bodyUP ? 1 : 0
+ctx_buyScore += ctx_bullEngulfing or ctx_bullPinbar or ctx_bullRejection ? 1 : 0
 
-if lgl_buyWarning
-    lgl_lastBuyWarningBar := bar_index
+ctx_sellScore = 0
+ctx_sellScore += ctx_mssBear ? 2 : 0
+ctx_sellScore += ctx_inKillzone ? 1 : 0
+ctx_sellScore += ctx_hasBuyside and not ctx_buysideBroken ? 1 : 0
+ctx_sellScore += ctx_buysideSweep ? 2 : 0
+ctx_sellScore += ctx_bearFvgActive ? 1 : 0
+ctx_sellScore += ctx_hasBearOb and not ctx_bearObBreaker ? 1 : 0
+ctx_sellScore += L_bodyDN ? 1 : 0
+ctx_sellScore += ctx_bearEngulfing or ctx_bearPinbar or ctx_bearRejection ? 1 : 0
 
-if lgl_sellWarning
-    lgl_lastSellWarningBar := bar_index
+ctx_buyContext = ctx_buyScore >= ctx_minContextScore and ctx_buyScore > ctx_sellScore
+ctx_sellContext = ctx_sellScore >= ctx_minContextScore and ctx_sellScore > ctx_buyScore
+ctx_mixedContext = ctx_buyScore >= ctx_minContextScore and ctx_sellScore >= ctx_minContextScore and ctx_buyScore == ctx_sellScore
 
-lgl_buyWarningActive = not na(lgl_lastBuyWarningBar) and bar_index - lgl_lastBuyWarningBar <= lgl_warningWindow
-lgl_sellWarningActive = not na(lgl_lastSellWarningBar) and bar_index - lgl_lastSellWarningBar <= lgl_warningWindow
+ctx_contextBias = ctx_buyContext ? "BUY CONTEXT" : ctx_sellContext ? "SELL CONTEXT" : ctx_mixedContext ? "MIXED" : "WAIT"
+ctx_actionState = ctx_buyContext ? "BUY CONTEXT READY" : ctx_sellContext ? "SELL CONTEXT READY" : ctx_mixedContext ? "AVOID / MIXED" : "WAIT"
 
-//==================== CUSTOM ENTRY ENGINE ====================//
-lgl_buyTrigger = lgl_buyWarningActive and (lgl_bullEngulfing or lgl_bullPinbar or (lgl_sellsideSweep and lgl_bullBody) or (lgl_inBullFvg and lgl_bullBody) or (lgl_inBullOb and lgl_bullBody))
-lgl_sellTrigger = lgl_sellWarningActive and (lgl_bearEngulfing or lgl_bearPinbar or (lgl_buysideSweep and lgl_bearBody) or (lgl_inBearFvg and lgl_bearBody) or (lgl_inBearOb and lgl_bearBody))
+//==================== REASON TEXT ====================//
+ctx_buyReason = ""
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_mssBull ? "MSS Bull" : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_inKillzone ? ctx_killzoneText : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_sellsideSweep ? "Sellside Sweep " + ctx_range(ctx_sellsideTop, ctx_sellsideBottom) : "")
+ctx_buyReason := ctx_join(ctx_buyReason, not ctx_sellsideSweep and ctx_hasSellside ? "Sellside Liquidity " + ctx_range(ctx_sellsideTop, ctx_sellsideBottom) : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_bullFvgActive ? "Bull FVG " + ctx_range(ctx_bullFvgTop, ctx_bullFvgBottom) : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_hasBullOb ? "Bull OB " + ctx_range(ctx_bullObTop, ctx_bullObBottom) : "")
+ctx_buyReason := ctx_join(ctx_buyReason, L_bodyUP ? "Bull Displacement" : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_bullEngulfing ? "Bull Engulfing" : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_bullPinbar ? "Bull Pinbar" : "")
+ctx_buyReason := ctx_join(ctx_buyReason, ctx_bullRejection ? "Bull Rejection" : "")
 
-var int lgl_lastEntryBar = na
-lgl_entryCooldownOk = na(lgl_lastEntryBar) or bar_index - lgl_lastEntryBar > lgl_cooldownBars
+ctx_sellReason = ""
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_mssBear ? "MSS Bear" : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_inKillzone ? ctx_killzoneText : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_buysideSweep ? "Buyside Sweep " + ctx_range(ctx_buysideTop, ctx_buysideBottom) : "")
+ctx_sellReason := ctx_join(ctx_sellReason, not ctx_buysideSweep and ctx_hasBuyside ? "Buyside Liquidity " + ctx_range(ctx_buysideTop, ctx_buysideBottom) : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_bearFvgActive ? "Bear FVG " + ctx_range(ctx_bearFvgTop, ctx_bearFvgBottom) : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_hasBearOb ? "Bear OB " + ctx_range(ctx_bearObTop, ctx_bearObBottom) : "")
+ctx_sellReason := ctx_join(ctx_sellReason, L_bodyDN ? "Bear Displacement" : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_bearEngulfing ? "Bear Engulfing" : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_bearPinbar ? "Bear Pinbar" : "")
+ctx_sellReason := ctx_join(ctx_sellReason, ctx_bearRejection ? "Bear Rejection" : "")
 
-lgl_buySignalRaw = lgl_show and lgl_confirmed and lgl_entryCooldownOk and lgl_buyTrigger and lgl_buyScore > lgl_sellScore
-lgl_sellSignalRaw = lgl_show and lgl_confirmed and lgl_entryCooldownOk and lgl_sellTrigger and lgl_sellScore > lgl_buyScore
+ctx_reasonText = ctx_buyContext ? ctx_buyReason : ctx_sellContext ? ctx_sellReason : ctx_mixedContext ? "Mixed Context: Buy Score " + str.tostring(ctx_buyScore) + " / Sell Score " + str.tostring(ctx_sellScore) : "No dominant context"
 
-lgl_buySignal = lgl_buySignalRaw and not lgl_sellSignalRaw
-lgl_sellSignal = lgl_sellSignalRaw and not lgl_buySignalRaw
+//==================== DASHBOARD OUTPUT ====================//
+var table ctx_dash = table.new(ctx_dashPos(ctx_dashPositionInput), 2, 13, bgcolor=color.new(color.black, 15), border_width=1, border_color=color.gray)
 
-if lgl_buySignal or lgl_sellSignal
-    lgl_lastEntryBar := bar_index
+ctx_biasColor = ctx_buyContext ? color.new(color.lime, 15) : ctx_sellContext ? color.new(color.red, 15) : ctx_mixedContext ? color.new(color.orange, 15) : color.new(color.gray, 35)
 
-//==================== CUSTOM TP / SL ENGINE ====================//
-lgl_atr = ta.atr(lgl_atrLen)
+if ctx_showDashboard and barstate.islast
+    table.cell(ctx_dash, 0, 0, "LUX CONTEXT DASHBOARD", text_color=color.white, bgcolor=color.new(color.blue, 0))
+    table.cell(ctx_dash, 1, 0, syminfo.ticker, text_color=color.white, bgcolor=color.new(color.blue, 0))
 
-lgl_buyBaseSL = low
-lgl_buyBaseSL := lgl_hasSellside ? math.min(lgl_buyBaseSL, lgl_sellsideBottom) : lgl_buyBaseSL
-lgl_buyBaseSL := lgl_hasBullOb ? math.min(lgl_buyBaseSL, lgl_bullObBottom) : lgl_buyBaseSL
-lgl_buyBaseSL := lgl_bullFvgActive ? math.min(lgl_buyBaseSL, lgl_bullFvgBottom) : lgl_buyBaseSL
+    table.cell(ctx_dash, 0, 1, "Market Structure", text_color=color.white)
+    table.cell(ctx_dash, 1, 1, ctx_mssText, text_color=color.white, bgcolor=ctx_mssBull ? color.new(color.green, 25) : ctx_mssBear ? color.new(color.red, 25) : color.new(color.gray, 35))
 
-lgl_sellBaseSL = high
-lgl_sellBaseSL := lgl_hasBuyside ? math.max(lgl_sellBaseSL, lgl_buysideTop) : lgl_sellBaseSL
-lgl_sellBaseSL := lgl_hasBearOb ? math.max(lgl_sellBaseSL, lgl_bearObTop) : lgl_sellBaseSL
-lgl_sellBaseSL := lgl_bearFvgActive ? math.max(lgl_sellBaseSL, lgl_bearFvgTop) : lgl_sellBaseSL
+    table.cell(ctx_dash, 0, 2, "Killzone", text_color=color.white)
+    table.cell(ctx_dash, 1, 2, ctx_killzoneText, text_color=color.white, bgcolor=ctx_inKillzone ? color.new(color.teal, 25) : color.new(color.gray, 35))
 
-lgl_entry = close
-lgl_buySL = lgl_buyBaseSL - lgl_atr * lgl_slAtrPad
-lgl_sellSL = lgl_sellBaseSL + lgl_atr * lgl_slAtrPad
+    table.cell(ctx_dash, 0, 3, "Liquidity", text_color=color.white)
+    table.cell(ctx_dash, 1, 3, ctx_liquidityText, text_color=color.white)
 
-lgl_buyRisk = lgl_entry - lgl_buySL
-lgl_sellRisk = lgl_sellSL - lgl_entry
+    table.cell(ctx_dash, 0, 4, "FVG", text_color=color.white)
+    table.cell(ctx_dash, 1, 4, ctx_fvgText, text_color=color.white)
 
-lgl_buyRiskOk = lgl_buyRisk > syminfo.mintick
-lgl_sellRiskOk = lgl_sellRisk > syminfo.mintick
+    table.cell(ctx_dash, 0, 5, "Order Block", text_color=color.white)
+    table.cell(ctx_dash, 1, 5, ctx_obText, text_color=color.white)
 
-lgl_buyTP1 = lgl_entry + lgl_buyRisk * lgl_rr1
-lgl_buyTP2 = lgl_entry + lgl_buyRisk * lgl_rr2
-lgl_sellTP1 = lgl_entry - lgl_sellRisk * lgl_rr1
-lgl_sellTP2 = lgl_entry - lgl_sellRisk * lgl_rr2
+    table.cell(ctx_dash, 0, 6, "Displacement", text_color=color.white)
+    table.cell(ctx_dash, 1, 6, ctx_displacementText, text_color=color.white)
 
-//==================== CUSTOM VISUAL OUTPUT ====================//
-plotshape(lgl_showWarnings and lgl_buyWarning, title="CUSTOM READY BUY", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 15), text="READY\nBUY", textcolor=color.black, size=size.small)
-plotshape(lgl_showWarnings and lgl_sellWarning, title="CUSTOM READY SELL", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 15), text="READY\nSELL", textcolor=color.white, size=size.small)
+    table.cell(ctx_dash, 0, 7, "Price Action", text_color=color.white)
+    table.cell(ctx_dash, 1, 7, ctx_priceActionText, text_color=color.white)
 
-plotshape(lgl_showSignals and lgl_buySignal and lgl_buyRiskOk, title="CUSTOM BUY", style=shape.triangleup, location=location.belowbar, color=color.black, text="BUY", textcolor=color.black, size=size.small)
-plotshape(lgl_showSignals and lgl_sellSignal and lgl_sellRiskOk, title="CUSTOM SELL", style=shape.triangledown, location=location.abovebar, color=color.black, text="SELL", textcolor=color.black, size=size.small)
+    table.cell(ctx_dash, 0, 8, "Context Bias", text_color=color.white)
+    table.cell(ctx_dash, 1, 8, ctx_contextBias, text_color=color.white, bgcolor=ctx_biasColor)
 
-var line lgl_l_entry = na
-var line lgl_l_sl = na
-var line lgl_l_tp1 = na
-var line lgl_l_tp2 = na
+    table.cell(ctx_dash, 0, 9, "Buy Score", text_color=color.white)
+    table.cell(ctx_dash, 1, 9, str.tostring(ctx_buyScore), text_color=color.white, bgcolor=ctx_buyScore >= ctx_minContextScore ? color.new(color.green, 25) : color.new(color.gray, 35))
 
-var label lgl_lb_entry = na
-var label lgl_lb_sl = na
-var label lgl_lb_tp1 = na
-var label lgl_lb_tp2 = na
+    table.cell(ctx_dash, 0, 10, "Sell Score", text_color=color.white)
+    table.cell(ctx_dash, 1, 10, str.tostring(ctx_sellScore), text_color=color.white, bgcolor=ctx_sellScore >= ctx_minContextScore ? color.new(color.red, 25) : color.new(color.gray, 35))
 
-if lgl_showTradeLevels and ((lgl_buySignal and lgl_buyRiskOk) or (lgl_sellSignal and lgl_sellRiskOk))
-    if not na(lgl_l_entry)
-        line.delete(lgl_l_entry)
-    if not na(lgl_l_sl)
-        line.delete(lgl_l_sl)
-    if not na(lgl_l_tp1)
-        line.delete(lgl_l_tp1)
-    if not na(lgl_l_tp2)
-        line.delete(lgl_l_tp2)
-    if not na(lgl_lb_entry)
-        label.delete(lgl_lb_entry)
-    if not na(lgl_lb_sl)
-        label.delete(lgl_lb_sl)
-    if not na(lgl_lb_tp1)
-        label.delete(lgl_lb_tp1)
-    if not na(lgl_lb_tp2)
-        label.delete(lgl_lb_tp2)
+    table.cell(ctx_dash, 0, 11, "Action State", text_color=color.white)
+    table.cell(ctx_dash, 1, 11, ctx_actionState, text_color=color.white, bgcolor=ctx_biasColor)
 
-    lgl_sl = lgl_buySignal ? lgl_buySL : lgl_sellSL
-    lgl_tp1 = lgl_buySignal ? lgl_buyTP1 : lgl_sellTP1
-    lgl_tp2 = lgl_buySignal ? lgl_buyTP2 : lgl_sellTP2
-    lgl_side = lgl_buySignal ? "BUY" : "SELL"
-
-    lgl_l_entry := line.new(bar_index, lgl_entry, bar_index + lgl_levelBars, lgl_entry, color=color.new(#D8734A, 0), width=2)
-    lgl_l_sl := line.new(bar_index, lgl_sl, bar_index + lgl_levelBars, lgl_sl, color=color.new(#D45D50, 0), width=2)
-    lgl_l_tp1 := line.new(bar_index, lgl_tp1, bar_index + lgl_levelBars, lgl_tp1, color=color.new(#4A90E2, 0), width=2)
-    lgl_l_tp2 := line.new(bar_index, lgl_tp2, bar_index + lgl_levelBars, lgl_tp2, color=color.new(#4A90E2, 0), width=2)
-
-    lgl_lb_entry := label.new(bar_index + lgl_levelBars, lgl_entry, lgl_side + " Entry : " + str.tostring(lgl_entry, format.mintick), color=color.new(#D8734A, 0), textcolor=color.white, style=label.style_label_left, size=size.small)
-    lgl_lb_sl := label.new(bar_index + lgl_levelBars, lgl_sl, "Stoploss : " + str.tostring(lgl_sl, format.mintick), color=color.new(#D45D50, 0), textcolor=color.white, style=label.style_label_left, size=size.small)
-    lgl_lb_tp1 := label.new(bar_index + lgl_levelBars, lgl_tp1, "Take Profit 1 : " + str.tostring(lgl_tp1, format.mintick), color=color.new(#4A90E2, 0), textcolor=color.white, style=label.style_label_left, size=size.small)
-    lgl_lb_tp2 := label.new(bar_index + lgl_levelBars, lgl_tp2, "Take Profit 2 : " + str.tostring(lgl_tp2, format.mintick), color=color.new(#4A90E2, 0), textcolor=color.white, style=label.style_label_left, size=size.small)
-
-alertcondition(lgl_buyWarning, title="CUSTOM READY BUY", message="READY BUY: LuxAlgo context detected")
-alertcondition(lgl_sellWarning, title="CUSTOM READY SELL", message="READY SELL: LuxAlgo context detected")
-alertcondition(lgl_buySignal and lgl_buyRiskOk, title="CUSTOM BUY", message="BUY confirmed from LuxAlgo context")
-alertcondition(lgl_sellSignal and lgl_sellRiskOk, title="CUSTOM SELL", message="SELL confirmed from LuxAlgo context")
+    table.cell(ctx_dash, 0, 12, "Reason", text_color=color.white)
+    table.cell(ctx_dash, 1, 12, ctx_reasonText, text_color=color.white)
