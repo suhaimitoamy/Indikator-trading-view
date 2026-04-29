@@ -1487,6 +1487,11 @@ ent_reentryExpireBars = input.int(20, "Re-entry Expire Bars", minval=1, maxval=1
 ent_reentryMaxCount = input.int(1, "Max Re-entry Count", minval=0, maxval=5, group=ent_group)
 ent_hideEntryAfterTP1 = input.bool(false, "Hide Entry After TP1", group=ent_group)
 ent_keepSLAfterTP1 = input.bool(true, "Keep SL After TP1", group=ent_group)
+ent_showSellOTE = input.bool(true, "Show SELL ZONE (OTE)", group=ent_group)
+ent_oteSwingLen = input.int(5, "OTE Swing Length", minval=2, maxval=20, group=ent_group)
+ent_oteFib1 = input.float(0.618, "OTE Fib 0.618", minval=0.1, maxval=1.0, step=0.001, group=ent_group)
+ent_oteFib2 = input.float(0.790, "OTE Fib 0.79", minval=0.1, maxval=1.0, step=0.001, group=ent_group)
+ent_oteExtendBars = input.int(30, "OTE Extend Bars", minval=5, maxval=150, group=ent_group)
 
 ent_inZone(_top, _bottom) =>
     not na(_top) and not na(_bottom) and low <= math.max(_top, _bottom) and high >= math.min(_top, _bottom)
@@ -1533,6 +1538,119 @@ var label ent_lb_sl = na
 var label ent_lb_tp1 = na
 var label ent_lb_tp2 = na
 var label ent_lb_signal = na
+
+var float ent_oteLastHigh = na
+var int ent_oteLastHighBar = na
+var float ent_oteLastLow = na
+var int ent_oteLastLowBar = na
+var float ent_oteSellHigh = na
+var int ent_oteSellHighBar = na
+var float ent_oteSellLow = na
+var int ent_oteSellLowBar = na
+var box ent_oteBox = na
+var line ent_oteLine1 = na
+var line ent_oteLine2 = na
+var label ent_oteLabel = na
+var label ent_oteFib1Label = na
+var label ent_oteFib2Label = na
+
+ent_otePh = ta.pivothigh(high, ent_oteSwingLen, ent_oteSwingLen)
+ent_otePl = ta.pivotlow(low, ent_oteSwingLen, ent_oteSwingLen)
+
+if not na(ent_otePh)
+    ent_oteLastHigh := ent_otePh
+    ent_oteLastHighBar := bar_index - ent_oteSwingLen
+
+if not na(ent_otePl)
+    if not na(ent_oteLastHigh) and not na(ent_oteLastHighBar) and ent_oteLastHighBar < bar_index - ent_oteSwingLen and ent_oteLastHigh > ent_otePl
+        ent_oteSellHigh := ent_oteLastHigh
+        ent_oteSellHighBar := ent_oteLastHighBar
+        ent_oteSellLow := ent_otePl
+        ent_oteSellLowBar := bar_index - ent_oteSwingLen
+    ent_oteLastLow := ent_otePl
+    ent_oteLastLowBar := bar_index - ent_oteSwingLen
+
+ent_oteRange = ent_oteSellHigh - ent_oteSellLow
+ent_oteLevel1 = ent_oteSellLow + ent_oteRange * ent_oteFib1
+ent_oteLevel2 = ent_oteSellLow + ent_oteRange * ent_oteFib2
+ent_oteTop = math.max(ent_oteLevel1, ent_oteLevel2)
+ent_oteBottom = math.min(ent_oteLevel1, ent_oteLevel2)
+ent_oteLeft = ent_oteSellLowBar
+ent_oteRight = bar_index + ent_oteExtendBars
+ent_oteMidX = int(math.round((ent_oteLeft + ent_oteRight) / 2))
+ent_oteMidY = math.avg(ent_oteTop, ent_oteBottom)
+ent_oteValid = ent_showSellOTE and ctx_sellContext and not na(ent_oteSellHigh) and not na(ent_oteSellLow) and not na(ent_oteSellLowBar) and ent_oteRange > syminfo.mintick
+
+if ent_oteValid
+    if na(ent_oteBox)
+        ent_oteBox := box.new(ent_oteLeft, ent_oteTop, ent_oteRight, ent_oteBottom, bgcolor=color.new(color.red, 88), border_color=color.new(color.red, 35))
+    else
+        box.set_lefttop(ent_oteBox, ent_oteLeft, ent_oteTop)
+        box.set_rightbottom(ent_oteBox, ent_oteRight, ent_oteBottom)
+        box.set_bgcolor(ent_oteBox, color.new(color.red, 88))
+        box.set_border_color(ent_oteBox, color.new(color.red, 35))
+
+    if na(ent_oteLine1)
+        ent_oteLine1 := line.new(ent_oteLeft, ent_oteLevel1, ent_oteRight, ent_oteLevel1, color=color.new(color.red, 20), style=line.style_dashed)
+    else
+        line.set_xy1(ent_oteLine1, ent_oteLeft, ent_oteLevel1)
+        line.set_xy2(ent_oteLine1, ent_oteRight, ent_oteLevel1)
+        line.set_color(ent_oteLine1, color.new(color.red, 20))
+        line.set_style(ent_oteLine1, line.style_dashed)
+
+    if na(ent_oteLine2)
+        ent_oteLine2 := line.new(ent_oteLeft, ent_oteLevel2, ent_oteRight, ent_oteLevel2, color=color.new(color.red, 20), style=line.style_dashed)
+    else
+        line.set_xy1(ent_oteLine2, ent_oteLeft, ent_oteLevel2)
+        line.set_xy2(ent_oteLine2, ent_oteRight, ent_oteLevel2)
+        line.set_color(ent_oteLine2, color.new(color.red, 20))
+        line.set_style(ent_oteLine2, line.style_dashed)
+
+    if na(ent_oteLabel)
+        ent_oteLabel := label.new(ent_oteMidX, ent_oteMidY, "SELL ZONE (OTE)", style=label.style_label_center, color=color.new(color.red, 100), textcolor=color.new(color.red, 0), size=size.normal)
+    else
+        label.set_xy(ent_oteLabel, ent_oteMidX, ent_oteMidY)
+        label.set_text(ent_oteLabel, "SELL ZONE (OTE)")
+        label.set_color(ent_oteLabel, color.new(color.red, 100))
+        label.set_textcolor(ent_oteLabel, color.new(color.red, 0))
+        label.set_size(ent_oteLabel, size.normal)
+
+    if na(ent_oteFib1Label)
+        ent_oteFib1Label := label.new(ent_oteRight, ent_oteLevel1, "0.618", style=label.style_label_left, color=color.new(color.red, 100), textcolor=color.new(color.red, 0), size=size.tiny)
+    else
+        label.set_xy(ent_oteFib1Label, ent_oteRight, ent_oteLevel1)
+        label.set_text(ent_oteFib1Label, "0.618")
+        label.set_color(ent_oteFib1Label, color.new(color.red, 100))
+        label.set_textcolor(ent_oteFib1Label, color.new(color.red, 0))
+        label.set_size(ent_oteFib1Label, size.tiny)
+
+    if na(ent_oteFib2Label)
+        ent_oteFib2Label := label.new(ent_oteRight, ent_oteLevel2, "0.79", style=label.style_label_left, color=color.new(color.red, 100), textcolor=color.new(color.red, 0), size=size.tiny)
+    else
+        label.set_xy(ent_oteFib2Label, ent_oteRight, ent_oteLevel2)
+        label.set_text(ent_oteFib2Label, "0.79")
+        label.set_color(ent_oteFib2Label, color.new(color.red, 100))
+        label.set_textcolor(ent_oteFib2Label, color.new(color.red, 0))
+        label.set_size(ent_oteFib2Label, size.tiny)
+else
+    if not na(ent_oteBox)
+        box.delete(ent_oteBox)
+        ent_oteBox := na
+    if not na(ent_oteLine1)
+        line.delete(ent_oteLine1)
+        ent_oteLine1 := na
+    if not na(ent_oteLine2)
+        line.delete(ent_oteLine2)
+        ent_oteLine2 := na
+    if not na(ent_oteLabel)
+        label.delete(ent_oteLabel)
+        ent_oteLabel := na
+    if not na(ent_oteFib1Label)
+        label.delete(ent_oteFib1Label)
+        ent_oteFib1Label := na
+    if not na(ent_oteFib2Label)
+        label.delete(ent_oteFib2Label)
+        ent_oteFib2Label := na
 
 ent_buyReentryOverlap = ent_reentryZoneActive and ent_reentryDir == 1 and (ent_zoneOverlap(ent_reentryTop, ent_reentryBottom, ctx_bullFvgTop, ctx_bullFvgBottom) or ent_zoneOverlap(ent_reentryTop, ent_reentryBottom, ctx_bullObTop, ctx_bullObBottom) or ctx_sellsideSweep)
 ent_sellReentryOverlap = ent_reentryZoneActive and ent_reentryDir == -1 and (ent_zoneOverlap(ent_reentryTop, ent_reentryBottom, ctx_bearFvgTop, ctx_bearFvgBottom) or ent_zoneOverlap(ent_reentryTop, ent_reentryBottom, ctx_bearObTop, ctx_bearObBottom) or ctx_buysideSweep)
