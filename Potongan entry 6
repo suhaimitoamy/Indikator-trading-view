@@ -37,6 +37,7 @@ ent_pivotBufferPips = input.float(10.0, "Pivot TP Buffer Pips", minval=0.0, step
 ent_hideEntryAfterTP1 = input.bool(false, "Hide Entry After TP1", group=ent_group)
 ent_keepSLAfterTP1 = input.bool(true, "Keep SL After TP1", group=ent_group)
 
+// == FUNGSI BANTU == //
 ent_clamp(_x, _lo, _hi) =>
     math.max(_lo, math.min(_x, _hi))
 
@@ -109,6 +110,7 @@ ent_maxBelow(_base, _cur, _lvl) =>
         _out := na(_out) ? _lvl : math.max(_out, _lvl)
     _out
 
+// == DATA M5 == //
 [ent_m5Open, ent_m5High, ent_m5Low, ent_m5Close, ent_m5OpenPrev, ent_m5ClosePrev, ent_m5Body, ent_m5MeanBody, ent_m5Time] = request.security(syminfo.tickerid, "5", [open, high, low, close, open[1], close[1], math.abs(close - open), ta.sma(math.abs(close - open), len), time], barmerge.gaps_off, barmerge.lookahead_off)
 
 ent_isM5Chart = timeframe.isminutes and timeframe.multiplier == 5
@@ -139,6 +141,7 @@ ent_m5BearTriggerText = ent_m5BearEngulfing ? "M5 Bear Engulf" : ent_m5BearPinba
 
 ent_execMax = ent_pipToPrice(ent_execZonePips)
 
+// == ZONA EKSEKUSI == //
 float ent_buyZoneTop = na
 float ent_buyZoneBottom = na
 float ent_sellZoneTop = na
@@ -239,6 +242,7 @@ if not na(ent_sellZoneTop) and ctx_pricePct >= 75
 ent_buyZoneActive = not na(ent_buyZoneTop) and not na(ent_buyZoneBottom)
 ent_sellZoneActive = not na(ent_sellZoneTop) and not na(ent_sellZoneBottom)
 
+// == SYARAT VALIDITAS == //
 ent_invalidationOk = ctx_invalidationStatus == "VALID" or ctx_invalidationStatus == "NO BIAS"
 ent_buyInvalidBeforeEntry = ctx_biasDir == 1 and not na(ctx_biasInvalidLevel) and close <= ctx_biasInvalidLevel
 ent_sellInvalidBeforeEntry = ctx_biasDir == -1 and not na(ctx_biasInvalidLevel) and close >= ctx_biasInvalidLevel
@@ -255,23 +259,30 @@ ent_reversalSellAllowed = ent_enableReversal and ent_sellZoneActive and ent_reve
 ent_buyMode = ent_reversalBuyAllowed ? 2 : ent_trendBuyAllowed ? 1 : 0
 ent_sellMode = ent_reversalSellAllowed ? -2 : ent_trendSellAllowed ? -1 : 0
 
-ent_buyQuality = ent_buyMode == 1 ? ent_clamp(ctx_healthValue + ent_buyZoneScore * 0.35 - ctx_reversalRiskValue * 0.20, 0, 100) :
-     ent_buyMode == 2 ? ent_clamp(ctx_buyStrengthScore * 0.35 + ent_buyZoneScore * 0.55 + ctx_sellWeaknessScore * 0.20 + (ctx_pricePct <= 50 ? 10 : 0), 0, 100) :
+// == KUALITAS ENTRY DENGAN BOOST EKSPANSI == //
+ent_buyQuality = ent_buyMode == 1 ? ent_clamp(ctx_healthValue + ent_buyZoneScore * 0.35 - ctx_reversalRiskValue * 0.20 + (ctx_expansion ? 12 : 0), 0, 100) :
+     ent_buyMode == 2 ? ent_clamp(ctx_buyStrengthScore * 0.35 + ent_buyZoneScore * 0.55 + ctx_sellWeaknessScore * 0.20 + (ctx_pricePct <= 50 ? 10 : 0) + (ctx_expansion ? 10 : 0), 0, 100) :
      0
 
-ent_sellQuality = ent_sellMode == -1 ? ent_clamp(ctx_healthValue + ent_sellZoneScore * 0.35 - ctx_reversalRiskValue * 0.20, 0, 100) :
-     ent_sellMode == -2 ? ent_clamp(ctx_sellStrengthScore * 0.35 + ent_sellZoneScore * 0.55 + ctx_buyWeaknessScore * 0.20 + (ctx_pricePct >= 50 ? 10 : 0), 0, 100) :
+ent_sellQuality = ent_sellMode == -1 ? ent_clamp(ctx_healthValue + ent_sellZoneScore * 0.35 - ctx_reversalRiskValue * 0.20 + (ctx_expansion ? 12 : 0), 0, 100) :
+     ent_sellMode == -2 ? ent_clamp(ctx_sellStrengthScore * 0.35 + ent_sellZoneScore * 0.55 + ctx_buyWeaknessScore * 0.20 + (ctx_pricePct >= 50 ? 10 : 0) + (ctx_expansion ? 10 : 0), 0, 100) :
      0
 
 ent_buyDistFromZonePips = ent_priceToPips(ent_distToZone(close, ent_buyZoneTop, ent_buyZoneBottom))
 ent_sellDistFromZonePips = ent_priceToPips(ent_distToZone(close, ent_sellZoneTop, ent_sellZoneBottom))
 
-ent_buyLate = ent_buyZoneActive and ent_m5BullTrigger and ent_buyDistFromZonePips > ent_maxDistancePips
-ent_sellLate = ent_sellZoneActive and ent_m5BearTrigger and ent_sellDistFromZonePips > ent_maxDistancePips
+// == THRESHOLD TOO FAR DINAMIS == //
+ent_dynMaxDistPips = ctx_expansion ? ent_maxDistancePips * 1.6 :
+                     ctx_compression ? ent_maxDistancePips * 0.8 :
+                     ent_maxDistancePips
+
+ent_buyLate = ent_buyZoneActive and ent_m5BullTrigger and ent_buyDistFromZonePips > ent_dynMaxDistPips
+ent_sellLate = ent_sellZoneActive and ent_m5BearTrigger and ent_sellDistFromZonePips > ent_dynMaxDistPips
 
 ent_buySetup = ent_buyZoneActive and ent_m5BullTrigger and ent_buyQuality >= ent_minQuality and ent_buyMode != 0 and ent_invalidationOk and not ent_buyInvalidBeforeEntry and not ent_buyLate
 ent_sellSetup = ent_sellZoneActive and ent_m5BearTrigger and ent_sellQuality >= ent_minQuality and ent_sellMode != 0 and ent_invalidationOk and not ent_sellInvalidBeforeEntry and not ent_sellLate
 
+// == MANAJEMEN TRADE == //
 var int ent_tradeState = 0
 var float ent_activeEntry = na
 var float ent_activeSL = na
@@ -310,6 +321,7 @@ var box ent_b_sellZone = na
 var label ent_lb_buyZone = na
 var label ent_lb_sellZone = na
 
+// == TAMPILAN ZONA == //
 if ent_showZones and ent_buyZoneActive
     if na(ent_b_buyZone)
         ent_b_buyZone := box.new(bar_index, ent_buyZoneTop, bar_index + ent_levelBars, ent_buyZoneBottom, bgcolor=color.new(color.lime, 88), border_color=color.new(color.lime, 35))
@@ -356,6 +368,7 @@ else
         label.delete(ent_lb_sellZone)
         ent_lb_sellZone := na
 
+// == HIT TP1 == //
 ent_buyTP1Hit = ent_tradeState == 1 and not ent_tp1Hit and not na(ent_activeTP1) and high >= ent_activeTP1
 ent_sellTP1Hit = ent_tradeState == -1 and not ent_tp1Hit and not na(ent_activeTP1) and low <= ent_activeTP1
 
@@ -381,6 +394,7 @@ if ent_buyTP1Hit or ent_sellTP1Hit
         label.delete(ent_lb_sl)
         ent_lb_sl := na
 
+// == HIT SL / TP2 == //
 ent_buySLHit = ent_tradeState == 1 and not na(ent_activeSL) and low <= ent_activeSL
 ent_buyTP2Hit = ent_tradeState == 1 and not na(ent_activeTP2) and high >= ent_activeTP2
 ent_sellSLHit = ent_tradeState == -1 and not na(ent_activeSL) and high >= ent_activeSL
@@ -436,6 +450,7 @@ if ent_tradeClosed
 
 ent_flat = ent_lockUntilExit ? ent_tradeState == 0 : true
 
+// == MEKANISME READY & SIGNAL == //
 var int ent_lastReadyBar = na
 var int ent_lastSignalBar = na
 var int ent_lastReEntryBar = na
