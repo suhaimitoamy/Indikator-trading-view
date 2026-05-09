@@ -1,3 +1,32 @@
+//==================== ENTRY V8 CONTEXT MAPPING ====================//
+ctx_hasBullOb = ctx_bullObActive
+ctx_hasBearOb = ctx_bearObActive
+
+ctx_sellsideSweep = ctx_sslSwept
+ctx_buysideSweep = ctx_bslSwept
+
+ctx_sellsideTop = ctx_sslTop
+ctx_sellsideBottom = ctx_sslBtm
+
+ctx_buysideTop = ctx_bslTop
+ctx_buysideBottom = ctx_bslBtm
+
+ctx_biasDir = ctx_marketDir
+ctx_biasInvalidLevel = ctx_activeInvalid
+
+ctx_invalidationStatus = ctx_invalidNow ? "INVALID" :
+     ctx_nearInvalid ? "WARNING" :
+     ctx_marketDir == 0 ? "NO BIAS" :
+     "VALID"
+
+ctx_buyContext = ctx_marketDir == 1
+ctx_sellContext = ctx_marketDir == -1
+
+ctx_reversalRiskValue = ctx_clamp(ctx_reversalLevel * 20.0, 0.0, 100.0)
+
+ctx_contextBias = ctx_marketDirText
+ctx_healthText = ctx_strengthText
+
 //==================== CUSTOM ENTRY VISUAL ENGINE V8 ====================//
 ent_group = "Custom Entry Visual"
 ent_showEntry = input.bool(true, "Show Entry Visual", group=ent_group)
@@ -142,7 +171,7 @@ ent_maxBelow(_base, _cur, _lvl) =>
 [ent_m5Open, ent_m5High, ent_m5Low, ent_m5Close, ent_m5OpenPrev, ent_m5ClosePrev, ent_m5Body, ent_m5MeanBody, ent_m5Time] = request.security(syminfo.tickerid, "5", [open, high, low, close, open[1], close[1], math.abs(close - open), ta.sma(math.abs(close - open), len), time], barmerge.gaps_off, barmerge.lookahead_off)
 
 ent_isM5Chart = timeframe.isminutes and timeframe.multiplier == 5
-ent_m5Closed = ent_isM5Chart ? barstate.isconfirmed : ta.change(ent_m5Time)
+ent_m5Closed = ent_isM5Chart ? barstate.isconfirmed : ta.change(ent_m5Time) != 0
 
 ent_m5BodySafe = math.max(ent_m5Body, syminfo.mintick)
 ent_m5Range = math.max(ent_m5High - ent_m5Low, syminfo.mintick)
@@ -193,14 +222,14 @@ ent_sellZoneSource = ""
 ent_buyZoneScore = 0
 ent_sellZoneScore = 0
 
-ent_inBullFvg = ctx_bullFvgActive and ent_inZone(ctx_bullFvgTop, ctx_bullFvgBottom)
-ent_inBearFvg = ctx_bearFvgActive and ent_inZone(ctx_bearFvgTop, ctx_bearFvgBottom)
-ent_inBullOb = ctx_hasBullOb and ent_inZone(ctx_bullObTop, ctx_bullObBottom)
-ent_inBearOb = ctx_hasBearOb and ent_inZone(ctx_bearObTop, ctx_bearObBottom)
+ent_inBullFvg = ctx_bullFvgActive and ent_inZone(ctx_bullFvgTop, ctx_bullFvgBtm)
+ent_inBearFvg = ctx_bearFvgActive and ent_inZone(ctx_bearFvgTop, ctx_bearFvgBtm)
+ent_inBullOb = ctx_hasBullOb and ent_inZone(ctx_bullObTop, ctx_bullObBtm)
+ent_inBearOb = ctx_hasBearOb and ent_inZone(ctx_bearObTop, ctx_bearObBtm)
 
 if ent_inBullFvg
-    ent_tmpTop = ent_execTop(ctx_bullFvgTop, ctx_bullFvgBottom, ent_execMax)
-    ent_tmpBottom = ent_execBottom(ctx_bullFvgTop, ctx_bullFvgBottom, ent_execMax)
+    ent_tmpTop = ent_execTop(ctx_bullFvgTop, ctx_bullFvgBtm, ent_execMax)
+    ent_tmpBottom = ent_execBottom(ctx_bullFvgTop, ctx_bullFvgBtm, ent_execMax)
     ent_tmpDist = ent_distToZone(close, ent_tmpTop, ent_tmpBottom)
     ent_tmpScore = 40 + (ctx_pricePct <= 50 ? 10 : 0)
     if ent_tmpScore > ent_buyZoneScore or (ent_tmpScore == ent_buyZoneScore and (na(ent_buyBestDist) or ent_tmpDist < ent_buyBestDist))
@@ -211,8 +240,8 @@ if ent_inBullFvg
         ent_buyZoneSource := "M15 Bull FVG"
 
 if ent_inBullOb
-    ent_tmpTop = ent_execTop(ctx_bullObTop, ctx_bullObBottom, ent_execMax)
-    ent_tmpBottom = ent_execBottom(ctx_bullObTop, ctx_bullObBottom, ent_execMax)
+    ent_tmpTop = ent_execTop(ctx_bullObTop, ctx_bullObBtm, ent_execMax)
+    ent_tmpBottom = ent_execBottom(ctx_bullObTop, ctx_bullObBtm, ent_execMax)
     ent_tmpDist = ent_distToZone(close, ent_tmpTop, ent_tmpBottom)
     ent_tmpScore = 45 + (ctx_pricePct <= 50 ? 10 : 0)
     if ent_tmpScore > ent_buyZoneScore or (ent_tmpScore == ent_buyZoneScore and (na(ent_buyBestDist) or ent_tmpDist < ent_buyBestDist))
@@ -239,8 +268,8 @@ if not na(ent_buyZoneTop) and ctx_pricePct <= 25
     ent_buyZoneScore += 10
 
 if ent_inBearFvg
-    ent_tmpTop = ent_execTop(ctx_bearFvgTop, ctx_bearFvgBottom, ent_execMax)
-    ent_tmpBottom = ent_execBottom(ctx_bearFvgTop, ctx_bearFvgBottom, ent_execMax)
+    ent_tmpTop = ent_execTop(ctx_bearFvgTop, ctx_bearFvgBtm, ent_execMax)
+    ent_tmpBottom = ent_execBottom(ctx_bearFvgTop, ctx_bearFvgBtm, ent_execMax)
     ent_tmpDist = ent_distToZone(close, ent_tmpTop, ent_tmpBottom)
     ent_tmpScore = 40 + (ctx_pricePct >= 50 ? 10 : 0)
     if ent_tmpScore > ent_sellZoneScore or (ent_tmpScore == ent_sellZoneScore and (na(ent_sellBestDist) or ent_tmpDist < ent_sellBestDist))
@@ -251,8 +280,8 @@ if ent_inBearFvg
         ent_sellZoneSource := "M15 Bear FVG"
 
 if ent_inBearOb
-    ent_tmpTop = ent_execTop(ctx_bearObTop, ctx_bearObBottom, ent_execMax)
-    ent_tmpBottom = ent_execBottom(ctx_bearObTop, ctx_bearObBottom, ent_execMax)
+    ent_tmpTop = ent_execTop(ctx_bearObTop, ctx_bearObBtm, ent_execMax)
+    ent_tmpBottom = ent_execBottom(ctx_bearObTop, ctx_bearObBtm, ent_execMax)
     ent_tmpDist = ent_distToZone(close, ent_tmpTop, ent_tmpBottom)
     ent_tmpScore = 45 + (ctx_pricePct >= 50 ? 10 : 0)
     if ent_tmpScore > ent_sellZoneScore or (ent_tmpScore == ent_sellZoneScore and (na(ent_sellBestDist) or ent_tmpDist < ent_sellBestDist))
@@ -299,17 +328,33 @@ ent_sellMode = ent_reversalSellAllowed ? -2 : ent_trendSellAllowed ? -1 : 0
 
 ent_buyTrendAContext = ctx_dolDir == 1 and ctx_mssBull
 ent_sellTrendAContext = ctx_dolDir == -1 and ctx_mssBear
+
 ent_buyReversalAContext = ctx_sellsideSweep and ctx_bullPA and (ctx_mssBull or ctx_bullDisplacement)
 ent_sellReversalAContext = ctx_buysideSweep and ctx_bearPA and (ctx_mssBear or ctx_bearDisplacement)
 
-ent_buyContextForGrade = ent_buyMode == 1 ? ent_buyTrendAContext : ent_buyMode == 2 ? ent_buyReversalAContext : false
-ent_sellContextForGrade = ent_sellMode == -1 ? ent_sellTrendAContext : ent_sellMode == -2 ? ent_sellReversalAContext : false
+ent_buyContextForGrade = ent_buyMode == 1 ? ent_buyTrendAContext :
+     ent_buyMode == 2 ? ent_buyReversalAContext :
+     false
 
-ent_buyDolForGrade = ent_buyMode == 1 ? ctx_dolDir == 1 : ent_buyMode == 2 ? ctx_sellsideSweep : false
-ent_sellDolForGrade = ent_sellMode == -1 ? ctx_dolDir == -1 : ent_sellMode == -2 ? ctx_buysideSweep : false
+ent_sellContextForGrade = ent_sellMode == -1 ? ent_sellTrendAContext :
+     ent_sellMode == -2 ? ent_sellReversalAContext :
+     false
 
-ent_buyMssForGrade = ent_buyMode == 1 ? ctx_mssBull : ent_buyMode == 2 ? (ctx_mssBull or ctx_bullDisplacement) : false
-ent_sellMssForGrade = ent_sellMode == -1 ? ctx_mssBear : ent_sellMode == -2 ? (ctx_mssBear or ctx_bearDisplacement) : false
+ent_buyDolForGrade = ent_buyMode == 1 ? ctx_dolDir == 1 :
+     ent_buyMode == 2 ? ctx_sellsideSweep :
+     false
+
+ent_sellDolForGrade = ent_sellMode == -1 ? ctx_dolDir == -1 :
+     ent_sellMode == -2 ? ctx_buysideSweep :
+     false
+
+ent_buyMssForGrade = ent_buyMode == 1 ? ctx_mssBull :
+     ent_buyMode == 2 ? (ctx_mssBull or ctx_bullDisplacement) :
+     false
+
+ent_sellMssForGrade = ent_sellMode == -1 ? ctx_mssBear :
+     ent_sellMode == -2 ? (ctx_mssBear or ctx_bearDisplacement) :
+     false
 
 ent_buySweepForGrade = ent_buyMode == 2 ? ctx_sellsideSweep : ctx_sellsideSweep or ctx_dolDir == 1
 ent_sellSweepForGrade = ent_sellMode == -2 ? ctx_buysideSweep : ctx_buysideSweep or ctx_dolDir == -1
@@ -801,7 +846,9 @@ if ent_buySignal or ent_sellSignal
     ent_lb_tp2 := label.new(bar_index + ent_levelBars, ent_tp2, "TP2: " + str.tostring(ent_tp2, format.mintick) + " | " + str.tostring(ent_tp2Pips, "#") + " pips", style=label.style_label_left, color=ent_colTP, textcolor=ent_isBuy ? color.black : color.white, size=size.small)
 
 ent_sameBiasForReEntry = ent_activeBiasDir == ctx_biasDir
+
 ent_reEntryBuy = ent_showEntry and ent_showReEntry and ent_tradeState == 1 and not ent_tp1Hit and ent_sameBiasForReEntry and ent_invalidationOk and not na(ent_activeZoneTop) and not na(ent_activeZoneBottom) and bar_index > ent_activeSignalBar and low <= ent_activeZoneTop and high >= ent_activeZoneBottom and low > ent_activeSL and ent_m5BullTrigger and close > ent_activeZoneBottom and (na(ent_lastReEntryBar) or bar_index - ent_lastReEntryBar > ent_cooldownBars)
+
 ent_reEntrySell = ent_showEntry and ent_showReEntry and ent_tradeState == -1 and not ent_tp1Hit and ent_sameBiasForReEntry and ent_invalidationOk and not na(ent_activeZoneTop) and not na(ent_activeZoneBottom) and bar_index > ent_activeSignalBar and high >= ent_activeZoneBottom and low <= ent_activeZoneTop and high < ent_activeSL and ent_m5BearTrigger and close < ent_activeZoneTop and (na(ent_lastReEntryBar) or bar_index - ent_lastReEntryBar > ent_cooldownBars)
 
 if ent_reEntryBuy or ent_reEntrySell
