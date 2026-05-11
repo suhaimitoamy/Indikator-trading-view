@@ -1140,6 +1140,7 @@ bgcolor  (per    ? asian     ? asiaCss : na : na, editable = false)
 
 //-----------------------------------------------------------------------------}
 
+
 //==================== CUSTOM PIVOT LEVELS ====================//
 piv_group = "Custom Pivot Levels"
 piv_show = input.bool(true, "Show Pivot Levels", group=piv_group)
@@ -1772,7 +1773,7 @@ if ctx_showDashboard and barstate.islast
 if not ctx_showDashboard and barstate.islast
     table.clear(ctx_dash, 0, 0, 1, 12)
 
-//==================== ENTRY ICT M1 SCALPING ENGINE ====================//
+//==================== ENTRY ICT M1 AUTO BEST ENGINE ====================//
 ctx_hasBullOb = ctx_bullObActive
 ctx_hasBearOb = ctx_bearObActive
 
@@ -1799,8 +1800,10 @@ ctx_contextBias = ctx_marketDirText
 ctx_healthText = ctx_strengthText
 
 //==================== INPUT ====================//
-ent_group = "ICT M1 Scalping Entry"
+ent_group = "ICT M1 Auto Best Entry"
+
 ent_showEntry = input.bool(true, "Show Entry Visual", group=ent_group)
+ent_entryModelMode = input.string("Auto Best", "Entry Model Mode", options=["Auto Best", "2022 Mentorship", "Unicorn", "Inversion", "OTE"], group=ent_group)
 ent_showZones = input.bool(true, "Show Execution Zone", group=ent_group)
 ent_showReady = input.bool(true, "Show READY", group=ent_group)
 ent_showSteps = input.bool(true, "Show Sweep / CISD / MSS", group=ent_group)
@@ -1811,7 +1814,7 @@ ent_lockUntilExit = input.bool(true, "Lock Until TP2 / SL", group=ent_group)
 ent_sweepLookback = input.int(20, "Liquidity Sweep Lookback", minval=5, maxval=100, group=ent_group)
 ent_mssLookback = input.int(8, "MSS Structure Lookback", minval=3, maxval=50, group=ent_group)
 ent_setupExpireBars = input.int(30, "Setup Expire Bars", minval=5, maxval=150, group=ent_group)
-ent_fvgWaitBars = input.int(10, "Max Bars CISD/MSS to FVG", minval=1, maxval=50, group=ent_group)
+ent_fvgWaitBars = input.int(10, "Max Bars MSS to FVG", minval=1, maxval=50, group=ent_group)
 ent_confirmBars = input.int(12, "READY Valid Bars", minval=1, maxval=50, group=ent_group)
 ent_cooldownBars = input.int(3, "Entry Cooldown Bars", minval=0, maxval=50, group=ent_group)
 
@@ -1823,10 +1826,14 @@ ent_tp2Pips = input.float(200.0, "TP2 Pips", minval=20.0, step=10.0, group=ent_g
 ent_liqTpBufferPips = input.float(10.0, "Liquidity TP Buffer Pips", minval=0.0, step=5.0, group=ent_group)
 
 ent_dispBodyMult = input.float(1.0, "Displacement Body Mult", minval=0.5, maxval=3.0, step=0.1, group=ent_group)
-ent_minRetraceIntoFVG = input.bool(true, "Entry Must Touch FVG", group=ent_group)
-ent_useLiquidityTP = input.bool(true, "Use Nearest Liquidity For TP2", group=ent_group)
+ent_minRetraceIntoZone = input.bool(true, "Entry Must Retest Zone After READY", group=ent_group)
+ent_useLiquidityTP = input.bool(true, "Use Nearest Opposite Liquidity For TP2", group=ent_group)
 ent_moveBEAfterTP1 = input.bool(true, "Move SL to BE After TP1", group=ent_group)
 ent_levelBars = input.int(25, "Level Line Bars", minval=5, maxval=100, group=ent_group)
+
+ent_oteMinLegAtr = input.float(0.8, "OTE Min Expansion ATR", minval=0.2, maxval=5.0, step=0.1, group=ent_group)
+ent_oteRequirePoi = input.bool(true, "OTE Require POI Confluence", group=ent_group)
+ent_ifvgMaxAge = input.int(40, "IFVG Max Age Bars", minval=5, maxval=200, group=ent_group)
 
 //==================== HELPERS ====================//
 ent_clamp(_x, _lo, _hi) =>
@@ -1838,11 +1845,26 @@ ent_pipToPrice(_pips) =>
 ent_priceToPips(_price) =>
     _price * ent_pipsPerPoint
 
+ent_zoneHigh(_top, _bottom) =>
+    math.max(_top, _bottom)
+
+ent_zoneLow(_top, _bottom) =>
+    math.min(_top, _bottom)
+
 ent_inZone(_top, _bottom) =>
     not na(_top) and not na(_bottom) and low <= math.max(_top, _bottom) and high >= math.min(_top, _bottom)
 
 ent_priceInZone(_price, _top, _bottom) =>
     not na(_top) and not na(_bottom) and _price <= math.max(_top, _bottom) and _price >= math.min(_top, _bottom)
+
+ent_sweptBelow(_lvl) =>
+    not na(_lvl) and low < _lvl and close > _lvl
+
+ent_sweptAbove(_lvl) =>
+    not na(_lvl) and high > _lvl and close < _lvl
+
+ent_zonesOverlap(_aTop, _aBtm, _bTop, _bBtm) =>
+    not na(_aTop) and not na(_aBtm) and not na(_bTop) and not na(_bBtm) and math.min(math.max(_aTop, _aBtm), math.max(_bTop, _bBtm)) > math.max(math.min(_aTop, _aBtm), math.min(_bTop, _bBtm))
 
 ent_minAbove(_base, _cur, _lvl) =>
     float _out = _cur
@@ -1863,7 +1885,64 @@ ent_riskGrade(_riskPips) =>
      _riskPips <= ent_maxSLPips ? "C" :
      "D"
 
-//==================== STATE ====================//
+//==================== SESSION HIGH / LOW LIQUIDITY ====================//
+ent_sessionId = ny ? 1 : ldn_open ? 2 : ldn_close ? 3 : asian ? 4 : 0
+ent_newSession = ent_sessionId != 0 and ent_sessionId != nz(ent_sessionId[1])
+
+var float ent_sessionHigh = na
+var float ent_sessionLow = na
+
+if ent_newSession
+    ent_sessionHigh := high
+    ent_sessionLow := low
+else if ent_sessionId != 0
+    ent_sessionHigh := na(ent_sessionHigh) ? high : math.max(ent_sessionHigh, high)
+    ent_sessionLow := na(ent_sessionLow) ? low : math.min(ent_sessionLow, low)
+
+//==================== EQUAL HIGH / LOW LIQUIDITY ====================//
+ent_eqTol = atr * 0.10
+
+var float ent_prevPivotHigh = na
+var float ent_prevPivotLow = na
+var float ent_equalHigh = na
+var float ent_equalLow = na
+
+if not na(liq2_ph)
+    if not na(ent_prevPivotHigh) and math.abs(liq2_ph - ent_prevPivotHigh) <= ent_eqTol
+        ent_equalHigh := math.avg(liq2_ph, ent_prevPivotHigh)
+    ent_prevPivotHigh := liq2_ph
+
+if not na(liq2_pl)
+    if not na(ent_prevPivotLow) and math.abs(liq2_pl - ent_prevPivotLow) <= ent_eqTol
+        ent_equalLow := math.avg(liq2_pl, ent_prevPivotLow)
+    ent_prevPivotLow := liq2_pl
+
+//==================== BREAKER ZONE READ ====================//
+float ent_bullBreakerTop = na
+float ent_bullBreakerBtm = na
+bool ent_bullBreakerActive = false
+
+if bearish_ob.size() > 0
+    for i = 0 to bearish_ob.size() - 1
+        _ob = bearish_ob.get(i)
+        if _ob.breaker and not ent_bullBreakerActive
+            ent_bullBreakerTop := _ob.top
+            ent_bullBreakerBtm := _ob.btm
+            ent_bullBreakerActive := true
+
+float ent_bearBreakerTop = na
+float ent_bearBreakerBtm = na
+bool ent_bearBreakerActive = false
+
+if bullish_ob.size() > 0
+    for i = 0 to bullish_ob.size() - 1
+        _ob = bullish_ob.get(i)
+        if _ob.breaker and not ent_bearBreakerActive
+            ent_bearBreakerTop := _ob.top
+            ent_bearBreakerBtm := _ob.btm
+            ent_bearBreakerActive := true
+
+//==================== TRADE STATE ====================//
 var int ent_tradeState = 0
 var float ent_activeEntry = na
 var float ent_activeSL = na
@@ -1879,6 +1958,7 @@ var int ent_activeBiasDir = 0
 var string ent_snapMode = ""
 var string ent_snapSource = ""
 var string ent_snapGrade = ""
+var string ent_snapModel = ""
 
 var line ent_l_entry = na
 var line ent_l_sl = na
@@ -1898,6 +1978,39 @@ var label ent_lb_zone = na
 var label ent_lb_sweep = na
 var label ent_lb_cisd = na
 var label ent_lb_mss = na
+
+//==================== CORE SEQUENCE STATE ====================//
+var int ent_coreDir = 0
+var int ent_coreStage = 0
+var int ent_coreStartBar = na
+var int ent_coreCisdBar = na
+var int ent_coreMssBar = na
+var float ent_coreSweepExtreme = na
+var float ent_coreCisdLevel = na
+var float ent_coreMssLevel = na
+var float ent_coreLegHigh = na
+var float ent_coreLegLow = na
+var string ent_coreSweepSource = ""
+
+//==================== READY MODEL STATE ====================//
+var int ent_readyDir = 0
+var string ent_readyModel = ""
+var string ent_readyReason = ""
+var float ent_readyZoneTop = na
+var float ent_readyZoneBottom = na
+var float ent_readySweepExtreme = na
+var int ent_readyBar = na
+
+var int ent_lastReadyBar = na
+var int ent_lastSignalBar = na
+var int ent_lastReEntryBar = na
+
+bool ent_readyBuyRaw = false
+bool ent_readySellRaw = false
+bool ent_buySignal = false
+bool ent_sellSignal = false
+bool ent_reEntryBuy = false
+bool ent_reEntrySell = false
 
 //==================== TRADE MANAGEMENT ====================//
 ent_buyTP1Hit = ent_tradeState == 1 and not ent_tp1Hit and not na(ent_activeTP1) and high >= ent_activeTP1
@@ -1964,6 +2077,12 @@ if ent_tradeClosed
     if not na(ent_lb_reentry)
         label.delete(ent_lb_reentry)
         ent_lb_reentry := na
+    if not na(ent_b_zone)
+        box.delete(ent_b_zone)
+        ent_b_zone := na
+    if not na(ent_lb_zone)
+        label.delete(ent_lb_zone)
+        ent_lb_zone := na
 
     ent_tradeState := 0
     ent_activeEntry := na
@@ -1978,68 +2097,30 @@ if ent_tradeClosed
 
 ent_flat = ent_lockUntilExit ? ent_tradeState == 0 : true
 
-//==================== DELIVERY MEMORY FOR CISD ====================//
-var float ent_lastBearOpen = na
-var int ent_lastBearBar = na
-var float ent_lastBullOpen = na
-var int ent_lastBullBar = na
+//==================== READY / SETUP EXPIRY ====================//
+ent_readyExpired = ent_readyDir != 0 and not na(ent_readyBar) and bar_index - ent_readyBar > ent_confirmBars
+ent_setupExpired = ent_coreStage > 0 and not na(ent_coreStartBar) and bar_index - ent_coreStartBar > ent_setupExpireBars
 
-//==================== SEQUENCE STATE ====================//
-var int ent_seqDir = 0
-var int ent_seqStage = 0
-var int ent_seqStartBar = na
-var int ent_seqCisdBar = na
-var int ent_seqMssBar = na
-var float ent_seqSweepExtreme = na
-var float ent_seqCisdLevel = na
-var float ent_seqMssLevel = na
-var float ent_seqFvgTop = na
-var float ent_seqFvgBottom = na
-var int ent_seqFvgBar = na
-var string ent_seqSource = ""
+if ent_readyExpired or ent_setupExpired
+    ent_readyDir := 0
+    ent_readyModel := ""
+    ent_readyReason := ""
+    ent_readyZoneTop := na
+    ent_readyZoneBottom := na
+    ent_readySweepExtreme := na
+    ent_readyBar := na
 
-var int ent_lastReadyBar = na
-var int ent_lastSignalBar = na
-var int ent_lastReEntryBar = na
-
-bool ent_readyBuyRaw = false
-bool ent_readySellRaw = false
-bool ent_buySignal = false
-bool ent_sellSignal = false
-bool ent_reEntryBuy = false
-bool ent_reEntrySell = false
-
-ent_sessionOk = not ent_useKillzoneFilter or ctx_inKillzone
-ent_cooldownOk = na(ent_lastSignalBar) or bar_index - ent_lastSignalBar > ent_cooldownBars
-ent_canBuild = ent_showEntry and ent_sessionOk and ent_flat and ent_cooldownOk
-
-ent_priorLow = ta.lowest(low[1], ent_sweepLookback)
-ent_priorHigh = ta.highest(high[1], ent_sweepLookback)
-
-ent_localSSLSweep = not na(ent_priorLow) and low < ent_priorLow and close > ent_priorLow
-ent_localBSLSweep = not na(ent_priorHigh) and high > ent_priorHigh and close < ent_priorHigh
-
-ent_boxSSLSweep = not na(ctx_sellsideTop) and not na(ctx_sellsideBottom) and low < math.min(ctx_sellsideTop, ctx_sellsideBottom) and close > math.min(ctx_sellsideTop, ctx_sellsideBottom)
-ent_boxBSLSweep = not na(ctx_buysideTop) and not na(ctx_buysideBottom) and high > math.max(ctx_buysideTop, ctx_buysideBottom) and close < math.max(ctx_buysideTop, ctx_buysideBottom)
-
-ent_sweepBuyNow = ent_canBuild and barstate.isconfirmed and (ent_localSSLSweep or ent_boxSSLSweep)
-ent_sweepSellNow = ent_canBuild and barstate.isconfirmed and (ent_localBSLSweep or ent_boxBSLSweep)
-
-ent_setupExpired = ent_seqStage > 0 and not na(ent_seqStartBar) and bar_index - ent_seqStartBar > ent_setupExpireBars
-
-if ent_setupExpired
-    ent_seqDir := 0
-    ent_seqStage := 0
-    ent_seqStartBar := na
-    ent_seqCisdBar := na
-    ent_seqMssBar := na
-    ent_seqSweepExtreme := na
-    ent_seqCisdLevel := na
-    ent_seqMssLevel := na
-    ent_seqFvgTop := na
-    ent_seqFvgBottom := na
-    ent_seqFvgBar := na
-    ent_seqSource := ""
+    ent_coreDir := 0
+    ent_coreStage := 0
+    ent_coreStartBar := na
+    ent_coreCisdBar := na
+    ent_coreMssBar := na
+    ent_coreSweepExtreme := na
+    ent_coreCisdLevel := na
+    ent_coreMssLevel := na
+    ent_coreLegHigh := na
+    ent_coreLegLow := na
+    ent_coreSweepSource := ""
 
     if not na(ent_b_zone) and ent_tradeState == 0
         box.delete(ent_b_zone)
@@ -2051,73 +2132,159 @@ if ent_setupExpired
         label.delete(ent_lb_ready)
         ent_lb_ready := na
 
+//==================== DELIVERY MEMORY FOR OPTIONAL CISD ====================//
+var float ent_lastBearOpen = na
+var int ent_lastBearBar = na
+var float ent_lastBullOpen = na
+var int ent_lastBullBar = na
+
+//==================== CORE BUILD PERMISSION ====================//
+ent_sessionOk = not ent_useKillzoneFilter or ctx_inKillzone
+ent_cooldownOk = na(ent_lastSignalBar) or bar_index - ent_lastSignalBar > ent_cooldownBars
+ent_canBuild = ent_showEntry and ent_sessionOk and ent_flat and ent_cooldownOk and ent_readyDir == 0
+
+//==================== LIQUIDITY MAP SWEEP ====================//
+ent_priorLow = ta.lowest(low[1], ent_sweepLookback)
+ent_priorHigh = ta.highest(high[1], ent_sweepLookback)
+
+ent_localSSLSweep = not na(ent_priorLow) and low < ent_priorLow and close > ent_priorLow
+ent_localBSLSweep = not na(ent_priorHigh) and high > ent_priorHigh and close < ent_priorHigh
+
+ent_boxSSLSweep = not na(ctx_sellsideTop) and not na(ctx_sellsideBottom) and low < math.min(ctx_sellsideTop, ctx_sellsideBottom) and close > math.min(ctx_sellsideTop, ctx_sellsideBottom)
+ent_boxBSLSweep = not na(ctx_buysideTop) and not na(ctx_buysideBottom) and high > math.max(ctx_buysideTop, ctx_buysideBottom) and close < math.max(ctx_buysideTop, ctx_buysideBottom)
+
+ent_pdlSweep = ent_sweptBelow(liq2_pdl)
+ent_pdhSweep = ent_sweptAbove(liq2_pdh)
+
+ent_sslSweep = ent_sweptBelow(liq2_ssl)
+ent_bslSweep = ent_sweptAbove(liq2_bsl)
+
+ent_equalLowSweep = ent_sweptBelow(ent_equalLow)
+ent_equalHighSweep = ent_sweptAbove(ent_equalHigh)
+
+ent_sessionLowSweep = ent_sweptBelow(ent_sessionLow[1])
+ent_sessionHighSweep = ent_sweptAbove(ent_sessionHigh[1])
+
+ent_pivotSellsideSweep = ent_sweptBelow(piv_s1) or ent_sweptBelow(piv_s2) or ent_sweptBelow(piv_s3) or ent_sweptBelow(piv_s4) or ent_sweptBelow(piv_p)
+ent_pivotBuysideSweep = ent_sweptAbove(piv_r1) or ent_sweptAbove(piv_r2) or ent_sweptAbove(piv_r3) or ent_sweptAbove(piv_r4) or ent_sweptAbove(piv_p)
+
+ent_sweepBuyRaw = ent_localSSLSweep or ent_boxSSLSweep or ent_pdlSweep or ent_sslSweep or ent_equalLowSweep or ent_sessionLowSweep or ent_pivotSellsideSweep
+ent_sweepSellRaw = ent_localBSLSweep or ent_boxBSLSweep or ent_pdhSweep or ent_bslSweep or ent_equalHighSweep or ent_sessionHighSweep or ent_pivotBuysideSweep
+
+ent_sweepBuyNow = ent_canBuild and barstate.isconfirmed and ent_sweepBuyRaw
+ent_sweepSellNow = ent_canBuild and barstate.isconfirmed and ent_sweepSellRaw
+
+ent_buySweepSource =
+     ent_boxSSLSweep ? "ICT SSL Box Sweep" :
+     ent_pdlSweep ? "PDL Sweep" :
+     ent_sslSweep ? "SSL Swing Sweep" :
+     ent_equalLowSweep ? "Equal Low Sweep" :
+     ent_sessionLowSweep ? "Session Low Sweep" :
+     ent_pivotSellsideSweep ? "Pivot Sellside Sweep" :
+     ent_localSSLSweep ? "Local Low Sweep" :
+     "Sellside Sweep"
+
+ent_sellSweepSource =
+     ent_boxBSLSweep ? "ICT BSL Box Sweep" :
+     ent_pdhSweep ? "PDH Sweep" :
+     ent_bslSweep ? "BSL Swing Sweep" :
+     ent_equalHighSweep ? "Equal High Sweep" :
+     ent_sessionHighSweep ? "Session High Sweep" :
+     ent_pivotBuysideSweep ? "Pivot Buyside Sweep" :
+     ent_localBSLSweep ? "Local High Sweep" :
+     "Buyside Sweep"
+
 if ent_sweepBuyNow and not ent_sweepSellNow
-    ent_seqDir := 1
-    ent_seqStage := 1
-    ent_seqStartBar := bar_index
-    ent_seqCisdBar := na
-    ent_seqMssBar := na
-    ent_seqSweepExtreme := low
-    ent_seqCisdLevel := na(ent_lastBearOpen) ? open : ent_lastBearOpen
-    ent_seqMssLevel := ta.highest(high[1], ent_mssLookback)
-    ent_seqFvgTop := na
-    ent_seqFvgBottom := na
-    ent_seqFvgBar := na
-    ent_seqSource := ent_boxSSLSweep ? "SSL Sweep" : "Local Low Sweep"
+    ent_coreDir := 1
+    ent_coreStage := 1
+    ent_coreStartBar := bar_index
+    ent_coreCisdBar := na
+    ent_coreMssBar := na
+    ent_coreSweepExtreme := low
+    ent_coreCisdLevel := na(ent_lastBearOpen) ? open : ent_lastBearOpen
+    ent_coreMssLevel := ta.highest(high[1], ent_mssLookback)
+    ent_coreLegHigh := na
+    ent_coreLegLow := low
+    ent_coreSweepSource := ent_buySweepSource
+
+    if not na(ent_b_zone) and ent_tradeState == 0
+        box.delete(ent_b_zone)
+        ent_b_zone := na
+    if not na(ent_lb_zone) and ent_tradeState == 0
+        label.delete(ent_lb_zone)
+        ent_lb_zone := na
+    if not na(ent_lb_ready)
+        label.delete(ent_lb_ready)
+        ent_lb_ready := na
 
     if ent_showSteps
         if not na(ent_lb_sweep)
             label.delete(ent_lb_sweep)
-        ent_lb_sweep := label.new(bar_index, low, "SSL SWEEP", style=label.style_label_up, color=color.new(color.aqua, 10), textcolor=color.black, size=size.tiny)
+        ent_lb_sweep := label.new(bar_index, low, "SSL SWEEP\n" + ent_buySweepSource, style=label.style_label_up, color=color.new(color.aqua, 10), textcolor=color.black, size=size.tiny)
 
 if ent_sweepSellNow and not ent_sweepBuyNow
-    ent_seqDir := -1
-    ent_seqStage := 1
-    ent_seqStartBar := bar_index
-    ent_seqCisdBar := na
-    ent_seqMssBar := na
-    ent_seqSweepExtreme := high
-    ent_seqCisdLevel := na(ent_lastBullOpen) ? open : ent_lastBullOpen
-    ent_seqMssLevel := ta.lowest(low[1], ent_mssLookback)
-    ent_seqFvgTop := na
-    ent_seqFvgBottom := na
-    ent_seqFvgBar := na
-    ent_seqSource := ent_boxBSLSweep ? "BSL Sweep" : "Local High Sweep"
+    ent_coreDir := -1
+    ent_coreStage := 1
+    ent_coreStartBar := bar_index
+    ent_coreCisdBar := na
+    ent_coreMssBar := na
+    ent_coreSweepExtreme := high
+    ent_coreCisdLevel := na(ent_lastBullOpen) ? open : ent_lastBullOpen
+    ent_coreMssLevel := ta.lowest(low[1], ent_mssLookback)
+    ent_coreLegHigh := high
+    ent_coreLegLow := na
+    ent_coreSweepSource := ent_sellSweepSource
+
+    if not na(ent_b_zone) and ent_tradeState == 0
+        box.delete(ent_b_zone)
+        ent_b_zone := na
+    if not na(ent_lb_zone) and ent_tradeState == 0
+        label.delete(ent_lb_zone)
+        ent_lb_zone := na
+    if not na(ent_lb_ready)
+        label.delete(ent_lb_ready)
+        ent_lb_ready := na
 
     if ent_showSteps
         if not na(ent_lb_sweep)
             label.delete(ent_lb_sweep)
-        ent_lb_sweep := label.new(bar_index, high, "BSL SWEEP", style=label.style_label_down, color=color.new(color.fuchsia, 10), textcolor=color.white, size=size.tiny)
+        ent_lb_sweep := label.new(bar_index, high, "BSL SWEEP\n" + ent_sellSweepSource, style=label.style_label_down, color=color.new(color.fuchsia, 10), textcolor=color.white, size=size.tiny)
 
-//==================== CISD ====================//
-ent_cisdBuyNow = ent_seqDir == 1 and ent_seqStage == 1 and not na(ent_seqCisdLevel) and close > ent_seqCisdLevel and barstate.isconfirmed
-ent_cisdSellNow = ent_seqDir == -1 and ent_seqStage == 1 and not na(ent_seqCisdLevel) and close < ent_seqCisdLevel and barstate.isconfirmed
+if ent_coreDir == 1 and ent_coreStage > 0 and not na(ent_coreSweepExtreme)
+    ent_coreSweepExtreme := math.min(ent_coreSweepExtreme, low)
+
+if ent_coreDir == -1 and ent_coreStage > 0 and not na(ent_coreSweepExtreme)
+    ent_coreSweepExtreme := math.max(ent_coreSweepExtreme, high)
+
+//==================== OPTIONAL CISD ====================//
+ent_cisdBuyNow = ent_coreDir == 1 and ent_coreStage == 1 and na(ent_coreCisdBar) and not na(ent_coreCisdLevel) and close > ent_coreCisdLevel and barstate.isconfirmed
+ent_cisdSellNow = ent_coreDir == -1 and ent_coreStage == 1 and na(ent_coreCisdBar) and not na(ent_coreCisdLevel) and close < ent_coreCisdLevel and barstate.isconfirmed
 
 if ent_cisdBuyNow
-    ent_seqStage := 2
-    ent_seqCisdBar := bar_index
+    ent_coreCisdBar := bar_index
 
     if ent_showSteps
         if not na(ent_lb_cisd)
             label.delete(ent_lb_cisd)
-        ent_lb_cisd := label.new(bar_index, low, "Bull CISD", style=label.style_label_up, color=color.new(color.lime, 15), textcolor=color.black, size=size.tiny)
+        ent_lb_cisd := label.new(bar_index, low, "Bull CISD\nOptional", style=label.style_label_up, color=color.new(color.lime, 15), textcolor=color.black, size=size.tiny)
 
 if ent_cisdSellNow
-    ent_seqStage := 2
-    ent_seqCisdBar := bar_index
+    ent_coreCisdBar := bar_index
 
     if ent_showSteps
         if not na(ent_lb_cisd)
             label.delete(ent_lb_cisd)
-        ent_lb_cisd := label.new(bar_index, high, "Bear CISD", style=label.style_label_down, color=color.new(color.red, 15), textcolor=color.white, size=size.tiny)
+        ent_lb_cisd := label.new(bar_index, high, "Bear CISD\nOptional", style=label.style_label_down, color=color.new(color.red, 15), textcolor=color.white, size=size.tiny)
 
 //==================== MSS ====================//
-ent_mssBuyNow = ent_seqDir == 1 and ent_seqStage == 2 and not na(ent_seqMssLevel) and close > ent_seqMssLevel and barstate.isconfirmed
-ent_mssSellNow = ent_seqDir == -1 and ent_seqStage == 2 and not na(ent_seqMssLevel) and close < ent_seqMssLevel and barstate.isconfirmed
+ent_mssBuyNow = ent_coreDir == 1 and ent_coreStage == 1 and not na(ent_coreMssLevel) and close > ent_coreMssLevel and barstate.isconfirmed
+ent_mssSellNow = ent_coreDir == -1 and ent_coreStage == 1 and not na(ent_coreMssLevel) and close < ent_coreMssLevel and barstate.isconfirmed
 
 if ent_mssBuyNow
-    ent_seqStage := 3
-    ent_seqMssBar := bar_index
+    ent_coreStage := 2
+    ent_coreMssBar := bar_index
+    ent_coreLegHigh := high
+    ent_coreLegLow := ent_coreSweepExtreme
 
     if ent_showSteps
         if not na(ent_lb_mss)
@@ -2125,83 +2292,257 @@ if ent_mssBuyNow
         ent_lb_mss := label.new(bar_index, low, "Bull MSS", style=label.style_label_up, color=color.new(color.lime, 0), textcolor=color.black, size=size.tiny)
 
 if ent_mssSellNow
-    ent_seqStage := 3
-    ent_seqMssBar := bar_index
+    ent_coreStage := 2
+    ent_coreMssBar := bar_index
+    ent_coreLegHigh := ent_coreSweepExtreme
+    ent_coreLegLow := low
 
     if ent_showSteps
         if not na(ent_lb_mss)
             label.delete(ent_lb_mss)
         ent_lb_mss := label.new(bar_index, high, "Bear MSS", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
 
-//==================== DISPLACEMENT + FVG ====================//
+if ent_coreStage == 2 and ent_coreDir == 1
+    ent_coreLegHigh := na(ent_coreLegHigh) ? high : math.max(ent_coreLegHigh, high)
+    ent_coreLegLow := ent_coreSweepExtreme
+
+if ent_coreStage == 2 and ent_coreDir == -1
+    ent_coreLegHigh := ent_coreSweepExtreme
+    ent_coreLegLow := na(ent_coreLegLow) ? low : math.min(ent_coreLegLow, low)
+
+//==================== DISPLACEMENT + CURRENT FVG ====================//
 ent_bullDisplacementNow = close > open and body >= meanBody * ent_dispBodyMult
 ent_bearDisplacementNow = close < open and body >= meanBody * ent_dispBodyMult
 
 ent_bullFvgNow = low > high[2] and (ent_bullDisplacementNow or ent_bullDisplacementNow[1] or L_bodyUP or L_bodyUP[1])
 ent_bearFvgNow = high < low[2] and (ent_bearDisplacementNow or ent_bearDisplacementNow[1] or L_bodyDN or L_bodyDN[1])
 
-ent_waitingBullFvg = ent_seqDir == 1 and ent_seqStage == 3 and not na(ent_seqMssBar) and bar_index - ent_seqMssBar <= ent_fvgWaitBars
-ent_waitingBearFvg = ent_seqDir == -1 and ent_seqStage == 3 and not na(ent_seqMssBar) and bar_index - ent_seqMssBar <= ent_fvgWaitBars
+float ent_nowBullFvgTop = ent_bullFvgNow ? low : na
+float ent_nowBullFvgBtm = ent_bullFvgNow ? high[2] : na
+float ent_nowBearFvgTop = ent_bearFvgNow ? low[2] : na
+float ent_nowBearFvgBtm = ent_bearFvgNow ? high : na
 
-if ent_waitingBullFvg and ent_bullFvgNow and barstate.isconfirmed
-    ent_seqStage := 4
-    ent_seqFvgTop := low
-    ent_seqFvgBottom := high[2]
-    ent_seqFvgBar := bar_index
-    ent_readyBuyRaw := true
-    ent_lastReadyBar := bar_index
-    ent_seqSource := ent_seqSource + " + CISD + MSS + Bull FVG"
+ent_waitingBullFvg = ent_coreDir == 1 and ent_coreStage == 2 and not na(ent_coreMssBar) and bar_index - ent_coreMssBar <= ent_fvgWaitBars
+ent_waitingBearFvg = ent_coreDir == -1 and ent_coreStage == 2 and not na(ent_coreMssBar) and bar_index - ent_coreMssBar <= ent_fvgWaitBars
 
-if ent_waitingBearFvg and ent_bearFvgNow and barstate.isconfirmed
-    ent_seqStage := 4
-    ent_seqFvgTop := low[2]
-    ent_seqFvgBottom := high
-    ent_seqFvgBar := bar_index
-    ent_readySellRaw := true
+ent_cisdTxt = not na(ent_coreCisdBar) ? " + CISD" : ""
+
+//==================== MODEL 1: 2022 MENTORSHIP ====================//
+ent_2022BuyValid = ent_waitingBullFvg and ent_bullFvgNow
+ent_2022SellValid = ent_waitingBearFvg and ent_bearFvgNow
+
+float ent_2022BuyTop = ent_nowBullFvgTop
+float ent_2022BuyBtm = ent_nowBullFvgBtm
+float ent_2022SellTop = ent_nowBearFvgTop
+float ent_2022SellBtm = ent_nowBearFvgBtm
+
+//==================== MODEL 2: UNICORN ====================//
+ent_unicornBuyBase = ent_waitingBullFvg and ent_bullFvgNow and ent_bullBreakerActive
+ent_unicornSellBase = ent_waitingBearFvg and ent_bearFvgNow and ent_bearBreakerActive
+
+float ent_unicornBuyTop = na
+float ent_unicornBuyBtm = na
+bool ent_unicornBuyValid = false
+
+if ent_unicornBuyBase and ent_zonesOverlap(ent_nowBullFvgTop, ent_nowBullFvgBtm, ent_bullBreakerTop, ent_bullBreakerBtm)
+    ent_unicornBuyTop := math.min(math.max(ent_nowBullFvgTop, ent_nowBullFvgBtm), math.max(ent_bullBreakerTop, ent_bullBreakerBtm))
+    ent_unicornBuyBtm := math.max(math.min(ent_nowBullFvgTop, ent_nowBullFvgBtm), math.min(ent_bullBreakerTop, ent_bullBreakerBtm))
+    ent_unicornBuyValid := ent_unicornBuyTop > ent_unicornBuyBtm
+
+float ent_unicornSellTop = na
+float ent_unicornSellBtm = na
+bool ent_unicornSellValid = false
+
+if ent_unicornSellBase and ent_zonesOverlap(ent_nowBearFvgTop, ent_nowBearFvgBtm, ent_bearBreakerTop, ent_bearBreakerBtm)
+    ent_unicornSellTop := math.min(math.max(ent_nowBearFvgTop, ent_nowBearFvgBtm), math.max(ent_bearBreakerTop, ent_bearBreakerBtm))
+    ent_unicornSellBtm := math.max(math.min(ent_nowBearFvgTop, ent_nowBearFvgBtm), math.min(ent_bearBreakerTop, ent_bearBreakerBtm))
+    ent_unicornSellValid := ent_unicornSellTop > ent_unicornSellBtm
+
+//==================== MODEL 3: INVERSION / IFVG ====================//
+bool ent_inversionBuyValid = false
+bool ent_inversionSellValid = false
+
+float ent_inversionBuyTop = na
+float ent_inversionBuyBtm = na
+float ent_inversionSellTop = na
+float ent_inversionSellBtm = na
+
+if ent_coreDir == 1 and ent_coreStage == 2 and bFVG_DN.size() > 0
+    _maxDn = math.min(bFVG_DN.size() - 1, bxBack)
+    for i = 0 to _maxDn
+        _fvg = bFVG_DN.get(i)
+        _top = _fvg.box.get_top()
+        _btm = _fvg.box.get_bottom()
+        _left = _fvg.box.get_left()
+        if not ent_inversionBuyValid and not na(_top) and not na(_btm) and not na(_left)
+            _hi = math.max(_top, _btm)
+            _lo = math.min(_top, _btm)
+            _ageOk = bar_index - _left <= ent_ifvgMaxAge
+            if _ageOk and close > _hi and ent_bullDisplacementNow
+                ent_inversionBuyTop := _hi
+                ent_inversionBuyBtm := _lo
+                ent_inversionBuyValid := true
+
+if ent_coreDir == -1 and ent_coreStage == 2 and bFVG_UP.size() > 0
+    _maxUp = math.min(bFVG_UP.size() - 1, bxBack)
+    for i = 0 to _maxUp
+        _fvg = bFVG_UP.get(i)
+        _top = _fvg.box.get_top()
+        _btm = _fvg.box.get_bottom()
+        _left = _fvg.box.get_left()
+        if not ent_inversionSellValid and not na(_top) and not na(_btm) and not na(_left)
+            _hi = math.max(_top, _btm)
+            _lo = math.min(_top, _btm)
+            _ageOk = bar_index - _left <= ent_ifvgMaxAge
+            if _ageOk and close < _lo and ent_bearDisplacementNow
+                ent_inversionSellTop := _hi
+                ent_inversionSellBtm := _lo
+                ent_inversionSellValid := true
+
+//==================== MODEL 4: OTE ====================//
+float ent_oteBuyTop = na
+float ent_oteBuyBtm = na
+float ent_oteSellTop = na
+float ent_oteSellBtm = na
+
+ent_buyLegRange = ent_coreDir == 1 and ent_coreStage == 2 and not na(ent_coreLegHigh) and not na(ent_coreLegLow) ? ent_coreLegHigh - ent_coreLegLow : na
+ent_sellLegRange = ent_coreDir == -1 and ent_coreStage == 2 and not na(ent_coreLegHigh) and not na(ent_coreLegLow) ? ent_coreLegHigh - ent_coreLegLow : na
+
+if not na(ent_buyLegRange) and ent_buyLegRange > syminfo.mintick
+    ent_oteBuyTop := ent_coreLegHigh - ent_buyLegRange * 0.62
+    ent_oteBuyBtm := ent_coreLegHigh - ent_buyLegRange * 0.79
+
+if not na(ent_sellLegRange) and ent_sellLegRange > syminfo.mintick
+    ent_oteSellTop := ent_coreLegLow + ent_sellLegRange * 0.79
+    ent_oteSellBtm := ent_coreLegLow + ent_sellLegRange * 0.62
+
+ent_oteBuyPoi = ent_zonesOverlap(ent_oteBuyTop, ent_oteBuyBtm, ctx_bullFvgTop, ctx_bullFvgBtm) or ent_zonesOverlap(ent_oteBuyTop, ent_oteBuyBtm, ctx_bullObTop, ctx_bullObBtm) or ent_zonesOverlap(ent_oteBuyTop, ent_oteBuyBtm, ent_bullBreakerTop, ent_bullBreakerBtm)
+ent_oteSellPoi = ent_zonesOverlap(ent_oteSellTop, ent_oteSellBtm, ctx_bearFvgTop, ctx_bearFvgBtm) or ent_zonesOverlap(ent_oteSellTop, ent_oteSellBtm, ctx_bearObTop, ctx_bearObBtm) or ent_zonesOverlap(ent_oteSellTop, ent_oteSellBtm, ent_bearBreakerTop, ent_bearBreakerBtm)
+
+ent_oteBuyValid = ent_coreDir == 1 and ent_coreStage == 2 and not na(ent_coreMssBar) and bar_index > ent_coreMssBar and not na(ent_buyLegRange) and ent_buyLegRange >= atr * ent_oteMinLegAtr and (not ent_oteRequirePoi or ent_oteBuyPoi)
+ent_oteSellValid = ent_coreDir == -1 and ent_coreStage == 2 and not na(ent_coreMssBar) and bar_index > ent_coreMssBar and not na(ent_sellLegRange) and ent_sellLegRange >= atr * ent_oteMinLegAtr and (not ent_oteRequirePoi or ent_oteSellPoi)
+
+//==================== AUTO BEST SELECTOR ====================//
+ent_allowAuto = ent_entryModelMode == "Auto Best"
+ent_allow2022 = ent_allowAuto or ent_entryModelMode == "2022 Mentorship"
+ent_allowUnicorn = ent_allowAuto or ent_entryModelMode == "Unicorn"
+ent_allowInversion = ent_allowAuto or ent_entryModelMode == "Inversion"
+ent_allowOTE = ent_allowAuto or ent_entryModelMode == "OTE"
+
+int ent_candidateDir = 0
+string ent_candidateModel = ""
+string ent_candidateReason = ""
+float ent_candidateTop = na
+float ent_candidateBtm = na
+
+ent_canSelect = ent_showEntry and ent_sessionOk and ent_flat and ent_cooldownOk and ent_readyDir == 0
+
+if ent_canSelect
+    if ent_allowUnicorn and ent_unicornBuyValid
+        ent_candidateDir := 1
+        ent_candidateModel := "Unicorn"
+        ent_candidateTop := ent_unicornBuyTop
+        ent_candidateBtm := ent_unicornBuyBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Breaker + Bull FVG Overlap"
+    else if ent_allowUnicorn and ent_unicornSellValid
+        ent_candidateDir := -1
+        ent_candidateModel := "Unicorn"
+        ent_candidateTop := ent_unicornSellTop
+        ent_candidateBtm := ent_unicornSellBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Breaker + Bear FVG Overlap"
+    else if ent_allowInversion and ent_inversionBuyValid
+        ent_candidateDir := 1
+        ent_candidateModel := "Inversion"
+        ent_candidateTop := ent_inversionBuyTop
+        ent_candidateBtm := ent_inversionBuyBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Bear FVG Failed + Bull IFVG"
+    else if ent_allowInversion and ent_inversionSellValid
+        ent_candidateDir := -1
+        ent_candidateModel := "Inversion"
+        ent_candidateTop := ent_inversionSellTop
+        ent_candidateBtm := ent_inversionSellBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Bull FVG Failed + Bear IFVG"
+    else if ent_allowOTE and ent_oteBuyValid
+        ent_candidateDir := 1
+        ent_candidateModel := "OTE"
+        ent_candidateTop := ent_oteBuyTop
+        ent_candidateBtm := ent_oteBuyBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Expansion + OTE 0.62-0.79"
+    else if ent_allowOTE and ent_oteSellValid
+        ent_candidateDir := -1
+        ent_candidateModel := "OTE"
+        ent_candidateTop := ent_oteSellTop
+        ent_candidateBtm := ent_oteSellBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Expansion + OTE 0.62-0.79"
+    else if ent_allow2022 and ent_2022BuyValid
+        ent_candidateDir := 1
+        ent_candidateModel := "2022 Mentorship"
+        ent_candidateTop := ent_2022BuyTop
+        ent_candidateBtm := ent_2022BuyBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Bull FVG"
+    else if ent_allow2022 and ent_2022SellValid
+        ent_candidateDir := -1
+        ent_candidateModel := "2022 Mentorship"
+        ent_candidateTop := ent_2022SellTop
+        ent_candidateBtm := ent_2022SellBtm
+        ent_candidateReason := ent_coreSweepSource + ent_cisdTxt + " + MSS + Bear FVG"
+
+if ent_candidateDir != 0 and not na(ent_candidateTop) and not na(ent_candidateBtm)
+    ent_readyDir := ent_candidateDir
+    ent_readyModel := ent_candidateModel
+    ent_readyReason := ent_candidateReason
+    ent_readyZoneTop := ent_candidateTop
+    ent_readyZoneBottom := ent_candidateBtm
+    ent_readySweepExtreme := ent_coreSweepExtreme
+    ent_readyBar := bar_index
     ent_lastReadyBar := bar_index
-    ent_seqSource := ent_seqSource + " + CISD + MSS + Bear FVG"
+
+    ent_readyBuyRaw := ent_candidateDir == 1
+    ent_readySellRaw := ent_candidateDir == -1
+
+    if ent_showReady
+        if not na(ent_lb_ready)
+            label.delete(ent_lb_ready)
+
+        ent_readyText = ent_candidateDir == 1 ? "READY BUY ICT AUTO M1" : "READY SELL ICT AUTO M1"
+        ent_readyY = ent_candidateDir == 1 ? low : high
+        ent_readyStyle = ent_candidateDir == 1 ? label.style_label_up : label.style_label_down
+        ent_readyColor = ent_candidateDir == 1 ? color.new(color.lime, 10) : color.new(color.red, 10)
+        ent_readyTxtCol = ent_candidateDir == 1 ? color.black : color.white
+
+        ent_lb_ready := label.new(bar_index, ent_readyY, ent_readyText + "\nModel: " + ent_readyModel + "\n" + ent_readyReason, style=ent_readyStyle, color=ent_readyColor, textcolor=ent_readyTxtCol, size=size.tiny)
 
 //==================== READY ZONE VISUAL ====================//
-ent_readyActive = ent_seqStage == 4 and not na(ent_seqFvgBar) and bar_index - ent_seqFvgBar <= ent_confirmBars
+ent_readyActiveNow = ent_readyDir != 0 and not na(ent_readyBar) and bar_index - ent_readyBar <= ent_confirmBars
 
-if ent_showZones and ent_readyActive and not na(ent_seqFvgTop) and not na(ent_seqFvgBottom)
-    ent_zoneColor = ent_seqDir == 1 ? color.lime : color.red
-    ent_zoneText = ent_seqDir == 1 ? "BUY FVG EXEC ZONE" : "SELL FVG EXEC ZONE"
+if ent_showZones and ent_readyActiveNow and not na(ent_readyZoneTop) and not na(ent_readyZoneBottom)
+    ent_zoneColor = ent_readyDir == 1 ? color.lime : color.red
+    ent_zoneText = ent_readyDir == 1 ? "BUY " + ent_readyModel + " ZONE" : "SELL " + ent_readyModel + " ZONE"
 
     if na(ent_b_zone)
-        ent_b_zone := box.new(bar_index, ent_seqFvgTop, bar_index + ent_levelBars, ent_seqFvgBottom, bgcolor=color.new(ent_zoneColor, 88), border_color=color.new(ent_zoneColor, 35))
+        ent_b_zone := box.new(bar_index, ent_readyZoneTop, bar_index + ent_levelBars, ent_readyZoneBottom, bgcolor=color.new(ent_zoneColor, 88), border_color=color.new(ent_zoneColor, 35))
     else
-        box.set_lefttop(ent_b_zone, bar_index, ent_seqFvgTop)
-        box.set_rightbottom(ent_b_zone, bar_index + ent_levelBars, ent_seqFvgBottom)
+        box.set_lefttop(ent_b_zone, bar_index, ent_readyZoneTop)
+        box.set_rightbottom(ent_b_zone, bar_index + ent_levelBars, ent_readyZoneBottom)
         box.set_bgcolor(ent_b_zone, color.new(ent_zoneColor, 88))
         box.set_border_color(ent_b_zone, color.new(ent_zoneColor, 35))
 
     if na(ent_lb_zone)
-        ent_lb_zone := label.new(bar_index + ent_levelBars, math.avg(ent_seqFvgTop, ent_seqFvgBottom), ent_zoneText, style=label.style_label_left, color=color.new(ent_zoneColor, 85), textcolor=ent_zoneColor, size=size.tiny)
+        ent_lb_zone := label.new(bar_index + ent_levelBars, math.avg(ent_readyZoneTop, ent_readyZoneBottom), ent_zoneText, style=label.style_label_left, color=color.new(ent_zoneColor, 85), textcolor=ent_zoneColor, size=size.tiny)
     else
-        label.set_xy(ent_lb_zone, bar_index + ent_levelBars, math.avg(ent_seqFvgTop, ent_seqFvgBottom))
+        label.set_xy(ent_lb_zone, bar_index + ent_levelBars, math.avg(ent_readyZoneTop, ent_readyZoneBottom))
         label.set_text(ent_lb_zone, ent_zoneText)
         label.set_color(ent_lb_zone, color.new(ent_zoneColor, 85))
         label.set_textcolor(ent_lb_zone, ent_zoneColor)
 
-if ent_showReady and (ent_readyBuyRaw or ent_readySellRaw)
-    if not na(ent_lb_ready)
-        label.delete(ent_lb_ready)
-
-    ent_readyText = ent_readyBuyRaw ? "READY BUY ICT M1" : "READY SELL ICT M1"
-    ent_readyY = ent_readyBuyRaw ? low : high
-    ent_readyStyle = ent_readyBuyRaw ? label.style_label_up : label.style_label_down
-    ent_readyColor = ent_readyBuyRaw ? color.new(color.lime, 10) : color.new(color.red, 10)
-    ent_readyTxtCol = ent_readyBuyRaw ? color.black : color.white
-
-    ent_lb_ready := label.new(bar_index, ent_readyY, ent_readyText + "\n" + ent_seqSource, style=ent_readyStyle, color=ent_readyColor, textcolor=ent_readyTxtCol, size=size.tiny)
-
 //==================== ENTRY SIGNAL ====================//
-ent_buyZoneTouched = ent_readyActive and ent_seqDir == 1 and ent_inZone(ent_seqFvgTop, ent_seqFvgBottom)
-ent_sellZoneTouched = ent_readyActive and ent_seqDir == -1 and ent_inZone(ent_seqFvgTop, ent_seqFvgBottom)
+ent_retraceAllowed = not ent_minRetraceIntoZone or bar_index > ent_readyBar
 
-ent_buyTrigger = ent_buyZoneTouched and (close > open or close > math.max(ent_seqFvgTop, ent_seqFvgBottom))
-ent_sellTrigger = ent_sellZoneTouched and (close < open or close < math.min(ent_seqFvgTop, ent_seqFvgBottom))
+ent_buyZoneTouched = ent_readyActiveNow and ent_retraceAllowed and ent_readyDir == 1 and ent_inZone(ent_readyZoneTop, ent_readyZoneBottom)
+ent_sellZoneTouched = ent_readyActiveNow and ent_retraceAllowed and ent_readyDir == -1 and ent_inZone(ent_readyZoneTop, ent_readyZoneBottom)
+
+ent_buyTrigger = ent_buyZoneTouched and (close > open or close > math.max(ent_readyZoneTop, ent_readyZoneBottom))
+ent_sellTrigger = ent_sellZoneTouched and (close < open or close < math.min(ent_readyZoneTop, ent_readyZoneBottom))
 
 ent_buyEntry = close
 ent_sellEntry = close
@@ -2211,8 +2552,8 @@ ent_tp1Price = ent_pipToPrice(ent_tp1Pips)
 ent_tp2Price = ent_pipToPrice(ent_tp2Pips)
 ent_liqBufferPrice = ent_pipToPrice(ent_liqTpBufferPips)
 
-ent_buySL = ent_seqSweepExtreme - ent_slPadPrice
-ent_sellSL = ent_seqSweepExtreme + ent_slPadPrice
+ent_buySL = ent_readySweepExtreme - ent_slPadPrice
+ent_sellSL = ent_readySweepExtreme + ent_slPadPrice
 
 ent_buyRisk = ent_buyEntry - ent_buySL
 ent_sellRisk = ent_sellSL - ent_sellEntry
@@ -2220,11 +2561,15 @@ ent_sellRisk = ent_sellSL - ent_sellEntry
 ent_buyRiskPips = ent_priceToPips(ent_buyRisk)
 ent_sellRiskPips = ent_priceToPips(ent_sellRisk)
 
+//==================== TP2 NEAREST OPPOSITE LIQUIDITY ====================//
 float ent_buyNearestLiq = na
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, ctx_bslTop)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, ctx_bslBtm)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, liq2_bsl)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, liq2_pdh)
+ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, ent_equalHigh)
+ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, ent_sessionHigh)
+ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, piv_p)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, piv_r1)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, piv_r2)
 ent_buyNearestLiq := ent_minAbove(ent_buyEntry, ent_buyNearestLiq, piv_r3)
@@ -2235,6 +2580,9 @@ ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, ctx_sslTop
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, ctx_sslBtm)
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, liq2_ssl)
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, liq2_pdl)
+ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, ent_equalLow)
+ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, ent_sessionLow)
+ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, piv_p)
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, piv_s1)
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, piv_s2)
 ent_sellNearestLiq := ent_maxBelow(ent_sellEntry, ent_sellNearestLiq, piv_s3)
@@ -2251,8 +2599,8 @@ ent_sellTP2 := ent_sellTP2 >= ent_sellEntry ? ent_sellEntry - ent_tp2Price : ent
 ent_buyRiskOk = ent_buyRisk > syminfo.mintick and ent_buyRiskPips <= ent_maxSLPips
 ent_sellRiskOk = ent_sellRisk > syminfo.mintick and ent_sellRiskPips <= ent_maxSLPips
 
-ent_buySignal := ent_showEntry and ent_flat and ent_cooldownOk and ent_readyActive and ent_buyTrigger and ent_buyRiskOk and barstate.isconfirmed
-ent_sellSignal := ent_showEntry and ent_flat and ent_cooldownOk and ent_readyActive and ent_sellTrigger and ent_sellRiskOk and barstate.isconfirmed
+ent_buySignal := ent_showEntry and ent_flat and ent_cooldownOk and ent_readyActiveNow and ent_buyTrigger and ent_buyRiskOk and barstate.isconfirmed
+ent_sellSignal := ent_showEntry and ent_flat and ent_cooldownOk and ent_readyActiveNow and ent_sellTrigger and ent_sellRiskOk and barstate.isconfirmed
 
 //==================== CREATE ENTRY VISUAL ====================//
 if ent_buySignal or ent_sellSignal
@@ -2296,16 +2644,17 @@ if ent_buySignal or ent_sellSignal
     ent_activeSL := ent_sl
     ent_activeTP1 := ent_tp1
     ent_activeTP2 := ent_tp2
-    ent_activeZoneTop := ent_seqFvgTop
-    ent_activeZoneBottom := ent_seqFvgBottom
+    ent_activeZoneTop := ent_readyZoneTop
+    ent_activeZoneBottom := ent_readyZoneBottom
     ent_activeSignalBar := bar_index
     ent_activeBiasDir := ctx_biasDir
     ent_tradeState := ent_isBuy ? 1 : -1
     ent_tp1Hit := false
     ent_exitReason := ""
 
-    ent_snapMode := ent_isBuy ? "BUY ICT M1" : "SELL ICT M1"
-    ent_snapSource := ent_seqSource
+    ent_snapMode := ent_isBuy ? "BUY ICT AUTO M1" : "SELL ICT AUTO M1"
+    ent_snapModel := ent_readyModel
+    ent_snapSource := ent_readyReason
     ent_snapGrade := ent_grade
 
     ent_colEntry = ent_isBuy ? color.new(color.lime, 0) : color.new(color.red, 0)
@@ -2317,7 +2666,7 @@ if ent_buySignal or ent_sellSignal
     ent_l_tp1 := line.new(bar_index, ent_tp1, bar_index + ent_levelBars, ent_tp1, color=ent_colTP, width=1, style=line.style_dashed)
     ent_l_tp2 := line.new(bar_index, ent_tp2, bar_index + ent_levelBars, ent_tp2, color=ent_colTP, width=1, style=line.style_dashed)
 
-    ent_signalLabelText = ent_snapMode + " | Grade " + ent_snapGrade + "\nEntry: " + str.tostring(ent_entry, format.mintick) + "\nSL: " + str.tostring(ent_sl, format.mintick) + " | " + str.tostring(ent_riskPips, "#") + " pips\nTP1: " + str.tostring(ent_tp1, format.mintick) + "\nTP2: " + str.tostring(ent_tp2, format.mintick) + "\nSource: " + ctx_clip(ent_snapSource, 38)
+    ent_signalLabelText = ent_snapMode + " | Grade " + ent_snapGrade + "\nModel: " + ent_snapModel + "\nEntry: " + str.tostring(ent_entry, format.mintick) + "\nSL: " + str.tostring(ent_sl, format.mintick) + " | " + str.tostring(ent_riskPips, "#") + " pips\nTP1: " + str.tostring(ent_tp1, format.mintick) + "\nTP2: " + str.tostring(ent_tp2, format.mintick) + "\nSource: " + ctx_clip(ent_snapSource, 38)
 
     ent_lb_signal := label.new(bar_index, ent_isBuy ? low : high, ent_signalLabelText, style=ent_isBuy ? label.style_label_up : label.style_label_down, color=ent_colEntry, textcolor=ent_isBuy ? color.black : color.white, size=size.small)
     ent_lb_entry := label.new(bar_index + ent_levelBars, ent_entry, "Entry: " + str.tostring(ent_entry, format.mintick), style=label.style_label_left, color=ent_colEntry, textcolor=ent_isBuy ? color.black : color.white, size=size.small)
@@ -2325,18 +2674,25 @@ if ent_buySignal or ent_sellSignal
     ent_lb_tp1 := label.new(bar_index + ent_levelBars, ent_tp1, "TP1: " + str.tostring(ent_tp1, format.mintick) + " | " + str.tostring(ent_tp1Pips, "#") + " pips", style=label.style_label_left, color=ent_colTP, textcolor=ent_isBuy ? color.black : color.white, size=size.small)
     ent_lb_tp2 := label.new(bar_index + ent_levelBars, ent_tp2, "TP2: " + str.tostring(ent_tp2, format.mintick), style=label.style_label_left, color=ent_colTP, textcolor=ent_isBuy ? color.black : color.white, size=size.small)
 
-    ent_seqDir := 0
-    ent_seqStage := 0
-    ent_seqStartBar := na
-    ent_seqCisdBar := na
-    ent_seqMssBar := na
-    ent_seqSweepExtreme := na
-    ent_seqCisdLevel := na
-    ent_seqMssLevel := na
-    ent_seqFvgTop := na
-    ent_seqFvgBottom := na
-    ent_seqFvgBar := na
-    ent_seqSource := ""
+    ent_readyDir := 0
+    ent_readyModel := ""
+    ent_readyReason := ""
+    ent_readyZoneTop := na
+    ent_readyZoneBottom := na
+    ent_readySweepExtreme := na
+    ent_readyBar := na
+
+    ent_coreDir := 0
+    ent_coreStage := 0
+    ent_coreStartBar := na
+    ent_coreCisdBar := na
+    ent_coreMssBar := na
+    ent_coreSweepExtreme := na
+    ent_coreCisdLevel := na
+    ent_coreMssLevel := na
+    ent_coreLegHigh := na
+    ent_coreLegLow := na
+    ent_coreSweepSource := ""
 
 //==================== RE-ENTRY ====================//
 ent_sameBiasForReEntry = ent_activeBiasDir == ctx_biasDir or ctx_biasDir == 0
@@ -2352,7 +2708,7 @@ if ent_reEntryBuy or ent_reEntrySell
         label.delete(ent_lb_reentry)
 
     ent_reText = ent_reEntryBuy ? "RE-ENTRY BUY READY" : "RE-ENTRY SELL READY"
-    ent_reText := ent_reText + "\nGrade: " + ent_snapGrade + "\nSame FVG / Same Bias"
+    ent_reText := ent_reText + "\nModel: " + ent_snapModel + "\nGrade: " + ent_snapGrade + "\nSame Zone / Same Bias"
 
     ent_lb_reentry := label.new(bar_index, ent_reEntryBuy ? low : high, ent_reText, style=ent_reEntryBuy ? label.style_label_up : label.style_label_down, color=ent_reEntryBuy ? color.new(color.lime, 15) : color.new(color.red, 15), textcolor=ent_reEntryBuy ? color.black : color.white, size=size.tiny)
 
@@ -2366,9 +2722,9 @@ if close > open
     ent_lastBullBar := bar_index
 
 //==================== ALERTS ====================//
-alertcondition(ent_readyBuyRaw, title="READY BUY ICT M1", message="READY BUY ICT M1 on {{ticker}} {{interval}}")
-alertcondition(ent_readySellRaw, title="READY SELL ICT M1", message="READY SELL ICT M1 on {{ticker}} {{interval}}")
-alertcondition(ent_buySignal, title="BUY Entry ICT M1", message="BUY Entry ICT M1 on {{ticker}} {{interval}} at {{close}}")
-alertcondition(ent_sellSignal, title="SELL Entry ICT M1", message="SELL Entry ICT M1 on {{ticker}} {{interval}} at {{close}}")
-alertcondition(ent_reEntryBuy, title="RE-ENTRY BUY ICT M1", message="RE-ENTRY BUY ICT M1 on {{ticker}} {{interval}}")
-alertcondition(ent_reEntrySell, title="RE-ENTRY SELL ICT M1", message="RE-ENTRY SELL ICT M1 on {{ticker}} {{interval}}")
+alertcondition(ent_readyBuyRaw, title="READY BUY ICT AUTO M1", message="READY BUY ICT AUTO M1 on {{ticker}} {{interval}}")
+alertcondition(ent_readySellRaw, title="READY SELL ICT AUTO M1", message="READY SELL ICT AUTO M1 on {{ticker}} {{interval}}")
+alertcondition(ent_buySignal, title="BUY Entry ICT AUTO M1", message="BUY Entry ICT AUTO M1 on {{ticker}} {{interval}} at {{close}}")
+alertcondition(ent_sellSignal, title="SELL Entry ICT AUTO M1", message="SELL Entry ICT AUTO M1 on {{ticker}} {{interval}} at {{close}}")
+alertcondition(ent_reEntryBuy, title="RE-ENTRY BUY ICT AUTO M1", message="RE-ENTRY BUY ICT AUTO M1 on {{ticker}} {{interval}}")
+alertcondition(ent_reEntrySell, title="RE-ENTRY SELL ICT AUTO M1", message="RE-ENTRY SELL ICT AUTO M1 on {{ticker}} {{interval}}")
