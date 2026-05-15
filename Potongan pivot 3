@@ -9,9 +9,20 @@ piv_extendBars = input.int(40, "Right Bars", minval=5, maxval=300, group=piv_gro
 piv_lineWidth = input.int(1, "Line Width", minval=1, maxval=4, group=piv_group)
 piv_nearAtrMult = input.float(2.0, "Show Level If Near ATR", minval=0.5, step=0.5, group=piv_group)
 
-piv_prevHigh = request.security(syminfo.tickerid, piv_tf, high[1], barmerge.gaps_off, barmerge.lookahead_off)
-piv_prevLow = request.security(syminfo.tickerid, piv_tf, low[1], barmerge.gaps_off, barmerge.lookahead_off)
-piv_prevClose = request.security(syminfo.tickerid, piv_tf, close[1], barmerge.gaps_off, barmerge.lookahead_off)
+piv_rawHigh = request.security(syminfo.tickerid, piv_tf, high, barmerge.gaps_off, barmerge.lookahead_off)
+piv_rawLow = request.security(syminfo.tickerid, piv_tf, low, barmerge.gaps_off, barmerge.lookahead_off)
+piv_rawClose = request.security(syminfo.tickerid, piv_tf, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+piv_newTfBar = ta.change(time(piv_tf)) != 0
+
+var float piv_prevHigh = na
+var float piv_prevLow = na
+var float piv_prevClose = na
+
+if piv_newTfBar or na(piv_prevHigh)
+    piv_prevHigh := piv_rawHigh[1]
+    piv_prevLow := piv_rawLow[1]
+    piv_prevClose := piv_rawClose[1]
 
 piv_range = piv_prevHigh - piv_prevLow
 piv_p = (piv_prevHigh + piv_prevLow + piv_prevClose) / 3.0
@@ -35,6 +46,19 @@ piv_showLevel(_lvl, _name) =>
 
 var line[] piv_lines = array.new<line>(9, na)
 var label[] piv_labels = array.new<label>(9, na)
+var string piv_lastTf = ""
+
+if piv_lastTf != piv_tf
+    for i = 0 to array.size(piv_lines) - 1
+        _oldLine = array.get(piv_lines, i)
+        _oldLabel = array.get(piv_labels, i)
+        if not na(_oldLine)
+            line.delete(_oldLine)
+            array.set(piv_lines, i, na)
+        if not na(_oldLabel)
+            label.delete(_oldLabel)
+            array.set(piv_labels, i, na)
+    piv_lastTf := piv_tf
 
 piv_draw(_idx, _price, _name, _baseColor) =>
     line _ln = array.get(piv_lines, _idx)
@@ -45,7 +69,7 @@ piv_draw(_idx, _price, _name, _baseColor) =>
     _right = bar_index + piv_extendBars
     if _show
         if na(_ln)
-            _ln := line.new(_left, _price, _right, _price, xloc=xloc.bar_index, extend=extend.none, color=_baseColor, width=piv_lineWidth)
+            _ln := line.new(_left, _price, _right, _price, extend=extend.none, color=_baseColor, width=piv_lineWidth)
         else
             line.set_xy1(_ln, _left, _price)
             line.set_xy2(_ln, _right, _price)
@@ -54,7 +78,7 @@ piv_draw(_idx, _price, _name, _baseColor) =>
             line.set_style(_ln, line.style_solid)
         if piv_showLabels
             if na(_lb)
-                _lb := label.new(_right, _price, _txt, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(_baseColor, 82), textcolor=_baseColor, size=size.tiny)
+                _lb := label.new(_right, _price, _txt, style=label.style_label_left, color=color.new(_baseColor, 82), textcolor=_baseColor, size=size.tiny)
             else
                 label.set_xy(_lb, _right, _price)
                 label.set_text(_lb, _txt)
@@ -105,8 +129,17 @@ liq2_swingLen = input.int(5, "BSL / SSL Swing Length", minval=1, maxval=50, grou
 liq2_newDay = ta.change(time("D", "0000-2359", liq2_tz)) != 0
 liq2_midnightOpen = ta.valuewhen(liq2_newDay, open, 0)
 
-liq2_pdh = request.security(syminfo.tickerid, "D", high[1], barmerge.gaps_off, barmerge.lookahead_off)
-liq2_pdl = request.security(syminfo.tickerid, "D", low[1], barmerge.gaps_off, barmerge.lookahead_off)
+liq2_rawDailyHigh = request.security(syminfo.tickerid, "D", high, barmerge.gaps_off, barmerge.lookahead_off)
+liq2_rawDailyLow = request.security(syminfo.tickerid, "D", low, barmerge.gaps_off, barmerge.lookahead_off)
+
+liq2_newExchangeDay = ta.change(time("D")) != 0
+
+var float liq2_pdh = na
+var float liq2_pdl = na
+
+if liq2_newExchangeDay or na(liq2_pdh)
+    liq2_pdh := liq2_rawDailyHigh[1]
+    liq2_pdl := liq2_rawDailyLow[1]
 
 liq2_ph = ta.pivothigh(high, liq2_swingLen, liq2_swingLen)
 liq2_pl = ta.pivotlow(low, liq2_swingLen, liq2_swingLen)
@@ -132,7 +165,7 @@ liq2_draw(_idx, _price, _name, _col, _showLevel) =>
     _right = bar_index + liq2_extendBars
     if _show
         if na(_ln)
-            _ln := line.new(_left, _price, _right, _price, xloc=xloc.bar_index, extend=extend.none, color=_col, width=liq2_lineWidth)
+            _ln := line.new(_left, _price, _right, _price, extend=extend.none, color=_col, width=liq2_lineWidth)
         else
             line.set_xy1(_ln, _left, _price)
             line.set_xy2(_ln, _right, _price)
@@ -141,7 +174,7 @@ liq2_draw(_idx, _price, _name, _col, _showLevel) =>
             line.set_style(_ln, line.style_solid)
         if liq2_showLabels
             if na(_lb)
-                _lb := label.new(_right, _price, _txt, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(_col, 82), textcolor=_col, size=size.tiny)
+                _lb := label.new(_right, _price, _txt, style=label.style_label_left, color=color.new(_col, 82), textcolor=_col, size=size.tiny)
             else
                 label.set_xy(_lb, _right, _price)
                 label.set_text(_lb, _txt)
