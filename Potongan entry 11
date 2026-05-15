@@ -1,4 +1,4 @@
-//==================== ENTRY ICT M1 AUTO BEST ENGINE ====================//
+//==================== ENTRY ICT M1 AUTO BEST ENGINE M1-READY ====================//
 ctx_sellsideTop = ctx_sslTop
 ctx_sellsideBottom = ctx_sslBtm
 ctx_buysideTop = ctx_bslTop
@@ -21,12 +21,12 @@ ent_showReEntry = input.bool(true, "Show RE-ENTRY READY", group=ent_group)
 ent_useKillzoneFilter = input.bool(false, "Use Killzone Filter", group=ent_group)
 ent_lockUntilExit = input.bool(true, "Lock Until TP2 / SL", group=ent_group)
 
-ent_sweepLookback = input.int(20, "Major Sweep Lookback", minval=5, maxval=100, group=ent_group)
-ent_mssLookback = input.int(8, "MSS Structure Lookback", minval=3, maxval=50, group=ent_group)
-ent_setupExpireBars = input.int(30, "Setup Expire Bars", minval=5, maxval=150, group=ent_group)
-ent_fvgWaitBars = input.int(12, "Max Bars MSS to FVG", minval=1, maxval=50, group=ent_group)
-ent_confirmBars = input.int(15, "READY Valid Bars", minval=1, maxval=50, group=ent_group)
-ent_cooldownBars = input.int(3, "Entry Cooldown Bars", minval=0, maxval=50, group=ent_group)
+ent_mssLookback = input.int(5, "Close-Based MSS Lookback", minval=3, maxval=15, group=ent_group)
+ent_setupExpireBars = input.int(12, "Setup Expire Bars", minval=5, maxval=30, group=ent_group)
+ent_fvgWaitBars = input.int(8, "Max Bars MSS to FVG", minval=3, maxval=20, group=ent_group)
+ent_confirmBars = input.int(5, "READY Valid Bars", minval=1, maxval=20, group=ent_group)
+ent_cooldownBars = input.int(2, "Entry Cooldown Bars", minval=0, maxval=20, group=ent_group)
+ent_falseSweepBodyAtr = input.float(0.30, "False Sweep Body ATR Filter", minval=0.05, maxval=1.0, step=0.05, group=ent_group)
 
 ent_pipsPerPoint = input.float(10.0, "Gold Pips Per 1.00 Point", minval=1.0, step=1.0, group=ent_group)
 ent_slPadPips = input.float(15.0, "SL Padding Pips", minval=0.0, step=5.0, group=ent_group)
@@ -56,11 +56,14 @@ ent_zoneLow(_top, _bottom) =>
 ent_inZone(_top, _bottom) =>
     not na(_top) and not na(_bottom) and low <= math.max(_top, _bottom) and high >= math.min(_top, _bottom)
 
+ent_sweepBodyOk() =>
+    body > atr * ent_falseSweepBodyAtr
+
 ent_sweptBelow(_lvl) =>
-    not na(_lvl) and low < _lvl and close > _lvl
+    not na(_lvl) and low < _lvl and close > _lvl and ent_sweepBodyOk()
 
 ent_sweptAbove(_lvl) =>
-    not na(_lvl) and high > _lvl and close < _lvl
+    not na(_lvl) and high > _lvl and close < _lvl and ent_sweepBodyOk()
 
 ent_minAbove(_base, _cur, _lvl) =>
     float _out = _cur
@@ -358,7 +361,7 @@ if ent_sweepBuyNow and not ent_sweepSellNow
     ent_coreStartBar := bar_index
     ent_coreMssBar := na
     ent_coreSweepExtreme := low
-    ent_coreMssLevel := ta.highest(high[1], ent_mssLookback)
+    ent_coreMssLevel := ta.highest(close[1], ent_mssLookback)
     ent_coreSweepSource := ent_buySweepSource
 
     if not na(ent_b_zone) and ent_tradeState == 0
@@ -385,7 +388,7 @@ if ent_sweepSellNow and not ent_sweepBuyNow
     ent_coreStartBar := bar_index
     ent_coreMssBar := na
     ent_coreSweepExtreme := high
-    ent_coreMssLevel := ta.lowest(low[1], ent_mssLookback)
+    ent_coreMssLevel := ta.lowest(close[1], ent_mssLookback)
     ent_coreSweepSource := ent_sellSweepSource
 
     if not na(ent_b_zone) and ent_tradeState == 0
@@ -412,7 +415,7 @@ if ent_coreDir == 1 and ent_coreStage > 0 and not na(ent_coreSweepExtreme)
 if ent_coreDir == -1 and ent_coreStage > 0 and not na(ent_coreSweepExtreme)
     ent_coreSweepExtreme := math.max(ent_coreSweepExtreme, high)
 
-//==================== MSS ====================//
+//==================== CLOSE-BASED MSS ====================//
 ent_mssBuyNow = ent_coreDir == 1 and ent_coreStage == 1 and bar_index > ent_coreStartBar and not na(ent_coreMssLevel) and close > ent_coreMssLevel and barstate.isconfirmed
 ent_mssSellNow = ent_coreDir == -1 and ent_coreStage == 1 and bar_index > ent_coreStartBar and not na(ent_coreMssLevel) and close < ent_coreMssLevel and barstate.isconfirmed
 
