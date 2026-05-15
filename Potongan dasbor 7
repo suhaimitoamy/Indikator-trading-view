@@ -6,9 +6,10 @@ ctx_dashboardMode = input.string("Simple", "Dashboard Mode", options=["Simple", 
 ctx_rangeLen = input.int(50, "Price Location Range", minval=20, maxval=300, group=ctx_groupDash)
 ctx_nearInvalidAtr = input.float(0.35, "Near Invalidation ATR", minval=0.05, maxval=2.0, step=0.05, group=ctx_groupDash)
 ctx_closeMssLen = input.int(5, "Close-Based MSS Lookback", minval=3, maxval=15, group=ctx_groupDash)
-ctx_sweepFreshBars = input.int(15, "Sweep Fresh Bars", minval=3, maxval=30, group=ctx_groupDash)
+ctx_sweepFreshBars = input.int(8, "Sweep Fresh Bars", minval=3, maxval=30, group=ctx_groupDash)
 ctx_falseSweepBodyAtr = input.float(0.30, "False Sweep Body ATR Filter", minval=0.05, maxval=1.0, step=0.05, group=ctx_groupDash)
 ctx_scanDepth = input.int(5, "POI Scan Depth", minval=1, maxval=10, group=ctx_groupDash)
+ctx_useBiasLatch = input.bool(true, "Latch Invalid Bias", group=ctx_groupDash)
 
 ctx_dashPos(_pos) =>
     _pos == "Top Left" ? position.top_left :
@@ -34,10 +35,21 @@ ctx_clamp(_x, _lo, _hi) =>
 ctx_pct(_v) =>
     str.tostring(int(math.round(_v))) + "%"
 
-//==================== CLOSE-BASED MSS ====================//
-ctx_mssBull = close > ta.highest(close[1], ctx_closeMssLen)
-ctx_mssBear = close < ta.lowest(close[1], ctx_closeMssLen)
-ctx_mssDir = ctx_mssBull ? 1 : ctx_mssBear ? -1 : 0
+//==================== CLOSE-BASED MSS CONFIRMED ====================//
+ctx_mssBullRaw = close > ta.highest(close[1], ctx_closeMssLen)
+ctx_mssBearRaw = close < ta.lowest(close[1], ctx_closeMssLen)
+
+var int ctx_lastCloseMssDir = 0
+
+if barstate.isconfirmed and ctx_mssBullRaw
+    ctx_lastCloseMssDir := 1
+
+if barstate.isconfirmed and ctx_mssBearRaw
+    ctx_lastCloseMssDir := -1
+
+ctx_mssDir = ctx_lastCloseMssDir
+ctx_mssBull = ctx_mssDir == 1
+ctx_mssBear = ctx_mssDir == -1
 ctx_mssText = ctx_mssBull ? "MSS Bullish" : ctx_mssBear ? "MSS Bearish" : "MSS Neutral"
 
 //==================== READ VISUAL ENGINE DATA ====================//
@@ -69,8 +81,8 @@ if b_liq_S.size() > 0
 
 ctx_sweepBodyOk = body > atr * ctx_falseSweepBodyAtr
 
-ctx_bslSweepNow = not na(ctx_bslLevel) and high > ctx_bslLevel and close < ctx_bslLevel and ctx_sweepBodyOk
-ctx_sslSweepNow = not na(ctx_sslLevel) and low < ctx_sslLevel and close > ctx_sslLevel and ctx_sweepBodyOk
+ctx_bslSweepNow = barstate.isconfirmed and not na(ctx_bslLevel) and high > ctx_bslLevel and close < ctx_bslLevel and ctx_sweepBodyOk
+ctx_sslSweepNow = barstate.isconfirmed and not na(ctx_sslLevel) and low < ctx_sslLevel and close > ctx_sslLevel and ctx_sweepBodyOk
 
 var int ctx_lastSweepDir = 0
 var int ctx_lastSweepBar = na
@@ -83,11 +95,19 @@ if ctx_bslSweepNow and not ctx_sslSweepNow
     ctx_lastSweepDir := -1
     ctx_lastSweepBar := bar_index
 
+ctx_sslSweepInvalidated = ctx_lastSweepDir == 1 and not na(ctx_sslLevel) and close < ctx_sslLevel
+ctx_bslSweepInvalidated = ctx_lastSweepDir == -1 and not na(ctx_bslLevel) and close > ctx_bslLevel
+
+if barstate.isconfirmed and (ctx_sslSweepInvalidated or ctx_bslSweepInvalidated)
+    ctx_lastSweepDir := 0
+    ctx_lastSweepBar := na
+
 ctx_sweepFresh = not na(ctx_lastSweepBar) and bar_index - ctx_lastSweepBar <= ctx_sweepFreshBars
 
 ctx_sslSwept := ctx_sslSweepNow or (ctx_sweepFresh and ctx_lastSweepDir == 1)
 ctx_bslSwept := ctx_bslSweepNow or (ctx_sweepFresh and ctx_lastSweepDir == -1)
 
+//==================== DOL ONLY AFTER SWEEP ====================//
 int ctx_dolDir = 0
 float ctx_dolTop = na
 float ctx_dolBtm = na
@@ -98,8 +118,6 @@ string ctx_dolStatusText = "Waiting"
 
 ctx_dolDir := ctx_sslSwept and ctx_bslActive ? 1 :
      ctx_bslSwept and ctx_sslActive ? -1 :
-     ctx_mssBull and ctx_bslActive ? 1 :
-     ctx_mssBear and ctx_sslActive ? -1 :
      0
 
 ctx_dolTop := ctx_dolDir == 1 ? ctx_bslTop : ctx_dolDir == -1 ? ctx_sslTop : na
@@ -121,6 +139,7 @@ ctx_dolTargetText := ctx_dolDir == 1 ? "Target BSL @ " + ctx_price(ctx_dolPrice)
      ctx_dolDir == -1 ? "Target SSL @ " + ctx_price(ctx_dolPrice) :
      "Belum ada DOL valid"
 
+//==================== POI SCAN ====================//
 float ctx_bullFvgTop = na
 float ctx_bullFvgBtm = na
 bool ctx_bullFvgActive = false
@@ -230,78 +249,106 @@ ctx_bearDisplacement = L_bodyDN
 ctx_bullPA = ctx_bullRejection or ctx_bullDisplacement or vImb_Bl
 ctx_bearPA = ctx_bearRejection or ctx_bearDisplacement or vImb_Br
 
-//==================== LIGHTWEIGHT MARKET SCORE ====================//
+//==================== MARKET SCORE ====================//
 ctx_buyStrengthScore = 0
-ctx_buyStrengthScore += ctx_mssBull ? 30 : 0
-ctx_buyStrengthScore += ctx_sslSwept ? 25 : 0
+ctx_buyStrengthScore += ctx_mssBull ? 25 : 0
+ctx_buyStrengthScore += ctx_sslSwept ? 30 : 0
 ctx_buyStrengthScore += ctx_dolDir == 1 ? 20 : 0
 ctx_buyStrengthScore += ctx_inBullFvg or ctx_inBullOb ? 15 : 0
 ctx_buyStrengthScore += ctx_pricePct <= 50 ? 10 : 0
 
 ctx_sellStrengthScore = 0
-ctx_sellStrengthScore += ctx_mssBear ? 30 : 0
-ctx_sellStrengthScore += ctx_bslSwept ? 25 : 0
+ctx_sellStrengthScore += ctx_mssBear ? 25 : 0
+ctx_sellStrengthScore += ctx_bslSwept ? 30 : 0
 ctx_sellStrengthScore += ctx_dolDir == -1 ? 20 : 0
 ctx_sellStrengthScore += ctx_inBearFvg or ctx_inBearOb ? 15 : 0
 ctx_sellStrengthScore += ctx_pricePct >= 50 ? 10 : 0
 
 ctx_buyWeaknessScore = 0
 ctx_buyWeaknessScore += ctx_mssBear ? 25 : 0
-ctx_buyWeaknessScore += ctx_bslSwept ? 20 : 0
+ctx_buyWeaknessScore += ctx_bslSwept ? 25 : 0
 ctx_buyWeaknessScore += ctx_bearPA ? 10 : 0
 ctx_buyWeaknessScore += ctx_pricePct >= 75 ? 10 : 0
 
 ctx_sellWeaknessScore = 0
 ctx_sellWeaknessScore += ctx_mssBull ? 25 : 0
-ctx_sellWeaknessScore += ctx_sslSwept ? 20 : 0
+ctx_sellWeaknessScore += ctx_sslSwept ? 25 : 0
 ctx_sellWeaknessScore += ctx_bullPA ? 10 : 0
 ctx_sellWeaknessScore += ctx_pricePct <= 25 ? 10 : 0
 
 ctx_buyNet = ctx_buyStrengthScore - ctx_buyWeaknessScore
 ctx_sellNet = ctx_sellStrengthScore - ctx_sellWeaknessScore
 
-ctx_marketDir = ctx_dolDir != 0 ? ctx_dolDir :
+ctx_rawMarketDir = ctx_dolDir != 0 ? ctx_dolDir :
      ctx_buyNet > ctx_sellNet + 10 ? 1 :
      ctx_sellNet > ctx_buyNet + 10 ? -1 :
      ctx_mssBull and ctx_buyNet >= ctx_sellNet ? 1 :
      ctx_mssBear and ctx_sellNet >= ctx_buyNet ? -1 :
      0
 
-ctx_activeStrength = ctx_marketDir == 1 ? ctx_buyStrengthScore : ctx_marketDir == -1 ? ctx_sellStrengthScore : math.max(ctx_buyStrengthScore, ctx_sellStrengthScore)
-ctx_activeWeakness = ctx_marketDir == 1 ? ctx_buyWeaknessScore : ctx_marketDir == -1 ? ctx_sellWeaknessScore : math.max(ctx_buyWeaknessScore, ctx_sellWeaknessScore)
-ctx_healthValue = ctx_clamp(ctx_activeStrength - ctx_activeWeakness + 35, 0, 100)
-
-ctx_strengthText = ctx_marketDir == 1 ? "BUY FLOW" :
-     ctx_marketDir == -1 ? "SELL FLOW" :
-     "NO FLOW"
-
-ctx_marketDirText = ctx_marketDir == 1 ? "NAIK" :
-     ctx_marketDir == -1 ? "TURUN" :
-     "SIDEWAYS"
-
-ctx_marketIcon = ctx_marketDir == 1 ? "▲" :
-     ctx_marketDir == -1 ? "▼" :
-     "◆"
-
-//==================== INVALIDATION ====================//
+//==================== INVALIDATION LATCH ====================//
 float ctx_bullInvalid = na
 float ctx_bearInvalid = na
 
 ctx_bullInvalid := ctx_bullObActive ? ctx_bullObBtm : ctx_sslActive ? ctx_sslLevel : ta.lowest(low, len)
 ctx_bearInvalid := ctx_bearObActive ? ctx_bearObTop : ctx_bslActive ? ctx_bslLevel : ta.highest(high, len)
 
-ctx_activeInvalid = ctx_marketDir == 1 ? ctx_bullInvalid : ctx_marketDir == -1 ? ctx_bearInvalid : na
+ctx_activeInvalid = ctx_rawMarketDir == 1 ? ctx_bullInvalid : ctx_rawMarketDir == -1 ? ctx_bearInvalid : na
 
-ctx_nearInvalid = ctx_marketDir == 1 and not na(ctx_activeInvalid) ? close <= ctx_activeInvalid + atr * ctx_nearInvalidAtr :
-     ctx_marketDir == -1 and not na(ctx_activeInvalid) ? close >= ctx_activeInvalid - atr * ctx_nearInvalidAtr :
+ctx_rawNearInvalid = ctx_rawMarketDir == 1 and not na(ctx_activeInvalid) ? close <= ctx_activeInvalid + atr * ctx_nearInvalidAtr :
+     ctx_rawMarketDir == -1 and not na(ctx_activeInvalid) ? close >= ctx_activeInvalid - atr * ctx_nearInvalidAtr :
      false
 
-ctx_invalidNow = ctx_marketDir == 1 and not na(ctx_activeInvalid) ? close < ctx_activeInvalid :
-     ctx_marketDir == -1 and not na(ctx_activeInvalid) ? close > ctx_activeInvalid :
+ctx_rawInvalidNow = ctx_rawMarketDir == 1 and not na(ctx_activeInvalid) ? close < ctx_activeInvalid :
+     ctx_rawMarketDir == -1 and not na(ctx_activeInvalid) ? close > ctx_activeInvalid :
      false
 
-ctx_invalidText = ctx_marketDir == 1 ? "BUY invalid < " + ctx_price(ctx_activeInvalid) :
-     ctx_marketDir == -1 ? "SELL invalid > " + ctx_price(ctx_activeInvalid) :
+var bool ctx_biasInvalidated = false
+var int ctx_lastConfirmedDir = 0
+
+ctx_resetInvalid = ctx_biasInvalidated and (
+     ctx_lastConfirmedDir == 1 and ctx_bslSwept and ctx_mssBear and ctx_bearPA or
+     ctx_lastConfirmedDir == -1 and ctx_sslSwept and ctx_mssBull and ctx_bullPA)
+
+if barstate.isconfirmed and ctx_resetInvalid
+    ctx_biasInvalidated := false
+
+if barstate.isconfirmed and ctx_useBiasLatch and ctx_rawInvalidNow and ctx_rawMarketDir != 0
+    ctx_biasInvalidated := true
+
+if barstate.isconfirmed and not ctx_biasInvalidated and ctx_rawMarketDir != 0
+    ctx_lastConfirmedDir := ctx_rawMarketDir
+
+ctx_invalidNow = ctx_useBiasLatch ? ctx_biasInvalidated : ctx_rawInvalidNow
+ctx_nearInvalid = not ctx_invalidNow and ctx_rawNearInvalid
+
+ctx_marketDir = ctx_invalidNow ? 0 : ctx_rawMarketDir
+
+ctx_activeStrength = ctx_marketDir == 1 ? ctx_buyStrengthScore : ctx_marketDir == -1 ? ctx_sellStrengthScore : math.max(ctx_buyStrengthScore, ctx_sellStrengthScore)
+ctx_activeWeakness = ctx_marketDir == 1 ? ctx_buyWeaknessScore : ctx_marketDir == -1 ? ctx_sellWeaknessScore : math.max(ctx_buyWeaknessScore, ctx_sellWeaknessScore)
+
+ctx_bullConditionsMet = (ctx_mssBull ? 1 : 0) + (ctx_sslSwept ? 1 : 0) + (ctx_dolDir == 1 ? 1 : 0) + (ctx_inBullFvg or ctx_inBullOb ? 1 : 0) + (ctx_pricePct <= 50 ? 1 : 0)
+ctx_bearConditionsMet = (ctx_mssBear ? 1 : 0) + (ctx_bslSwept ? 1 : 0) + (ctx_dolDir == -1 ? 1 : 0) + (ctx_inBearFvg or ctx_inBearOb ? 1 : 0) + (ctx_pricePct >= 50 ? 1 : 0)
+ctx_confluenceScore = ctx_marketDir == 1 ? ctx_bullConditionsMet : ctx_marketDir == -1 ? ctx_bearConditionsMet : math.max(ctx_bullConditionsMet, ctx_bearConditionsMet)
+ctx_healthValue = ctx_confluenceScore * 20
+
+ctx_strengthText = ctx_marketDir == 1 ? "BUY FLOW" :
+     ctx_marketDir == -1 ? "SELL FLOW" :
+     "NO FLOW"
+
+ctx_marketDirText = ctx_invalidNow ? "INVALID" :
+     ctx_marketDir == 1 ? "NAIK" :
+     ctx_marketDir == -1 ? "TURUN" :
+     "SIDEWAYS"
+
+ctx_marketIcon = ctx_invalidNow ? "×" :
+     ctx_marketDir == 1 ? "▲" :
+     ctx_marketDir == -1 ? "▼" :
+     "◆"
+
+ctx_invalidText = ctx_invalidNow ? "BIAS INVALID / WAIT RESET" :
+     ctx_rawMarketDir == 1 ? "BUY invalid < " + ctx_price(ctx_activeInvalid) :
+     ctx_rawMarketDir == -1 ? "SELL invalid > " + ctx_price(ctx_activeInvalid) :
      "Belum ada bias valid"
 
 //==================== REVERSAL RISK INTERNAL ====================//
@@ -310,7 +357,7 @@ ctx_bearRevSigns += ctx_mssBear ? 2 : 0
 ctx_bearRevSigns += ctx_bslSwept ? 1 : 0
 ctx_bearRevSigns += ctx_dolDir == -1 ? 1 : 0
 ctx_bearRevSigns += ctx_bearPA ? 1 : 0
-ctx_bearRevSigns += ctx_nearInvalid and ctx_marketDir == 1 ? 1 : 0
+ctx_bearRevSigns += ctx_nearInvalid and ctx_rawMarketDir == 1 ? 1 : 0
 ctx_bearRevSigns += ctx_pricePct >= 75 ? 1 : 0
 
 ctx_bullRevSigns = 0
@@ -318,16 +365,17 @@ ctx_bullRevSigns += ctx_mssBull ? 2 : 0
 ctx_bullRevSigns += ctx_sslSwept ? 1 : 0
 ctx_bullRevSigns += ctx_dolDir == 1 ? 1 : 0
 ctx_bullRevSigns += ctx_bullPA ? 1 : 0
-ctx_bullRevSigns += ctx_nearInvalid and ctx_marketDir == -1 ? 1 : 0
+ctx_bullRevSigns += ctx_nearInvalid and ctx_rawMarketDir == -1 ? 1 : 0
 ctx_bullRevSigns += ctx_pricePct <= 25 ? 1 : 0
 
-ctx_reversalLevel = ctx_marketDir == 1 ? ctx_bearRevSigns :
-     ctx_marketDir == -1 ? ctx_bullRevSigns :
+ctx_reversalLevel = ctx_rawMarketDir == 1 ? ctx_bearRevSigns :
+     ctx_rawMarketDir == -1 ? ctx_bullRevSigns :
      math.max(ctx_bearRevSigns, ctx_bullRevSigns)
 
-ctx_reversalWarningText = ctx_marketDir == 1 and ctx_reversalLevel >= 5 ? "BUY INVALID RISK" :
-     ctx_marketDir == -1 and ctx_reversalLevel >= 5 ? "SELL INVALID RISK" :
-     ctx_marketDir == 0 ? "NO CLEAR BIAS" :
+ctx_reversalWarningText = ctx_invalidNow ? "INVALIDATED" :
+     ctx_rawMarketDir == 1 and ctx_reversalLevel >= 5 ? "BUY INVALID RISK" :
+     ctx_rawMarketDir == -1 and ctx_reversalLevel >= 5 ? "SELL INVALID RISK" :
+     ctx_rawMarketDir == 0 ? "NO CLEAR BIAS" :
      "OK"
 
 ctx_reversalRiskHigh = ctx_reversalLevel >= 3
@@ -361,6 +409,7 @@ ctx_reasonText := ctx_reasonText == "" ? "Belum ada alasan kuat" : ctx_reasonTex
 ctx_detailText = ""
 ctx_detailText := ctx_join(ctx_detailText, "State " + ctx_marketState)
 ctx_detailText := ctx_join(ctx_detailText, "Location " + ctx_priceLocation + " " + ctx_pct(ctx_pricePct))
+ctx_detailText := ctx_join(ctx_detailText, "Confluence " + str.tostring(ctx_confluenceScore) + "/5")
 ctx_detailText := ctx_join(ctx_detailText, ctx_viActive ? "VI Active" : "")
 ctx_detailText := ctx_join(ctx_detailText, ctx_nearInvalid ? "Near Invalid" : "")
 ctx_detailText := ctx_join(ctx_detailText, ctx_invalidNow ? "Invalid Broken" : "")
@@ -375,7 +424,7 @@ ctx_greenBg = color.new(color.lime, 22)
 ctx_redBg = color.new(color.red, 18)
 ctx_orangeBg = color.new(color.orange, 15)
 
-ctx_dirColor = ctx_marketDir == 1 ? ctx_greenBg : ctx_marketDir == -1 ? ctx_redBg : ctx_orangeBg
+ctx_dirColor = ctx_invalidNow ? ctx_redBg : ctx_marketDir == 1 ? ctx_greenBg : ctx_marketDir == -1 ? ctx_redBg : ctx_orangeBg
 ctx_dolColor = ctx_dolDir == 1 ? ctx_greenBg : ctx_dolDir == -1 ? ctx_redBg : ctx_mutedBg
 
 ctx_strengthColor = ctx_marketDir == 1 ? ctx_greenBg :
