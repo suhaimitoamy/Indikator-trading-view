@@ -2,7 +2,8 @@
 amyEntryV2_group = "AMY Entry Assistant V2"
 amyEntryV2_show = input.bool(true, "Show Entry Assistant", group=amyEntryV2_group)
 amyEntryV2_showChartNotes = input.bool(true, "Show Chart Narration", group=amyEntryV2_group)
-amyEntryV2_showPanel = input.bool(true, "Show Assistant Panel", group=amyEntryV2_group)
+amyEntryV2_showPanel = input.bool(false, "Show Assistant Panel", group=amyEntryV2_group)
+amyEntryV2_timingMode = input.string("Confirmed", "Signal Timing", options=["Confirmed", "Realtime"], group=amyEntryV2_group)
 amyEntryV2_panelPosInput = input.string("Bottom Left", "Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=amyEntryV2_group)
 amyEntryV2_triggerTf = input.timeframe("5", "Trigger Confirmation TF", group=amyEntryV2_group)
 amyEntryV2_swingLen = input.int(3, "Trigger Swing Length", minval=1, maxval=10, group=amyEntryV2_group)
@@ -43,8 +44,9 @@ amyEntryV2_addEvent(_events, _txt, _maxRows) =>
         array.pop(_events)
 
 amyEntryV2_addNote(_labels, _txt, _dir, _bg, _maxNotes, _offsetAtr) =>
-    _y = _dir == 1 ? low - ta.atr(14) * _offsetAtr : high + ta.atr(14) * _offsetAtr
-    _style = _dir == 1 ? label.style_label_up : label.style_label_down
+    _noteDir = _dir == 0 ? 1 : _dir
+    _y = _noteDir == 1 ? low - ta.atr(14) * _offsetAtr : high + ta.atr(14) * _offsetAtr
+    _style = _noteDir == 1 ? label.style_label_up : label.style_label_down
     label _lb = label.new(bar_index, _y, _txt, xloc=xloc.bar_index, style=_style, color=_bg, textcolor=color.white, size=size.tiny)
     array.push(_labels, _lb)
     while array.size(_labels) > _maxNotes
@@ -90,6 +92,16 @@ amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
 var string[] amyEntryV2_events = array.new_string()
 var label[] amyEntryV2_notes = array.new<label>()
 
+var int amyEntryV2_lastDolActiveBar = na
+var int amyEntryV2_lastSweepBar = na
+var int amyEntryV2_lastPoiBar = na
+var int amyEntryV2_lastRejectBar = na
+var int amyEntryV2_lastBreakBar = na
+var int amyEntryV2_lastDolReachedBar = na
+var int amyEntryV2_lastInvalidBar = na
+
+amyEntryV2_canTrigger = amyEntryV2_timingMode == "Realtime" ? true : barstate.isconfirmed
+
 amyEntryV2_biasActive = amyDashV2_biasDir != 0 and (amyDashV2_invalidStatus == 0 or amyDashV2_invalidStatus == 1)
 amyEntryV2_poiReady = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow)
 amyEntryV2_inPoi = amyEntryV2_poiReady and high >= amyDashV2_poiLow and low <= amyDashV2_poiHigh
@@ -115,48 +127,55 @@ amyEntryV2_dolActiveEvent = amyEntryV2_show and amyDashV2_dolStatus == 1 and (am
 amyEntryV2_dolReachedEvent = amyEntryV2_show and amyDashV2_dolStatus == 2 and amyDashV2_dolStatus[1] != 2
 amyEntryV2_invalidEvent = amyEntryV2_show and amyDashV2_invalidStatus == 2 and amyDashV2_invalidStatus[1] != 2
 
-if amyEntryV2_show and barstate.isconfirmed
-    if amyEntryV2_dolActiveEvent
+if amyEntryV2_show and amyEntryV2_canTrigger
+    if amyEntryV2_dolActiveEvent and amyEntryV2_lastDolActiveBar != bar_index
         amyEntryV2_msg = "DOL aktif ke " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget) + "\nPerhatikan harga menuju target"
         amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_msg, "\n", " | "), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_msg, amyDashV2_biasDir == 0 ? amyDashV2_dolDir : amyDashV2_biasDir, color.new(color.blue, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastDolActiveBar := bar_index
 
-    if amyEntryV2_ltfSweepEvent
+    if amyEntryV2_ltfSweepEvent and amyEntryV2_lastSweepBar != bar_index
         amyEntryV2_sweepMsg = amyEntryV2_ltfSweepDir == 1 ? "SSL swept, cari konfirmasi buy" : "BSL swept, cari konfirmasi sell"
         amyEntryV2_addEvent(amyEntryV2_events, amyEntryV2_sweepMsg + " | " + amyEntryV2_price(amyEntryV2_ltfSweptPrice), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_sweepMsg, amyEntryV2_ltfSweepDir, color.new(color.aqua, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastSweepBar := bar_index
 
-    if amyEntryV2_inPoiEvent
+    if amyEntryV2_inPoiEvent and amyEntryV2_lastPoiBar != bar_index
         amyEntryV2_poiMsg = "Harga masuk " + amyEntryV2_poiName(amyDashV2_poiType) + "\ntunggu reaksi"
         amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_poiMsg, "\n", " | "), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_poiMsg, amyDashV2_biasDir, color.new(color.gray, 10), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastPoiBar := bar_index
 
-    if amyEntryV2_rejectEvent
+    if amyEntryV2_rejectEvent and amyEntryV2_lastRejectBar != bar_index
         amyEntryV2_rejectMsg = "Rejection dari POI\npantau " + amyEntryV2_dirName(amyDashV2_biasDir)
         amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_rejectMsg, "\n", " | "), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_rejectMsg, amyDashV2_biasDir, amyDashV2_biasDir == 1 ? color.new(color.lime, 15) : color.new(color.red, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastRejectBar := bar_index
 
-    if amyEntryV2_breakEvent
+    if amyEntryV2_breakEvent and amyEntryV2_lastBreakBar != bar_index
         amyEntryV2_breakMsg = amyDashV2_biasDir == 1 ? "Harga valid break bullish" : "Harga valid break bearish"
         amyEntryV2_addEvent(amyEntryV2_events, amyEntryV2_breakMsg, amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_breakMsg, amyDashV2_biasDir, amyDashV2_biasDir == 1 ? color.new(color.lime, 5) : color.new(color.red, 5), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastBreakBar := bar_index
 
-    if amyEntryV2_dolReachedEvent
+    if amyEntryV2_dolReachedEvent and amyEntryV2_lastDolReachedBar != bar_index
         amyEntryV2_reachedMsg = "DOL reached\nhati-hati reaksi baru"
         amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_reachedMsg, "\n", " | "), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_reachedMsg, amyDashV2_dolDir == 0 ? 1 : amyDashV2_dolDir, color.new(color.orange, 10), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastDolReachedBar := bar_index
 
-    if amyEntryV2_invalidEvent
+    if amyEntryV2_invalidEvent and amyEntryV2_lastInvalidBar != bar_index
         amyEntryV2_invalidMsg = "Setup batal\nharga close melewati invalid " + amyEntryV2_price(amyDashV2_invalidLevel)
         amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_invalidMsg, "\n", " | "), amyEntryV2_panelRows)
         if amyEntryV2_showChartNotes
             amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_invalidMsg, amyDashV2_biasDir == 0 ? -1 : amyDashV2_biasDir, color.new(color.red, 5), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
+        amyEntryV2_lastInvalidBar := bar_index
 
 var table amyEntryV2_panel = table.new(amyEntryV2_pos(amyEntryV2_panelPosInput), 1, amyEntryV2_panelRows + 1, bgcolor=color.new(color.black, 8), border_width=1, border_color=color.new(color.gray, 60))
 
