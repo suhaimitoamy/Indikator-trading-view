@@ -276,10 +276,10 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks) =>
     _bearObDist = _bearObActive ? (_c >= _bearObLow and _c <= _bearObHigh ? 0.0 : math.min(math.abs(_c - _bearObHigh), math.abs(_c - _bearObLow))) : na
     _bearFvgDist = _bearFvgActive ? (_c >= _bearFvgLow and _c <= _bearFvgHigh ? 0.0 : math.min(math.abs(_c - _bearFvgHigh), math.abs(_c - _bearFvgLow))) : na
 
-    _poiType = 0
-    _poiHigh = na
-    _poiLow = na
-    _poiStatus = 0
+    int _poiType = 0
+    float _poiHigh = na
+    float _poiLow = na
+    int _poiStatus = 0
 
     if _biasDir == 1
         if _bullObActive and (not _bullFvgActive or _bullObDist <= _bullFvgDist)
