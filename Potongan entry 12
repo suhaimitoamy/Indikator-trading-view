@@ -3,27 +3,15 @@ amyEntryV2_group = "AMY Entry Assistant V2"
 amyEntryV2_show = input.bool(true, "Show Entry Assistant", group=amyEntryV2_group)
 amyEntryV2_showChartNotes = input.bool(true, "Show Chart Narration", group=amyEntryV2_group)
 amyEntryV2_showPanel = input.bool(false, "Show Assistant Panel", group=amyEntryV2_group)
-amyEntryV2_timingMode = input.string("Realtime", "Signal Timing", options=["Confirmed", "Realtime"], group=amyEntryV2_group)
-amyEntryV2_panelPosInput = input.string("Bottom Left", "Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=amyEntryV2_group)
+amyEntryV2_timingMode = input.string("Realtime", "Timing Mode", options=["Realtime"], group=amyEntryV2_group)
 amyEntryV2_triggerTf = input.timeframe("5", "Trigger Confirmation TF", group=amyEntryV2_group)
 amyEntryV2_swingLen = input.int(3, "Trigger Swing Length", minval=1, maxval=10, group=amyEntryV2_group)
 amyEntryV2_dispMult = input.float(1.0, "Trigger Displacement Body Mult", minval=0.5, maxval=3.0, step=0.1, group=amyEntryV2_group)
 amyEntryV2_rejectWickMult = input.float(1.25, "POI Rejection Wick Mult", minval=0.5, maxval=5.0, step=0.05, group=amyEntryV2_group)
 amyEntryV2_noteOffsetAtr = input.float(0.70, "Chart Note Offset ATR", minval=0.10, maxval=3.0, step=0.05, group=amyEntryV2_group)
-amyEntryV2_maxChartNotes = input.int(7, "Max Chart Notes", minval=1, maxval=20, group=amyEntryV2_group)
-amyEntryV2_panelRows = input.int(7, "Panel Rows", minval=3, maxval=10, group=amyEntryV2_group)
-
-amyEntryV2_pos(_pos) =>
-    _pos == "Top Left" ? position.top_left :
-     _pos == "Bottom Right" ? position.bottom_right :
-     _pos == "Bottom Left" ? position.bottom_left :
-     position.top_right
 
 amyEntryV2_price(_x) =>
     na(_x) ? "-" : str.tostring(_x, format.mintick)
-
-amyEntryV2_clip(_s, _max) =>
-    str.length(_s) > _max ? str.substring(_s, 0, _max) + "..." : _s
 
 amyEntryV2_poiName(_type) =>
     _type == 1 ? "Bull OB" :
@@ -37,21 +25,6 @@ amyEntryV2_dolName(_dir) =>
 
 amyEntryV2_dirName(_dir) =>
     _dir == 1 ? "buy" : _dir == -1 ? "sell" : "arah bias"
-
-amyEntryV2_addEvent(_events, _txt, _maxRows) =>
-    array.unshift(_events, _txt)
-    while array.size(_events) > _maxRows
-        array.pop(_events)
-
-amyEntryV2_addNote(_labels, _txt, _dir, _bg, _maxNotes, _offsetAtr) =>
-    _noteDir = _dir == 0 ? 1 : _dir
-    _y = _noteDir == 1 ? low - ta.atr(14) * _offsetAtr : high + ta.atr(14) * _offsetAtr
-    _style = _noteDir == 1 ? label.style_label_up : label.style_label_down
-    label _lb = label.new(bar_index, _y, _txt, xloc=xloc.bar_index, style=_style, color=_bg, textcolor=color.white, size=size.tiny)
-    array.push(_labels, _lb)
-    while array.size(_labels) > _maxNotes
-        label _old = array.shift(_labels)
-        label.delete(_old)
 
 amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
     var float _lastHigh = na
@@ -78,8 +51,8 @@ amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
     _sweptPrice = _sweepDir == 1 ? _lastLow : _sweepDir == -1 ? _lastHigh : na
     _sweepExtreme = _sweepDir == 1 ? low : _sweepDir == -1 ? high : na
 
-    _bullBreak = not na(_lastHigh) and close > _lastHigh and close[1] <= _lastHigh
-    _bearBreak = not na(_lastLow) and close < _lastLow and close[1] >= _lastLow
+    _bullBreak = not na(_lastHigh) and close > _lastHigh
+    _bearBreak = not na(_lastLow) and close < _lastLow
     _bullDisp = close > open and _body > _meanBody * _dispMult and close > high[1]
     _bearDisp = close < open and _body > _meanBody * _dispMult and close < low[1]
     _bullReject = close > open and _lowerWick >= _safeBody * _rejectWickMult
@@ -89,102 +62,94 @@ amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
 
 [amyEntryV2_ltfHigh, amyEntryV2_ltfLow, amyEntryV2_ltfSweepDir, amyEntryV2_ltfSweptPrice, amyEntryV2_ltfSweepExtreme, amyEntryV2_ltfBullBreak, amyEntryV2_ltfBearBreak, amyEntryV2_ltfBullDisp, amyEntryV2_ltfBearDisp, amyEntryV2_ltfBullReject, amyEntryV2_ltfBearReject, amyEntryV2_ltfClose] = request.security(syminfo.tickerid, amyEntryV2_triggerTf, amyEntryV2_ltfEngine(amyEntryV2_swingLen, amyEntryV2_dispMult, amyEntryV2_rejectWickMult), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
-var string[] amyEntryV2_events = array.new_string()
-var label[] amyEntryV2_notes = array.new<label>()
-
-var int amyEntryV2_lastDolActiveBar = na
-var int amyEntryV2_lastSweepBar = na
-var int amyEntryV2_lastPoiBar = na
-var int amyEntryV2_lastRejectBar = na
-var int amyEntryV2_lastBreakBar = na
-var int amyEntryV2_lastDolReachedBar = na
-var int amyEntryV2_lastInvalidBar = na
-
-amyEntryV2_canTrigger = amyEntryV2_timingMode == "Realtime" ? true : barstate.isconfirmed
-
-amyEntryV2_biasActive = amyDashV2_biasDir != 0 and (amyDashV2_invalidStatus == 0 or amyDashV2_invalidStatus == 1)
+amyEntryV2_biasActive = amyEntryV2_show and amyDashV2_biasDir != 0 and (amyDashV2_invalidStatus == 0 or amyDashV2_invalidStatus == 1)
 amyEntryV2_poiReady = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow)
 amyEntryV2_inPoi = amyEntryV2_poiReady and high >= amyDashV2_poiLow and low <= amyDashV2_poiHigh
-amyEntryV2_inPoiEvent = amyEntryV2_show and amyEntryV2_biasActive and amyEntryV2_inPoi and not amyEntryV2_inPoi[1]
 
 amyEntryV2_body = math.abs(close - open)
 amyEntryV2_safeBody = math.max(amyEntryV2_body, syminfo.mintick)
 amyEntryV2_upperWick = high - math.max(open, close)
 amyEntryV2_lowerWick = math.min(open, close) - low
-amyEntryV2_bullPoiReject = amyEntryV2_show and amyDashV2_biasDir == 1 and amyEntryV2_inPoi and close > open and amyEntryV2_lowerWick >= amyEntryV2_safeBody * amyEntryV2_rejectWickMult
-amyEntryV2_bearPoiReject = amyEntryV2_show and amyDashV2_biasDir == -1 and amyEntryV2_inPoi and close < open and amyEntryV2_upperWick >= amyEntryV2_safeBody * amyEntryV2_rejectWickMult
-amyEntryV2_rejectEvent = (amyEntryV2_bullPoiReject or amyEntryV2_bearPoiReject) and not (amyEntryV2_bullPoiReject[1] or amyEntryV2_bearPoiReject[1])
 
-amyEntryV2_ltfSweepAligned = amyEntryV2_show and amyEntryV2_biasActive and amyEntryV2_ltfSweepDir == amyDashV2_biasDir and amyEntryV2_ltfSweepDir != 0
-amyEntryV2_ltfSweepEvent = amyEntryV2_ltfSweepAligned and nz(amyEntryV2_ltfSweepDir[1], 0) == 0
+amyEntryV2_bullPoiReject = amyEntryV2_biasActive and amyDashV2_biasDir == 1 and amyEntryV2_inPoi and close > open and amyEntryV2_lowerWick >= amyEntryV2_safeBody * amyEntryV2_rejectWickMult
+amyEntryV2_bearPoiReject = amyEntryV2_biasActive and amyDashV2_biasDir == -1 and amyEntryV2_inPoi and close < open and amyEntryV2_upperWick >= amyEntryV2_safeBody * amyEntryV2_rejectWickMult
 
-amyEntryV2_breakBullEvent = amyEntryV2_show and amyDashV2_biasDir == 1 and amyEntryV2_ltfBullBreak and amyEntryV2_ltfBullDisp and not (amyEntryV2_ltfBullBreak[1] and amyEntryV2_ltfBullDisp[1])
-amyEntryV2_breakBearEvent = amyEntryV2_show and amyDashV2_biasDir == -1 and amyEntryV2_ltfBearBreak and amyEntryV2_ltfBearDisp and not (amyEntryV2_ltfBearBreak[1] and amyEntryV2_ltfBearDisp[1])
-amyEntryV2_breakEvent = amyEntryV2_breakBullEvent or amyEntryV2_breakBearEvent
+amyEntryV2_ltfSweepAligned = amyEntryV2_biasActive and amyEntryV2_ltfSweepDir == amyDashV2_biasDir and amyEntryV2_ltfSweepDir != 0
+amyEntryV2_breakBullLive = amyEntryV2_biasActive and amyDashV2_biasDir == 1 and amyEntryV2_ltfBullBreak and amyEntryV2_ltfBullDisp
+amyEntryV2_breakBearLive = amyEntryV2_biasActive and amyDashV2_biasDir == -1 and amyEntryV2_ltfBearBreak and amyEntryV2_ltfBearDisp
 
-amyEntryV2_dolTargetChanged = not na(amyDashV2_dolTarget) and (na(amyDashV2_dolTarget[1]) or amyDashV2_dolTarget != amyDashV2_dolTarget[1])
-amyEntryV2_dolActiveEvent = amyEntryV2_show and amyDashV2_dolStatus == 1 and (amyDashV2_dolStatus[1] != 1 or amyEntryV2_dolTargetChanged)
-amyEntryV2_dolReachedEvent = amyEntryV2_show and amyDashV2_dolStatus == 2 and amyDashV2_dolStatus[1] != 2
-amyEntryV2_invalidEvent = amyEntryV2_show and amyDashV2_invalidStatus == 2 and amyDashV2_invalidStatus[1] != 2
+amyEntryV2_liveText = ""
+amyEntryV2_liveDir = amyDashV2_biasDir
+amyEntryV2_liveBg = color.new(color.gray, 15)
 
-if amyEntryV2_show and amyEntryV2_canTrigger
-    if amyEntryV2_dolActiveEvent and amyEntryV2_lastDolActiveBar != bar_index
-        amyEntryV2_msg = "DOL aktif ke " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget) + "\nPerhatikan harga menuju target"
-        amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_msg, "\n", " | "), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_msg, amyDashV2_biasDir == 0 ? amyDashV2_dolDir : amyDashV2_biasDir, color.new(color.blue, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastDolActiveBar := bar_index
+if amyEntryV2_show
+    if amyDashV2_invalidStatus == 2
+        amyEntryV2_liveText := "Setup batal\nharga close melewati invalid " + amyEntryV2_price(amyDashV2_invalidLevel)
+        amyEntryV2_liveDir := amyDashV2_biasDir == 0 ? -1 : amyDashV2_biasDir
+        amyEntryV2_liveBg := color.new(color.red, 5)
 
-    if amyEntryV2_ltfSweepEvent and amyEntryV2_lastSweepBar != bar_index
-        amyEntryV2_sweepMsg = amyEntryV2_ltfSweepDir == 1 ? "SSL swept, cari konfirmasi buy" : "BSL swept, cari konfirmasi sell"
-        amyEntryV2_addEvent(amyEntryV2_events, amyEntryV2_sweepMsg + " | " + amyEntryV2_price(amyEntryV2_ltfSweptPrice), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_sweepMsg, amyEntryV2_ltfSweepDir, color.new(color.aqua, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastSweepBar := bar_index
+    else if amyDashV2_dolStatus == 2
+        amyEntryV2_liveText := "DOL reached\nhati-hati reaksi baru"
+        amyEntryV2_liveDir := amyDashV2_dolDir == 0 ? amyDashV2_biasDir : amyDashV2_dolDir
+        amyEntryV2_liveBg := color.new(color.orange, 10)
 
-    if amyEntryV2_inPoiEvent and amyEntryV2_lastPoiBar != bar_index
-        amyEntryV2_poiMsg = "Harga masuk " + amyEntryV2_poiName(amyDashV2_poiType) + "\ntunggu reaksi"
-        amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_poiMsg, "\n", " | "), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_poiMsg, amyDashV2_biasDir, color.new(color.gray, 10), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastPoiBar := bar_index
+    else if amyEntryV2_breakBullLive
+        amyEntryV2_liveText := "Harga valid break bullish"
+        amyEntryV2_liveDir := 1
+        amyEntryV2_liveBg := color.new(color.lime, 5)
 
-    if amyEntryV2_rejectEvent and amyEntryV2_lastRejectBar != bar_index
-        amyEntryV2_rejectMsg = "Rejection dari POI\npantau " + amyEntryV2_dirName(amyDashV2_biasDir)
-        amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_rejectMsg, "\n", " | "), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_rejectMsg, amyDashV2_biasDir, amyDashV2_biasDir == 1 ? color.new(color.lime, 15) : color.new(color.red, 15), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastRejectBar := bar_index
+    else if amyEntryV2_breakBearLive
+        amyEntryV2_liveText := "Harga valid break bearish"
+        amyEntryV2_liveDir := -1
+        amyEntryV2_liveBg := color.new(color.red, 5)
 
-    if amyEntryV2_breakEvent and amyEntryV2_lastBreakBar != bar_index
-        amyEntryV2_breakMsg = amyDashV2_biasDir == 1 ? "Harga valid break bullish" : "Harga valid break bearish"
-        amyEntryV2_addEvent(amyEntryV2_events, amyEntryV2_breakMsg, amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_breakMsg, amyDashV2_biasDir, amyDashV2_biasDir == 1 ? color.new(color.lime, 5) : color.new(color.red, 5), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastBreakBar := bar_index
+    else if amyEntryV2_bullPoiReject or amyEntryV2_bearPoiReject
+        amyEntryV2_liveText := "Rejection dari POI\npantau " + amyEntryV2_dirName(amyDashV2_biasDir)
+        amyEntryV2_liveDir := amyDashV2_biasDir
+        amyEntryV2_liveBg := amyDashV2_biasDir == 1 ? color.new(color.lime, 15) : color.new(color.red, 15)
 
-    if amyEntryV2_dolReachedEvent and amyEntryV2_lastDolReachedBar != bar_index
-        amyEntryV2_reachedMsg = "DOL reached\nhati-hati reaksi baru"
-        amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_reachedMsg, "\n", " | "), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_reachedMsg, amyDashV2_dolDir == 0 ? 1 : amyDashV2_dolDir, color.new(color.orange, 10), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastDolReachedBar := bar_index
+    else if amyEntryV2_inPoi
+        amyEntryV2_liveText := "Harga masuk " + amyEntryV2_poiName(amyDashV2_poiType) + "\ntunggu reaksi"
+        amyEntryV2_liveDir := amyDashV2_biasDir
+        amyEntryV2_liveBg := color.new(color.gray, 10)
 
-    if amyEntryV2_invalidEvent and amyEntryV2_lastInvalidBar != bar_index
-        amyEntryV2_invalidMsg = "Setup batal\nharga close melewati invalid " + amyEntryV2_price(amyDashV2_invalidLevel)
-        amyEntryV2_addEvent(amyEntryV2_events, str.replace_all(amyEntryV2_invalidMsg, "\n", " | "), amyEntryV2_panelRows)
-        if amyEntryV2_showChartNotes
-            amyEntryV2_addNote(amyEntryV2_notes, amyEntryV2_invalidMsg, amyDashV2_biasDir == 0 ? -1 : amyDashV2_biasDir, color.new(color.red, 5), amyEntryV2_maxChartNotes, amyEntryV2_noteOffsetAtr)
-        amyEntryV2_lastInvalidBar := bar_index
+    else if amyEntryV2_ltfSweepAligned
+        amyEntryV2_liveText := amyEntryV2_ltfSweepDir == 1 ? "SSL swept, cari konfirmasi buy" : "BSL swept, cari konfirmasi sell"
+        amyEntryV2_liveDir := amyEntryV2_ltfSweepDir
+        amyEntryV2_liveBg := color.new(color.aqua, 15)
 
-var table amyEntryV2_panel = table.new(amyEntryV2_pos(amyEntryV2_panelPosInput), 1, amyEntryV2_panelRows + 1, bgcolor=color.new(color.black, 8), border_width=1, border_color=color.new(color.gray, 60))
+    else if amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == 1
+        amyEntryV2_liveText := "SSL swept, cari konfirmasi buy"
+        amyEntryV2_liveDir := 1
+        amyEntryV2_liveBg := color.new(color.aqua, 15)
 
-if amyEntryV2_show and amyEntryV2_showPanel and barstate.islast
-    table.clear(amyEntryV2_panel, 0, 0, 0, amyEntryV2_panelRows)
-    table.cell(amyEntryV2_panel, 0, 0, "ENTRY ASSISTANT", text_color=color.white, bgcolor=color.new(#07111D, 0), text_size=size.tiny)
-    for amyEntryV2_i = 0 to amyEntryV2_panelRows - 1
-        amyEntryV2_txt = amyEntryV2_i < array.size(amyEntryV2_events) ? array.get(amyEntryV2_events, amyEntryV2_i) : ""
-        table.cell(amyEntryV2_panel, 0, amyEntryV2_i + 1, amyEntryV2_clip(amyEntryV2_txt, 65), text_color=color.white, bgcolor=color.new(#050B12, 0), text_size=size.tiny)
+    else if amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == -1
+        amyEntryV2_liveText := "BSL swept, cari konfirmasi sell"
+        amyEntryV2_liveDir := -1
+        amyEntryV2_liveBg := color.new(color.aqua, 15)
 
-if (not amyEntryV2_show or not amyEntryV2_showPanel) and barstate.islast
-    table.clear(amyEntryV2_panel, 0, 0, 0, amyEntryV2_panelRows)
+    else if amyDashV2_dolStatus == 1
+        amyEntryV2_liveText := "DOL aktif ke " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget) + "\nPerhatikan harga menuju target"
+        amyEntryV2_liveDir := amyDashV2_biasDir == 0 ? amyDashV2_dolDir : amyDashV2_biasDir
+        amyEntryV2_liveBg := color.new(color.blue, 15)
+
+var label amyEntryV2_liveLabel = na
+
+amyEntryV2_labelY = amyEntryV2_liveDir == 1 ? low - ta.atr(14) * amyEntryV2_noteOffsetAtr : high + ta.atr(14) * amyEntryV2_noteOffsetAtr
+amyEntryV2_labelStyle = amyEntryV2_liveDir == 1 ? label.style_label_up : label.style_label_down
+
+if barstate.islast
+    if amyEntryV2_show and amyEntryV2_showChartNotes and amyEntryV2_liveText != ""
+        if na(amyEntryV2_liveLabel)
+            amyEntryV2_liveLabel := label.new(bar_index, amyEntryV2_labelY, amyEntryV2_liveText, xloc=xloc.bar_index, style=amyEntryV2_labelStyle, color=amyEntryV2_liveBg, textcolor=color.white, size=size.tiny)
+        else
+            label.set_xy(amyEntryV2_liveLabel, bar_index, amyEntryV2_labelY)
+            label.set_text(amyEntryV2_liveLabel, amyEntryV2_liveText)
+            label.set_style(amyEntryV2_liveLabel, amyEntryV2_labelStyle)
+            label.set_color(amyEntryV2_liveLabel, amyEntryV2_liveBg)
+            label.set_textcolor(amyEntryV2_liveLabel, color.white)
+            label.set_size(amyEntryV2_liveLabel, size.tiny)
+    else
+        if not na(amyEntryV2_liveLabel)
+            label.delete(amyEntryV2_liveLabel)
+            amyEntryV2_liveLabel := na
