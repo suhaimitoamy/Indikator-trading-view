@@ -3,7 +3,7 @@ amyEntryV2_group = "AMY Entry Assistant V2"
 amyEntryV2_show = input.bool(true, "Show Entry Assistant", group=amyEntryV2_group)
 amyEntryV2_showChartNotes = input.bool(true, "Show Chart Narration", group=amyEntryV2_group)
 amyEntryV2_showPanel = input.bool(false, "Show Assistant Panel", group=amyEntryV2_group)
-amyEntryV2_timingMode = input.string("Confirmed", "Signal Timing", options=["Confirmed", "Realtime"], group=amyEntryV2_group)
+amyEntryV2_timingMode = input.string("Realtime", "Signal Timing", options=["Confirmed", "Realtime"], group=amyEntryV2_group)
 amyEntryV2_panelPosInput = input.string("Bottom Left", "Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=amyEntryV2_group)
 amyEntryV2_triggerTf = input.timeframe("5", "Trigger Confirmation TF", group=amyEntryV2_group)
 amyEntryV2_swingLen = input.int(3, "Trigger Swing Length", minval=1, maxval=10, group=amyEntryV2_group)
