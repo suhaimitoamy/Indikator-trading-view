@@ -1268,6 +1268,8 @@ amyKeyV2_showPDH = input.bool(true, "Show PDH", group=amyKeyV2_group)
 amyKeyV2_showPDL = input.bool(true, "Show PDL", group=amyKeyV2_group)
 amyKeyV2_showBSL = input.bool(false, "Show BSL", group=amyKeyV2_group)
 amyKeyV2_showSSL = input.bool(false, "Show SSL", group=amyKeyV2_group)
+amyKeyV2_showAsiaHigh = input.bool(true, "Show Asia High", group=amyKeyV2_group)
+amyKeyV2_showAsiaLow = input.bool(true, "Show Asia Low", group=amyKeyV2_group)
 
 amyKeyV2_moTz = input.string("America/New_York", "Midnight Open Timezone", group=amyKeyV2_group)
 amyKeyV2_swingLen = input.int(5, "BSL / SSL Swing Length", minval=1, maxval=50, group=amyKeyV2_group)
@@ -1313,8 +1315,51 @@ if not na(amyKeyV2_ph)
 if not na(amyKeyV2_pl)
     amyKeyV2_ssl := amyKeyV2_pl
 
-var line[] amyKeyV2_lines = array.new<line>(5, na)
-var label[] amyKeyV2_labels = array.new<label>(5, na)
+// === Asia Session High/Low Engine (Anti-Repaint) ===
+amyKeyV2_asiaEngine() =>
+    var float _asiaH = na
+    var float _asiaL = na
+    var float _lockedH = na
+    var float _lockedL = na
+    _inAsia = not na(time(timeframe.period, "2000-0000", "America/New_York"))
+    _prevInAsia = not na(time(timeframe.period, "2000-0000", "America/New_York"))[1]
+    // Sesi Asia mulai — reset tracking
+    if _inAsia and not _prevInAsia
+        _asiaH := high
+        _asiaL := low
+    // Selama sesi aktif — update high/low
+    if _inAsia
+        _asiaH := math.max(nz(_asiaH, high), high)
+        _asiaL := math.min(nz(_asiaL, low), low)
+    // Sesi Asia selesai — lock nilai
+    if not _inAsia and _prevInAsia
+        _lockedH := _asiaH
+        _lockedL := _asiaL
+    // Return: selama sesi = live tracking, setelah sesi = locked
+    _resultH = _inAsia ? _asiaH : _lockedH
+    _resultL = _inAsia ? _asiaL : _lockedL
+    [_resultH, _resultL]
+
+[amyKeyV2_asiaHighRaw, amyKeyV2_asiaLowRaw] = request.security(syminfo.tickerid, "1", amyKeyV2_asiaEngine(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// Fallback untuk timeframe tinggi
+var float amyKeyV2_asiaHighFb = na
+var float amyKeyV2_asiaLowFb = na
+amyKeyV2_chartInAsia = not na(time(timeframe.period, "2000-0000", "America/New_York"))
+amyKeyV2_chartPrevAsia = not na(time(timeframe.period, "2000-0000", "America/New_York"))[1]
+
+if amyKeyV2_chartInAsia and not amyKeyV2_chartPrevAsia
+    amyKeyV2_asiaHighFb := high
+    amyKeyV2_asiaLowFb := low
+if amyKeyV2_chartInAsia
+    amyKeyV2_asiaHighFb := math.max(nz(amyKeyV2_asiaHighFb, high), high)
+    amyKeyV2_asiaLowFb := math.min(nz(amyKeyV2_asiaLowFb, low), low)
+
+amyKeyV2_asiaHigh = na(amyKeyV2_asiaHighRaw) ? amyKeyV2_asiaHighFb : amyKeyV2_asiaHighRaw
+amyKeyV2_asiaLow = na(amyKeyV2_asiaLowRaw) ? amyKeyV2_asiaLowFb : amyKeyV2_asiaLowRaw
+
+var line[] amyKeyV2_lines = array.new<line>(7, na)
+var label[] amyKeyV2_labels = array.new<label>(7, na)
 
 amyKeyV2_draw(_idx, _price, _name, _col, _showLevel) =>
     line _ln = array.get(amyKeyV2_lines, _idx)
@@ -1363,6 +1408,8 @@ amyKeyV2_draw(1, amyKeyV2_pdh, "PDH", color.new(color.red, 0), amyKeyV2_showPDH)
 amyKeyV2_draw(2, amyKeyV2_pdl, "PDL", color.new(color.lime, 0), amyKeyV2_showPDL)
 amyKeyV2_draw(3, amyKeyV2_bsl, "BSL", color.new(color.fuchsia, 0), amyKeyV2_showBSL)
 amyKeyV2_draw(4, amyKeyV2_ssl, "SSL", color.new(color.aqua, 0), amyKeyV2_showSSL)
+amyKeyV2_draw(5, amyKeyV2_asiaHigh, "ASIA H", color.new(#ff6d00, 0), amyKeyV2_showAsiaHigh)
+amyKeyV2_draw(6, amyKeyV2_asiaLow, "ASIA L", color.new(#00b0ff, 0), amyKeyV2_showAsiaLow)
 
 amyDashV2_group = "AMY Dashboard Bias V2"
 amyDashV2_show = input.bool(true, "Show Dashboard", group=amyDashV2_group)
@@ -1781,17 +1828,17 @@ if amyDashV2_show and barstate.islast
 if not amyDashV2_show and barstate.islast
     table.clear(amyDashV2_table, 0, 0, 1, 15)
 
-//==================== AMY ENTRY ASSISTANT V2 ====================//
+//==================== AMY ENTRY ASSISTANT V2 — CONFLUENCE SCORING ====================//
 amyEntryV2_group = "AMY Entry Assistant V2"
 amyEntryV2_show = input.bool(true, "Show Entry Assistant", group=amyEntryV2_group)
 amyEntryV2_showChartNotes = input.bool(true, "Show Chart Narration", group=amyEntryV2_group)
 amyEntryV2_showPanel = input.bool(false, "Show Assistant Panel", group=amyEntryV2_group)
-amyEntryV2_timingMode = input.string("Realtime", "Timing Mode", options=["Realtime"], group=amyEntryV2_group)
 amyEntryV2_triggerTf = input.timeframe("5", "Trigger Confirmation TF", group=amyEntryV2_group)
 amyEntryV2_swingLen = input.int(3, "Trigger Swing Length", minval=1, maxval=10, group=amyEntryV2_group)
 amyEntryV2_dispMult = input.float(1.0, "Trigger Displacement Body Mult", minval=0.5, maxval=3.0, step=0.1, group=amyEntryV2_group)
 amyEntryV2_rejectWickMult = input.float(1.25, "POI Rejection Wick Mult", minval=0.5, maxval=5.0, step=0.05, group=amyEntryV2_group)
 amyEntryV2_noteOffsetAtr = input.float(0.70, "Chart Note Offset ATR", minval=0.10, maxval=3.0, step=0.05, group=amyEntryV2_group)
+amyEntryV2_minScore = input.int(40, "Minimum Score to Show", minval=10, maxval=90, step=5, group=amyEntryV2_group)
 
 amyEntryV2_price(_x) =>
     na(_x) ? "-" : str.tostring(_x, format.mintick)
@@ -1807,8 +1854,9 @@ amyEntryV2_dolName(_dir) =>
     _dir == 1 ? "BSL" : _dir == -1 ? "SSL" : "liquidity"
 
 amyEntryV2_dirName(_dir) =>
-    _dir == 1 ? "buy" : _dir == -1 ? "sell" : "arah bias"
+    _dir == 1 ? "BUY" : _dir == -1 ? "SELL" : "—"
 
+// === LTF Confirmation Engine (Anti-Repaint: semua data dari closed bars) ===
 amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
     var float _lastHigh = na
     var float _lastLow = na
@@ -1845,6 +1893,7 @@ amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
 
 [amyEntryV2_ltfHigh, amyEntryV2_ltfLow, amyEntryV2_ltfSweepDir, amyEntryV2_ltfSweptPrice, amyEntryV2_ltfSweepExtreme, amyEntryV2_ltfBullBreak, amyEntryV2_ltfBearBreak, amyEntryV2_ltfBullDisp, amyEntryV2_ltfBearDisp, amyEntryV2_ltfBullReject, amyEntryV2_ltfBearReject, amyEntryV2_ltfClose] = request.security(syminfo.tickerid, amyEntryV2_triggerTf, amyEntryV2_ltfEngine(amyEntryV2_swingLen, amyEntryV2_dispMult, amyEntryV2_rejectWickMult), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
+// === Existing condition checks ===
 amyEntryV2_biasActive = amyEntryV2_show and amyDashV2_biasDir != 0 and (amyDashV2_invalidStatus == 0 or amyDashV2_invalidStatus == 1)
 amyEntryV2_poiReady = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow)
 amyEntryV2_inPoi = amyEntryV2_poiReady and high >= amyDashV2_poiLow and low <= amyDashV2_poiHigh
@@ -1858,64 +1907,300 @@ amyEntryV2_bullPoiReject = amyEntryV2_biasActive and amyDashV2_biasDir == 1 and 
 amyEntryV2_bearPoiReject = amyEntryV2_biasActive and amyDashV2_biasDir == -1 and amyEntryV2_inPoi and close < open and amyEntryV2_upperWick >= amyEntryV2_safeBody * amyEntryV2_rejectWickMult
 
 amyEntryV2_ltfSweepAligned = amyEntryV2_biasActive and amyEntryV2_ltfSweepDir == amyDashV2_biasDir and amyEntryV2_ltfSweepDir != 0
-amyEntryV2_breakBullLive = amyEntryV2_biasActive and amyDashV2_biasDir == 1 and amyEntryV2_ltfBullBreak and amyEntryV2_ltfBullDisp
-amyEntryV2_breakBearLive = amyEntryV2_biasActive and amyDashV2_biasDir == -1 and amyEntryV2_ltfBearBreak and amyEntryV2_ltfBearDisp
 
+// =====================================================================
+// MULTI-LAYER CONFLUENCE SCORING ENGINE (Non-Repaint)
+// Semua data dari closed candles — tidak ada sinyal yang berubah
+// setelah candle close.
+// =====================================================================
+
+// --- Layer 1: M15 Bias Direction (max 20 pts) ---
+amyEntryV2_bullBias = amyDashV2_biasDir == 1 ? 20 : 0
+amyEntryV2_bearBias = amyDashV2_biasDir == -1 ? 20 : 0
+
+// --- Layer 2: Liquidity Sweep (max 20 pts) ---
+// Fresh sweep = 20, Old sweep = 8, No sweep = 0
+amyEntryV2_bullSweep = amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == 1 ? 20 :
+ amyDashV2_sweepStatus == 2 and amyDashV2_sweepDir == 1 ? 8 :
+ amyEntryV2_ltfSweepDir == 1 ? 12 : 0
+amyEntryV2_bearSweep = amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == -1 ? 20 :
+ amyDashV2_sweepStatus == 2 and amyDashV2_sweepDir == -1 ? 8 :
+ amyEntryV2_ltfSweepDir == -1 ? 12 : 0
+
+// --- Layer 3: POI Alignment (max 15 pts) ---
+// POI aligned + correct zone = 15, POI aligned only = 8
+amyEntryV2_bullPoi = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and amyDashV2_biasDir == 1 ?
+ (amyDashV2_poiLocation == -1 ? 15 : 8) : 0
+amyEntryV2_bearPoi = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and amyDashV2_biasDir == -1 ?
+ (amyDashV2_poiLocation == 1 ? 15 : 8) : 0
+
+// Bonus: Rejection dari POI (+5)
+amyEntryV2_bullPoiBonus = amyEntryV2_bullPoiReject ? 5 : (amyEntryV2_inPoi and amyDashV2_biasDir == 1 ? 3 : 0)
+amyEntryV2_bearPoiBonus = amyEntryV2_bearPoiReject ? 5 : (amyEntryV2_inPoi and amyDashV2_biasDir == -1 ? 3 : 0)
+
+// --- Layer 4: DOL Active (max 10 pts) ---
+amyEntryV2_bullDol = amyDashV2_dolStatus == 1 and amyDashV2_dolDir == 1 ? 10 :
+ amyDashV2_dolStatus == 2 and amyDashV2_dolDir == 1 ? 5 : 0
+amyEntryV2_bearDol = amyDashV2_dolStatus == 1 and amyDashV2_dolDir == -1 ? 10 :
+ amyDashV2_dolStatus == 2 and amyDashV2_dolDir == -1 ? 5 : 0
+
+// --- Layer 5: Price Location / Zone (max 10 pts) ---
+// Buy dari discount = 10, EQ = 3, Premium = 0
+// Sell dari premium = 10, EQ = 3, Discount = 0
+amyEntryV2_bullLoc = amyDashV2_priceZone == -1 ? 10 : amyDashV2_priceZone == 0 ? 3 : 0
+amyEntryV2_bearLoc = amyDashV2_priceZone == 1 ? 10 : amyDashV2_priceZone == 0 ? 3 : 0
+
+// --- Layer 6: LTF Displacement (max 15 pts) ---
+amyEntryV2_bullDisp = amyEntryV2_ltfBullDisp ? 15 : 0
+amyEntryV2_bearDisp = amyEntryV2_ltfBearDisp ? 15 : 0
+
+// --- Layer 7: LTF Structure Break (max 10 pts) ---
+amyEntryV2_bullBreak = amyEntryV2_ltfBullBreak ? 10 : 0
+amyEntryV2_bearBreak = amyEntryV2_ltfBearBreak ? 10 : 0
+
+// --- Layer 8: Asia Session Context (max 5 pts) ---
+// Bounce dari Asia Low = bullish, Reject dari Asia High = bearish
+amyEntryV2_bullAsia = not na(amyKeyV2_asiaLow) and low <= amyKeyV2_asiaLow and close > amyKeyV2_asiaLow ? 5 :
+ not na(amyKeyV2_asiaHigh) and close > amyKeyV2_asiaHigh ? 3 : 0
+amyEntryV2_bearAsia = not na(amyKeyV2_asiaHigh) and high >= amyKeyV2_asiaHigh and close < amyKeyV2_asiaHigh ? 5 :
+ not na(amyKeyV2_asiaLow) and close < amyKeyV2_asiaLow ? 3 : 0
+
+// === TOTAL SCORE (max ~105 with bonuses, capped display at 100) ===
+amyEntryV2_rawBullScore = amyEntryV2_bullBias + amyEntryV2_bullSweep + amyEntryV2_bullPoi + amyEntryV2_bullPoiBonus + amyEntryV2_bullDol + amyEntryV2_bullLoc + amyEntryV2_bullDisp + amyEntryV2_bullBreak + amyEntryV2_bullAsia
+amyEntryV2_rawBearScore = amyEntryV2_bearBias + amyEntryV2_bearSweep + amyEntryV2_bearPoi + amyEntryV2_bearPoiBonus + amyEntryV2_bearDol + amyEntryV2_bearLoc + amyEntryV2_bearDisp + amyEntryV2_bearBreak + amyEntryV2_bearAsia
+
+amyEntryV2_bullScore = math.min(amyEntryV2_rawBullScore, 100)
+amyEntryV2_bearScore = math.min(amyEntryV2_rawBearScore, 100)
+
+// === Penalty: Invalid status mengurangi skor ===
+amyEntryV2_bullScoreFinal = amyDashV2_invalidStatus == 2 ? 0 : amyDashV2_invalidStatus == 1 ? math.round(amyEntryV2_bullScore * 0.7) : amyEntryV2_bullScore
+amyEntryV2_bearScoreFinal = amyDashV2_invalidStatus == 2 ? 0 : amyDashV2_invalidStatus == 1 ? math.round(amyEntryV2_bearScore * 0.7) : amyEntryV2_bearScore
+
+// === Determine winning direction ===
+amyEntryV2_winDir = amyEntryV2_bullScoreFinal > amyEntryV2_bearScoreFinal ? 1 : amyEntryV2_bearScoreFinal > amyEntryV2_bullScoreFinal ? -1 : 0
+amyEntryV2_winScore = amyEntryV2_winDir == 1 ? amyEntryV2_bullScoreFinal : amyEntryV2_winDir == -1 ? amyEntryV2_bearScoreFinal : 0
+
+// === Proximity detection ===
+amyEntryV2_atr14 = ta.atr(14)
+amyEntryV2_poiMid = not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow) ? (amyDashV2_poiHigh + amyDashV2_poiLow) / 2.0 : na
+amyEntryV2_poiDist = not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow) ?
+ (close >= amyDashV2_poiLow and close <= amyDashV2_poiHigh ? 0.0 :
+ math.min(math.abs(close - amyDashV2_poiHigh), math.abs(close - amyDashV2_poiLow))) : na
+amyEntryV2_nearPoi = not na(amyEntryV2_poiDist) and amyEntryV2_poiDist > 0 and amyEntryV2_poiDist <= amyEntryV2_atr14 * 1.5 and amyEntryV2_poiReady
+
+// Asia proximity
+amyEntryV2_nearAsiaH = not na(amyKeyV2_asiaHigh) and math.abs(close - amyKeyV2_asiaHigh) <= amyEntryV2_atr14 * 0.8 and close != amyKeyV2_asiaHigh
+amyEntryV2_nearAsiaL = not na(amyKeyV2_asiaLow) and math.abs(close - amyKeyV2_asiaLow) <= amyEntryV2_atr14 * 0.8 and close != amyKeyV2_asiaLow
+amyEntryV2_touchAsiaH = not na(amyKeyV2_asiaHigh) and high >= amyKeyV2_asiaHigh and low <= amyKeyV2_asiaHigh
+amyEntryV2_touchAsiaL = not na(amyKeyV2_asiaLow) and high >= amyKeyV2_asiaLow and low <= amyKeyV2_asiaLow
+amyEntryV2_breakAboveAsiaH = not na(amyKeyV2_asiaHigh) and close > amyKeyV2_asiaHigh and close[1] <= amyKeyV2_asiaHigh
+amyEntryV2_breakBelowAsiaL = not na(amyKeyV2_asiaLow) and close < amyKeyV2_asiaLow and close[1] >= amyKeyV2_asiaLow
+
+// DOL proximity
+amyEntryV2_dolDist = not na(amyDashV2_dolTarget) ? math.abs(close - amyDashV2_dolTarget) : na
+amyEntryV2_nearDol = not na(amyEntryV2_dolDist) and amyEntryV2_dolDist <= amyEntryV2_atr14 * 1.0 and amyDashV2_dolStatus == 1
+
+// Invalid proximity
+amyEntryV2_invDist = not na(amyDashV2_invalidLevel) ? math.abs(close - amyDashV2_invalidLevel) : na
+amyEntryV2_nearInvalid = not na(amyEntryV2_invDist) and amyEntryV2_invDist <= amyEntryV2_atr14 * 0.6
+
+// Valid break conditions
+amyEntryV2_validBreakBull = amyEntryV2_ltfBullBreak and amyEntryV2_ltfBullDisp and amyDashV2_biasDir == 1
+amyEntryV2_validBreakBear = amyEntryV2_ltfBearBreak and amyEntryV2_ltfBearDisp and amyDashV2_biasDir == -1
+
+// =====================================================================
+// CONTEXTUAL NARRATION ENGINE
+// Chart "berbicara" — menjelaskan apa yang terjadi dengan harga
+// secara natural, seperti asisten trading pribadi
+// =====================================================================
+
+amyEntryV2_addLine(_existing, _new) =>
+    _existing == "" ? _new : _existing + "\n" + _new
+
+// === Compose contextual narration ===
 amyEntryV2_liveText = ""
-amyEntryV2_liveDir = amyDashV2_biasDir
+amyEntryV2_liveDir = amyEntryV2_winDir != 0 ? amyEntryV2_winDir : (amyDashV2_biasDir != 0 ? amyDashV2_biasDir : 1)
 amyEntryV2_liveBg = color.new(color.gray, 15)
 
 if amyEntryV2_show
+    // --- PRIORITAS 1: Setup batal / Invalid ---
     if amyDashV2_invalidStatus == 2
-        amyEntryV2_liveText := "Setup batal\nharga close melewati invalid " + amyEntryV2_price(amyDashV2_invalidLevel)
+        amyEntryV2_liveText := "⚠ Setup batal\nHarga melewati invalid " + amyEntryV2_price(amyDashV2_invalidLevel) + "\nJangan entry, tunggu struktur baru"
         amyEntryV2_liveDir := amyDashV2_biasDir == 0 ? -1 : amyDashV2_biasDir
-        amyEntryV2_liveBg := color.new(color.red, 5)
+        amyEntryV2_liveBg := color.new(#b71c1c, 5)
 
-    else if amyDashV2_dolStatus == 2
-        amyEntryV2_liveText := "DOL reached\nhati-hati reaksi baru"
-        amyEntryV2_liveDir := amyDashV2_dolDir == 0 ? amyDashV2_biasDir : amyDashV2_dolDir
-        amyEntryV2_liveBg := color.new(color.orange, 10)
+    else
+        // === Build narration dari semua event yang aktif ===
+        _narr = ""
+        _importance = 0  // track how important current state is
 
-    else if amyEntryV2_breakBullLive
-        amyEntryV2_liveText := "Harga valid break bullish"
-        amyEntryV2_liveDir := 1
-        amyEntryV2_liveBg := color.new(color.lime, 5)
+        // --- POI Rejection (paling penting) ---
+        if amyEntryV2_bullPoiReject
+            _narr := amyEntryV2_addLine(_narr, "🔥 Rejection kuat dari " + amyEntryV2_poiName(amyDashV2_poiType))
+            _narr := amyEntryV2_addLine(_narr, "Konfirmasi buy, wick bawah panjang")
+            _importance := 5
+        else if amyEntryV2_bearPoiReject
+            _narr := amyEntryV2_addLine(_narr, "🔥 Rejection kuat dari " + amyEntryV2_poiName(amyDashV2_poiType))
+            _narr := amyEntryV2_addLine(_narr, "Konfirmasi sell, wick atas panjang")
+            _importance := 5
 
-    else if amyEntryV2_breakBearLive
-        amyEntryV2_liveText := "Harga valid break bearish"
-        amyEntryV2_liveDir := -1
-        amyEntryV2_liveBg := color.new(color.red, 5)
+        // --- Valid Break + Displacement ---
+        else if amyEntryV2_validBreakBull
+            _narr := amyEntryV2_addLine(_narr, "✓ Valid break bullish dengan displacement")
+            _narr := amyEntryV2_addLine(_narr, "Struktur LTF confirm naik")
+            _importance := 4
+        else if amyEntryV2_validBreakBear
+            _narr := amyEntryV2_addLine(_narr, "✓ Valid break bearish dengan displacement")
+            _narr := amyEntryV2_addLine(_narr, "Struktur LTF confirm turun")
+            _importance := 4
 
-    else if amyEntryV2_bullPoiReject or amyEntryV2_bearPoiReject
-        amyEntryV2_liveText := "Rejection dari POI\npantau " + amyEntryV2_dirName(amyDashV2_biasDir)
-        amyEntryV2_liveDir := amyDashV2_biasDir
-        amyEntryV2_liveBg := amyDashV2_biasDir == 1 ? color.new(color.lime, 15) : color.new(color.red, 15)
+        // --- Harga masuk POI ---
+        else if amyEntryV2_inPoi
+            _poiN = amyEntryV2_poiName(amyDashV2_poiType)
+            _narr := amyEntryV2_addLine(_narr, "📍 " + _poiN + " tersentuh")
+            _narr := amyEntryV2_addLine(_narr, "Pantau reaksi harga di zona ini")
+            if amyDashV2_biasDir == 1
+                _narr := amyEntryV2_addLine(_narr, "Cari candle rejection untuk buy")
+            else if amyDashV2_biasDir == -1
+                _narr := amyEntryV2_addLine(_narr, "Cari candle rejection untuk sell")
+            _importance := 3
 
-    else if amyEntryV2_inPoi
-        amyEntryV2_liveText := "Harga masuk " + amyEntryV2_poiName(amyDashV2_poiType) + "\ntunggu reaksi"
-        amyEntryV2_liveDir := amyDashV2_biasDir
-        amyEntryV2_liveBg := color.new(color.gray, 10)
+        // --- Harga mendekati POI ---
+        else if amyEntryV2_nearPoi
+            _poiN = amyEntryV2_poiName(amyDashV2_poiType)
+            _narr := amyEntryV2_addLine(_narr, "👀 Harga mendekati " + _poiN)
+            _narr := amyEntryV2_addLine(_narr, "Siap-siap pantau reaksi")
+            _importance := 2
 
-    else if amyEntryV2_ltfSweepAligned
-        amyEntryV2_liveText := amyEntryV2_ltfSweepDir == 1 ? "SSL swept, cari konfirmasi buy" : "BSL swept, cari konfirmasi sell"
-        amyEntryV2_liveDir := amyEntryV2_ltfSweepDir
-        amyEntryV2_liveBg := color.new(color.aqua, 15)
+        // --- LTF Sweep aligned ---
+        else if amyEntryV2_ltfSweepAligned
+            if amyEntryV2_ltfSweepDir == 1
+                _narr := amyEntryV2_addLine(_narr, "💧 SSL swept di LTF")
+                _narr := amyEntryV2_addLine(_narr, "Likuiditas bawah terambil, cari konfirmasi buy")
+            else
+                _narr := amyEntryV2_addLine(_narr, "💧 BSL swept di LTF")
+                _narr := amyEntryV2_addLine(_narr, "Likuiditas atas terambil, cari konfirmasi sell")
+            _importance := 3
 
-    else if amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == 1
-        amyEntryV2_liveText := "SSL swept, cari konfirmasi buy"
-        amyEntryV2_liveDir := 1
-        amyEntryV2_liveBg := color.new(color.aqua, 15)
+        // --- M15 Sweep fresh ---
+        else if amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir != 0
+            if amyDashV2_sweepDir == 1
+                _narr := amyEntryV2_addLine(_narr, "💧 SSL swept (fresh)")
+                _narr := amyEntryV2_addLine(_narr, "Cari konfirmasi buy dari OB/FVG")
+            else
+                _narr := amyEntryV2_addLine(_narr, "💧 BSL swept (fresh)")
+                _narr := amyEntryV2_addLine(_narr, "Cari konfirmasi sell dari OB/FVG")
+            _importance := 2
 
-    else if amyDashV2_sweepStatus == 1 and amyDashV2_sweepDir == -1
-        amyEntryV2_liveText := "BSL swept, cari konfirmasi sell"
-        amyEntryV2_liveDir := -1
-        amyEntryV2_liveBg := color.new(color.aqua, 15)
+        // --- LTF Displacement only ---
+        else if amyEntryV2_ltfBullDisp and amyDashV2_biasDir == 1
+            _narr := amyEntryV2_addLine(_narr, "⚡ Displacement bullish terdeteksi")
+            _narr := amyEntryV2_addLine(_narr, "Candle momentum kuat ke atas")
+            _importance := 2
+        else if amyEntryV2_ltfBearDisp and amyDashV2_biasDir == -1
+            _narr := amyEntryV2_addLine(_narr, "⚡ Displacement bearish terdeteksi")
+            _narr := amyEntryV2_addLine(_narr, "Candle momentum kuat ke bawah")
+            _importance := 2
 
-    else if amyDashV2_dolStatus == 1
-        amyEntryV2_liveText := "DOL aktif ke " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget) + "\nPerhatikan harga menuju target"
-        amyEntryV2_liveDir := amyDashV2_biasDir == 0 ? amyDashV2_dolDir : amyDashV2_biasDir
-        amyEntryV2_liveBg := color.new(color.blue, 15)
+        // --- DOL reached ---
+        else if amyDashV2_dolStatus == 2
+            _narr := amyEntryV2_addLine(_narr, "🎯 Target " + amyEntryV2_dolName(amyDashV2_dolDir) + " tercapai")
+            _narr := amyEntryV2_addLine(_narr, "Hati-hati reaksi baru, jangan kejar harga")
+            _importance := 2
 
+        // --- DOL active near target ---
+        else if amyEntryV2_nearDol
+            _narr := amyEntryV2_addLine(_narr, "🎯 Harga mendekati target " + amyEntryV2_dolName(amyDashV2_dolDir))
+            _narr := amyEntryV2_addLine(_narr, amyEntryV2_dolName(amyDashV2_dolDir) + " @ " + amyEntryV2_price(amyDashV2_dolTarget))
+            _importance := 2
+
+        // --- DOL active far ---
+        else if amyDashV2_dolStatus == 1
+            _narr := amyEntryV2_addLine(_narr, "Harga bergerak menuju " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget))
+            _importance := 1
+
+        // --- Bias info jika tidak ada event spesifik ---
+        else if amyDashV2_biasDir == 1
+            _narr := amyEntryV2_addLine(_narr, "Bias M15: Bullish")
+            _narr := amyEntryV2_addLine(_narr, "Tunggu harga masuk zona discount")
+            _importance := 1
+        else if amyDashV2_biasDir == -1
+            _narr := amyEntryV2_addLine(_narr, "Bias M15: Bearish")
+            _narr := amyEntryV2_addLine(_narr, "Tunggu harga masuk zona premium")
+            _importance := 1
+
+        // === Tambahan konteks (layer 2) ===
+
+        // Near invalid warning
+        if amyEntryV2_nearInvalid and amyDashV2_invalidStatus == 1
+            _narr := amyEntryV2_addLine(_narr, "⚠ Dekat invalid " + amyEntryV2_price(amyDashV2_invalidLevel))
+
+        // Asia level interactions
+        if amyEntryV2_breakAboveAsiaH
+            _narr := amyEntryV2_addLine(_narr, "Asia High break ke atas ↑")
+        else if amyEntryV2_breakBelowAsiaL
+            _narr := amyEntryV2_addLine(_narr, "Asia Low break ke bawah ↓")
+        else if amyEntryV2_touchAsiaH and not amyEntryV2_touchAsiaL
+            _narr := amyEntryV2_addLine(_narr, "Harga menyentuh Asia High")
+        else if amyEntryV2_touchAsiaL and not amyEntryV2_touchAsiaH
+            _narr := amyEntryV2_addLine(_narr, "Harga menyentuh Asia Low")
+        else if amyEntryV2_nearAsiaH and close < amyKeyV2_asiaHigh
+            _narr := amyEntryV2_addLine(_narr, "Harga mendekati Asia High")
+        else if amyEntryV2_nearAsiaL and close > amyKeyV2_asiaLow
+            _narr := amyEntryV2_addLine(_narr, "Harga mendekati Asia Low")
+
+        // Price zone context
+        if amyDashV2_priceZone == -1 and amyDashV2_biasDir == 1
+            _narr := amyEntryV2_addLine(_narr, "📊 Posisi di Discount — ideal untuk buy")
+        else if amyDashV2_priceZone == 1 and amyDashV2_biasDir == -1
+            _narr := amyEntryV2_addLine(_narr, "📊 Posisi di Premium — ideal untuk sell")
+        else if amyDashV2_priceZone == 1 and amyDashV2_biasDir == 1
+            _narr := amyEntryV2_addLine(_narr, "📊 Posisi di Premium — bukan zona ideal buy")
+        else if amyDashV2_priceZone == -1 and amyDashV2_biasDir == -1
+            _narr := amyEntryV2_addLine(_narr, "📊 Posisi di Discount — bukan zona ideal sell")
+
+        // Target info
+        if amyDashV2_dolStatus == 1 and not amyEntryV2_nearDol and _importance >= 2
+            _narr := amyEntryV2_addLine(_narr, "Target → " + amyEntryV2_dolName(amyDashV2_dolDir) + " " + amyEntryV2_price(amyDashV2_dolTarget))
+
+        // Invalidation reminder on strong signals
+        if not na(amyDashV2_invalidLevel) and _importance >= 3
+            _narr := amyEntryV2_addLine(_narr, "Invalid jika close " + (amyDashV2_biasDir == 1 ? "di bawah " : "di atas ") + amyEntryV2_price(amyDashV2_invalidLevel))
+
+        // Score indicator kecil di akhir
+        if amyEntryV2_winScore >= amyEntryV2_minScore
+            _scoreEmoji = amyEntryV2_winScore >= 75 ? "🟢" : amyEntryV2_winScore >= 60 ? "🟡" : "🟠"
+            _narr := amyEntryV2_addLine(_narr, _scoreEmoji + " Confluence " + str.tostring(amyEntryV2_winScore) + "%")
+
+        // Assign text & colors
+        if _narr != ""
+            amyEntryV2_liveText := _narr
+            amyEntryV2_liveDir := amyEntryV2_winDir != 0 ? amyEntryV2_winDir : amyDashV2_biasDir != 0 ? amyDashV2_biasDir : 1
+
+            // Warna berdasarkan importance + direction
+            if _importance >= 4
+                amyEntryV2_liveBg := amyEntryV2_liveDir == 1 ? color.new(#00c853, 0) : color.new(#d50000, 0)
+            else if _importance >= 3
+                amyEntryV2_liveBg := amyEntryV2_liveDir == 1 ? color.new(#00c853, 15) : color.new(#d50000, 15)
+            else if _importance >= 2
+                amyEntryV2_liveBg := amyEntryV2_liveDir == 1 ? color.new(#1b5e20, 20) : color.new(#b71c1c, 20)
+            else
+                amyEntryV2_liveBg := color.new(#37474f, 15)
+
+
+// === Score bar colors for plotshape ===
+amyEntryV2_strongBull = amyEntryV2_show and amyEntryV2_winDir == 1 and amyEntryV2_winScore >= 75 and amyDashV2_invalidStatus != 2
+amyEntryV2_strongBear = amyEntryV2_show and amyEntryV2_winDir == -1 and amyEntryV2_winScore >= 75 and amyDashV2_invalidStatus != 2
+amyEntryV2_readyBull = amyEntryV2_show and amyEntryV2_winDir == 1 and amyEntryV2_winScore >= 60 and amyEntryV2_winScore < 75 and amyDashV2_invalidStatus != 2
+amyEntryV2_readyBear = amyEntryV2_show and amyEntryV2_winDir == -1 and amyEntryV2_winScore >= 60 and amyEntryV2_winScore < 75 and amyDashV2_invalidStatus != 2
+
+// === Plotshape signals (non-repaint: hanya muncul di confirmed bars) ===
+plotshape(amyEntryV2_strongBull and barstate.isconfirmed ? low : na, title="Strong Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#00c853, 0), size=size.small)
+plotshape(amyEntryV2_strongBear and barstate.isconfirmed ? high : na, title="Strong Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#d50000, 0), size=size.small)
+plotshape(amyEntryV2_readyBull and barstate.isconfirmed ? low : na, title="Ready Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#69f0ae, 0), size=size.tiny)
+plotshape(amyEntryV2_readyBear and barstate.isconfirmed ? high : na, title="Ready Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#ff8a80, 0), size=size.tiny)
+
+// === Live label on chart ===
 var label amyEntryV2_liveLabel = na
 
 amyEntryV2_labelY = amyEntryV2_liveDir == 1 ? low - ta.atr(14) * amyEntryV2_noteOffsetAtr : high + ta.atr(14) * amyEntryV2_noteOffsetAtr
@@ -1936,3 +2221,54 @@ if barstate.islast
         if not na(amyEntryV2_liveLabel)
             label.delete(amyEntryV2_liveLabel)
             amyEntryV2_liveLabel := na
+
+// === Assistant Panel (optional table) ===
+var table amyEntryV2_panel = table.new(position.bottom_left, 2, 10, bgcolor=color.new(color.black, 5), border_width=1, border_color=color.new(color.gray, 55))
+
+if amyEntryV2_show and amyEntryV2_showPanel and barstate.islast
+    table.clear(amyEntryV2_panel, 0, 0, 1, 9)
+
+    _panelHeadBg = color.new(#07111D, 0)
+    _panelKeyBg = color.new(#0B1623, 0)
+    _panelCellBg = color.new(#050B12, 0)
+    _scoreBg = amyEntryV2_winScore >= 75 ? (amyEntryV2_winDir == 1 ? color.new(#00c853, 15) : color.new(#d50000, 15)) :
+     amyEntryV2_winScore >= 60 ? color.new(#ff6f00, 20) :
+     amyEntryV2_winScore >= amyEntryV2_minScore ? color.new(color.gray, 30) :
+     color.new(color.gray, 55)
+
+    _panelSignal = amyEntryV2_winScore >= 75 ? "STRONG" : amyEntryV2_winScore >= 60 ? "READY" : amyEntryV2_winScore >= amyEntryV2_minScore ? "WATCH" : "NO SETUP"
+    table.cell(amyEntryV2_panel, 0, 0, "ENTRY SCORING", text_color=color.white, bgcolor=_panelHeadBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 0, _panelSignal, text_color=color.white, bgcolor=_scoreBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 1, "SCORE", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 1, amyEntryV2_dirName(amyEntryV2_winDir) + " " + str.tostring(amyEntryV2_winScore) + "/100", text_color=color.white, bgcolor=_scoreBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 2, "BIAS (20)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 2, "B:" + str.tostring(amyEntryV2_bullBias) + " | S:" + str.tostring(amyEntryV2_bearBias), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 3, "SWEEP (20)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 3, "B:" + str.tostring(amyEntryV2_bullSweep) + " | S:" + str.tostring(amyEntryV2_bearSweep), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 4, "POI (15+5)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 4, "B:" + str.tostring(amyEntryV2_bullPoi + amyEntryV2_bullPoiBonus) + " | S:" + str.tostring(amyEntryV2_bearPoi + amyEntryV2_bearPoiBonus), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 5, "DOL (10)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 5, "B:" + str.tostring(amyEntryV2_bullDol) + " | S:" + str.tostring(amyEntryV2_bearDol), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 6, "ZONE (10)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 6, "B:" + str.tostring(amyEntryV2_bullLoc) + " | S:" + str.tostring(amyEntryV2_bearLoc), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 7, "LTF (25)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 7, "B:" + str.tostring(amyEntryV2_bullDisp + amyEntryV2_bullBreak) + " | S:" + str.tostring(amyEntryV2_bearDisp + amyEntryV2_bearBreak), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    table.cell(amyEntryV2_panel, 0, 8, "ASIA (5)", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 8, "B:" + str.tostring(amyEntryV2_bullAsia) + " | S:" + str.tostring(amyEntryV2_bearAsia), text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+    _panelTarget = not na(amyDashV2_dolTarget) ? amyEntryV2_price(amyDashV2_dolTarget) : "-"
+    _panelInvalid = not na(amyDashV2_invalidLevel) ? amyEntryV2_price(amyDashV2_invalidLevel) : "-"
+    table.cell(amyEntryV2_panel, 0, 9, "TARGET", text_color=color.white, bgcolor=_panelKeyBg, text_size=size.tiny)
+    table.cell(amyEntryV2_panel, 1, 9, "T: " + _panelTarget + " | Inv: " + _panelInvalid, text_color=color.white, bgcolor=_panelCellBg, text_size=size.tiny)
+
+if (not amyEntryV2_show or not amyEntryV2_showPanel) and barstate.islast
+    table.clear(amyEntryV2_panel, 0, 0, 1, 9)
+
