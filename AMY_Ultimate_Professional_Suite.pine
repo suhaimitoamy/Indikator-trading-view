@@ -751,6 +751,19 @@ if amyKeyV2_newDayChart or na(amyKeyV2_moFallback)
 
 amyKeyV2_midnightOpen = na(amyKeyV2_moFixed) ? amyKeyV2_moFallback : amyKeyV2_moFixed
 
+amyKeyV2_asiaSession = not na(time(timeframe.period, "1000-1400", "Asia/Tokyo"))
+
+var float amyKeyV2_asiaHigh = na
+var float amyKeyV2_asiaLow = na
+
+if amyKeyV2_asiaSession and not amyKeyV2_asiaSession[1]
+    amyKeyV2_asiaHigh := high
+    amyKeyV2_asiaLow := low
+else if amyKeyV2_asiaSession
+    amyKeyV2_asiaHigh := math.max(amyKeyV2_asiaHigh, high)
+    amyKeyV2_asiaLow := math.min(amyKeyV2_asiaLow, low)
+
+
 amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 

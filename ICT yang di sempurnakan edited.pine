@@ -347,7 +347,7 @@ draw(left, col) =>
     x2      := bar_index -1
     ph       = ta.pivothigh(hi, left, 1)
     pl       = ta.pivotlow (lo, left, 1)
-    if ph   
+    if not na(ph)   
         dir := aZZ.d.get (0) 
         x1  := aZZ.x.get (0) 
         y1  := aZZ.y.get (0) 
@@ -403,7 +403,7 @@ draw(left, col) =>
                     getLast.bx.delete()
                     getLast.ln.delete()               
     //
-    if pl
+    if not na(pl)
         dir := aZZ.d.get (0) 
         x1  := aZZ.x.get (0) 
         y1  := aZZ.y.get (0) 
@@ -532,10 +532,10 @@ if MSS.l_bosBr.size() > 200
     MSS.lbBosBr.pop().delete()
 
 //Killzones 
-ny          = time(timeframe.period, input.session('0700-0900', '', inline = 'ny', group = 'Killzones'), 'America/New_York') and showNy 
-ldn_open    = time(timeframe.period, input.session('0700-1000', '', inline = 'lo', group = 'Killzones'), 'Europe/London'   ) and showLdno // 0200-0500 UTC-5
-ldn_close   = time(timeframe.period, input.session('1500-1700', '', inline = 'lc', group = 'Killzones'), 'Europe/London'   ) and showLdnc // 1000-1200 UTC-5
-asian       = time(timeframe.period, input.session('1000-1400', '', inline = 'as', group = 'Killzones'), 'Asia/Tokyo'      ) and showAsia // 2000-0000 UTC-5
+ny = not na(time(timeframe.period, input.session('0700-0900', '', inline = 'ny', group = 'Killzones'), 'America/New_York')) and showNy 
+ldn_open = not na(time(timeframe.period, input.session('0700-1000', '', inline = 'lo', group = 'Killzones'), 'Europe/London'   )) and showLdno // 0200-0500 UTC-5
+ldn_close = not na(time(timeframe.period, input.session('1500-1700', '', inline = 'lc', group = 'Killzones'), 'Europe/London'   )) and showLdnc // 1000-1200 UTC-5
+asian = not na(time(timeframe.period, input.session('1000-1400', '', inline = 'as', group = 'Killzones'), 'Asia/Tokyo'      )) and showAsia // 2000-0000 UTC-5
 
 //Pivotpoints 
 ph          = ta.pivothigh(3, 1), lPh = fixnan(ph)
@@ -775,7 +775,7 @@ if barstate.isfirst
 if dayofweek == dayofweek.friday
     friCp := close, friCi := n
 
-if ta.change(dayofweek) 
+if ta.change(dayofweek) != 0 
     if  dayofweek == dayofweek.monday and iNWOG
         monOp := open , monOi := n
         bl_NWOG.unshift(bx_ln.new(   
@@ -1292,6 +1292,19 @@ if amyKeyV2_newDayChart or na(amyKeyV2_moFallback)
     amyKeyV2_moFallback := open
 
 amyKeyV2_midnightOpen = na(amyKeyV2_moFixed) ? amyKeyV2_moFallback : amyKeyV2_moFixed
+
+amyKeyV2_asiaSession = not na(time(timeframe.period, "1000-1400", "Asia/Tokyo"))
+
+var float amyKeyV2_asiaHigh = na
+var float amyKeyV2_asiaLow = na
+
+if amyKeyV2_asiaSession and not amyKeyV2_asiaSession[1]
+    amyKeyV2_asiaHigh := high
+    amyKeyV2_asiaLow := low
+else if amyKeyV2_asiaSession
+    amyKeyV2_asiaHigh := math.max(amyKeyV2_asiaHigh, high)
+    amyKeyV2_asiaLow := math.min(amyKeyV2_asiaLow, low)
+
 
 amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
