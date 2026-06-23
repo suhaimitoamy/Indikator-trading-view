@@ -1223,23 +1223,33 @@ if show_snr
 
 //==================== 1. LOGIKA SEQUENTIAL MTF TRIGGER (M15 -> M5) ====================//
 // --- A. TAHAP M15 (THE SWITCH / SAKLAR) ---
-// Deteksi MSS M15 (Menggunakan Pivot sederhana)
-htf_ph = request.security(syminfo.tickerid, htf_res, ta.pivothigh(high, 3, 3))
-htf_pl = request.security(syminfo.tickerid, htf_res, ta.pivotlow(low, 3, 3))
-var float last_htf_ph = high // Inisialisasi awal agar tidak NA
-var float last_htf_pl = low  // Inisialisasi awal agar tidak NA
 
-if not na(htf_ph)
-    last_htf_ph := htf_ph
-if not na(htf_pl)
-    last_htf_pl := htf_pl
+// Fungsi untuk dikalkulasi secara murni di HTF
+f_htf_logic() =>
+    // Deteksi Pivot
+    _ph = ta.pivothigh(high, 3, 3)
+    _pl = ta.pivotlow(low, 3, 3)
 
-htf_mss_bull = request.security(syminfo.tickerid, htf_res, ta.crossover(close, last_htf_ph))
-htf_mss_bear = request.security(syminfo.tickerid, htf_res, ta.crossunder(close, last_htf_pl))
+    // Simpan pivot terakhir
+    var float _last_ph = high
+    var float _last_pl = low
+    if not na(_ph)
+        _last_ph := _ph
+    if not na(_pl)
+        _last_pl := _pl
 
-// Deteksi FVG M15
-htf_fvg_bull = request.security(syminfo.tickerid, htf_res, low[0] > high[2] and close[1] > open[1])
-htf_fvg_bear = request.security(syminfo.tickerid, htf_res, high[0] < low[2] and close[1] < open[1])
+    // Deteksi MSS HTF
+    _mss_bull = ta.crossover(close, _last_ph)
+    _mss_bear = ta.crossunder(close, _last_pl)
+
+    // Deteksi FVG HTF
+    _fvg_bull = low[0] > high[2] and close[1] > open[1]
+    _fvg_bear = high[0] < low[2] and close[1] < open[1]
+
+    [_mss_bull, _mss_bear, _fvg_bull, _fvg_bear]
+
+// Panggil semua variabel HTF sekaligus
+[htf_mss_bull, htf_mss_bear, htf_fvg_bull, htf_fvg_bear] = request.security(syminfo.tickerid, htf_res, f_htf_logic(), lookahead=barmerge.lookahead_off)
 
 // SAKLAR UTAMA M15: Menyala jika ada MSS atau FVG baru di HTF
 bool m15_bull_switch = htf_mss_bull or htf_fvg_bull
@@ -1267,6 +1277,7 @@ bool t_fvg_bull = low[0] > high[2] and close[1] > open[1]
 bool t_fvg_bear = high[0] < low[2] and close[1] < open[1]
 
 // 2. Turtle Soup M5 (Sweep Pivot Support/Resistance)
+// Update: Harus ada sweep (low/high tembus snr) DAN close memantul kembali ke dalam zona
 bool t_ts_bull = low < snr_supPrice and close > snr_supPrice
 bool t_ts_bear = high > snr_resPrice and close < snr_resPrice
 
@@ -1286,10 +1297,10 @@ bool t_mss_bear = ta.crossunder(close, m5_sl)
 var float last_red_h = high
 var float last_green_l = low
 
-if close < open
-    last_red_h := high
-if close > open
-    last_green_l := low
+if close[1] < open[1]
+    last_red_h := high[1]
+if close[1] > open[1]
+    last_green_l := low[1]
 
 bool t_cisd_bull = ta.crossover(close, last_red_h)
 bool t_cisd_bear = ta.crossunder(close, last_green_l)
