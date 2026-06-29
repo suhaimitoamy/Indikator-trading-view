@@ -1,5 +1,23 @@
 //@version=5
-indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=200, max_lines_count=120, max_labels_count=120)
+
+// ============================================================================
+// TYPES
+// ============================================================================
+type amyOrderBlock
+    float top
+    float bot
+    int leftTime
+    int bias
+    box bx
+
+type amyFairValueGap
+    float top
+    float bot
+    int leftTime
+    int bias
+    box topBx
+    box botBx
 
 // ============================================================================
 // INPUTS
@@ -10,7 +28,6 @@ asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
 londonSess = input.session("1400-1800", "London Session", group=grpCore)
 nySess = input.session("1930-0400", "New York Session", group=grpCore)
 mode = input.string("Balanced", "Signal Mode", options=["Aggressive", "Balanced", "Conservative"], group=grpCore)
-
 showAsia = input.bool(true, "Show Asia Range", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
@@ -36,6 +53,13 @@ srBoxAtrPad = input.float(0.20, "Box Thickness ATR", minval=0.05, maxval=2.0, st
 srBoxExtend = input.int(55, "Box Extend Bars", minval=10, maxval=200, group=grpSR)
 showSRLabels = input.bool(true, "Show Support / Resistance Labels", group=grpSR)
 
+grpPoi = "6. SMC POI Boxes"
+poiMaxBoxes = input.int(3, "Visible OB / FVG Count", minval=1, maxval=10, group=grpPoi)
+poiExtendBars = input.int(80, "POI Extend Bars", minval=10, maxval=300, group=grpPoi)
+poiNearAtr = input.float(0.80, "POI Near ATR", minval=0.10, maxval=3.0, step=0.05, group=grpPoi)
+showObText = input.bool(true, "Show OB Text", group=grpPoi)
+showFvgText = input.bool(true, "Show FVG Text", group=grpPoi)
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -45,23 +69,30 @@ f_inSession(sess) =>
 f_price(x) =>
     na(x) ? "-" : str.tostring(x, format.mintick)
 
+f_rightTime(bars) =>
+    time + (time - time[1]) * bars
+
 f_lastBearish(lookback) =>
     float zTop = na
     float zBot = na
+    int zTime = na
     for i = 1 to lookback
         if na(zTop) and close[i] < open[i]
             zTop := open[i]
             zBot := low[i]
-    [zTop, zBot]
+            zTime := time[i]
+    [zTop, zBot, zTime]
 
 f_lastBullish(lookback) =>
     float zTop = na
     float zBot = na
+    int zTime = na
     for i = 1 to lookback
         if na(zTop) and close[i] > open[i]
             zTop := high[i]
             zBot := open[i]
-    [zTop, zBot]
+            zTime := time[i]
+    [zTop, zBot, zTime]
 
 // ============================================================================
 // CORE ENGINE
@@ -115,7 +146,6 @@ var float lastHigh = na
 var float lastLow = na
 var int lastHighBar = na
 var int lastLowBar = na
-
 var line bslLine = na
 var line sslLine = na
 
@@ -145,7 +175,6 @@ if not na(sslLine)
 var string trend = "NEUTRAL"
 rawBreakBull = not na(lastHigh) and close > lastHigh and close[1] <= lastHigh
 rawBreakBear = not na(lastLow) and close < lastLow and close[1] >= lastLow
-
 mssBull = rawBreakBull and trend != "BULL" and displacementBull and barstate.isconfirmed
 mssBear = rawBreakBear and trend != "BEAR" and displacementBear and barstate.isconfirmed
 bosBull = rawBreakBull and trend == "BULL" and displacementBull and barstate.isconfirmed
@@ -216,7 +245,6 @@ var box resistanceBox = na
 var box supportBox = na
 var label resistanceLabel = na
 var label supportLabel = na
-
 resTop = not na(lastHigh) ? lastHigh + atr * srBoxAtrPad : na
 resBot = not na(lastHigh) ? lastHigh - atr * srBoxAtrPad : na
 supTop = not na(lastLow) ? lastLow + atr * srBoxAtrPad : na
@@ -229,8 +257,6 @@ if showSRBoxes and not na(lastHigh) and not na(lastHighBar)
         box.set_lefttop(resistanceBox, lastHighBar, resTop)
         box.set_rightbottom(resistanceBox, bar_index + srBoxExtend, resBot)
         box.set_text(resistanceBox, "resistance")
-        box.set_bgcolor(resistanceBox, color.new(color.purple, 82))
-        box.set_border_color(resistanceBox, color.new(color.purple, 55))
     if showSRLabels
         if na(resistanceLabel)
             resistanceLabel := label.new(bar_index + srBoxExtend, lastHigh, "resistance\n" + f_price(lastHigh), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
@@ -252,8 +278,6 @@ if showSRBoxes and not na(lastLow) and not na(lastLowBar)
         box.set_lefttop(supportBox, lastLowBar, supTop)
         box.set_rightbottom(supportBox, bar_index + srBoxExtend, supBot)
         box.set_text(supportBox, "Support")
-        box.set_bgcolor(supportBox, color.new(color.blue, 84))
-        box.set_border_color(supportBox, color.new(color.blue, 58))
     if showSRLabels
         if na(supportLabel)
             supportLabel := label.new(bar_index + srBoxExtend, lastLow, "Support\n" + f_price(lastLow), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
@@ -269,120 +293,142 @@ else
         supportLabel := na
 
 // ============================================================================
-// POI ENGINE: FVG + ORDER BLOCK
+// SMC POI ENGINE: ARRAY ORDER BLOCK + SPLIT FVG
 // ============================================================================
+var array<amyOrderBlock> bullObs = array.new<amyOrderBlock>()
+var array<amyOrderBlock> bearObs = array.new<amyOrderBlock>()
+var array<amyFairValueGap> bullFvgs = array.new<amyFairValueGap>()
+var array<amyFairValueGap> bearFvgs = array.new<amyFairValueGap>()
+
+rightTime = f_rightTime(poiExtendBars)
+
+[bullObTopTmp, bullObBotTmp, bullObTimeTmp] = f_lastBearish(10)
+[bearObTopTmp, bearObBotTmp, bearObTimeTmp] = f_lastBullish(10)
+
+if showPoi and (mssBull or bosBull) and not na(bullObTopTmp) and inDiscount
+    newBox = box.new(chart.point.new(bullObTimeTmp, na, bullObTopTmp), chart.point.new(rightTime, na, bullObBotTmp), xloc=xloc.bar_time, extend=extend.none, bgcolor=color.new(color.teal, 82), border_color=color.new(color.teal, 35), text=showObText ? "+OB" : "", text_color=color.teal, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+    bullObs.unshift(amyOrderBlock.new(bullObTopTmp, bullObBotTmp, bullObTimeTmp, 1, newBox))
+    if bullObs.size() > poiMaxBoxes
+        oldOb = bullObs.pop()
+        box.delete(oldOb.bx)
+
+if showPoi and (mssBear or bosBear) and not na(bearObTopTmp) and inPremium
+    newBox = box.new(chart.point.new(bearObTimeTmp, na, bearObTopTmp), chart.point.new(rightTime, na, bearObBotTmp), xloc=xloc.bar_time, extend=extend.none, bgcolor=color.new(color.orange, 82), border_color=color.new(color.orange, 35), text=showObText ? "-OB" : "", text_color=color.orange, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+    bearObs.unshift(amyOrderBlock.new(bearObTopTmp, bearObBotTmp, bearObTimeTmp, -1, newBox))
+    if bearObs.size() > poiMaxBoxes
+        oldOb = bearObs.pop()
+        box.delete(oldOb.bx)
+
+if bullObs.size() > 0
+    for i = bullObs.size() - 1 to 0
+        ob = bullObs.get(i)
+        if close < ob.bot
+            box.delete(ob.bx)
+            bullObs.remove(i)
+        else
+            box.set_bottom_right_point(ob.bx, chart.point.new(rightTime, na, ob.bot))
+            box.set_bgcolor(ob.bx, color.new(color.teal, low <= ob.top and high >= ob.bot ? 72 : 88))
+
+if bearObs.size() > 0
+    for i = bearObs.size() - 1 to 0
+        ob = bearObs.get(i)
+        if close > ob.top
+            box.delete(ob.bx)
+            bearObs.remove(i)
+        else
+            box.set_bottom_right_point(ob.bx, chart.point.new(rightTime, na, ob.bot))
+            box.set_bgcolor(ob.bx, color.new(color.orange, high >= ob.bot and low <= ob.top ? 72 : 88))
+
 fvgBull = low > high[2] and (low - high[2]) >= atr * 0.10 and displacementBull[1]
 fvgBear = high < low[2] and (low[2] - high) >= atr * 0.10 and displacementBear[1]
 
-var float bullFvgTop = na
-var float bullFvgBot = na
-var float bearFvgTop = na
-var float bearFvgBot = na
+if showPoi and fvgBull and biasBull and inDiscount
+    fvgTop = low
+    fvgBot = high[2]
+    fvgMid = math.avg(fvgTop, fvgBot)
+    topBox = box.new(chart.point.new(time[1], na, fvgTop), chart.point.new(rightTime, na, fvgMid), xloc=xloc.bar_time, bgcolor=color.new(color.green, 78), border_color=color.new(color.green, 60), text=showFvgText ? "FVG" : "", text_color=color.green, text_size=size.tiny, text_halign=text.align_right)
+    botBox = box.new(chart.point.new(time[1], na, fvgMid), chart.point.new(rightTime, na, fvgBot), xloc=xloc.bar_time, bgcolor=color.new(color.green, 90), border_color=color.new(color.green, 75))
+    bullFvgs.unshift(amyFairValueGap.new(fvgTop, fvgBot, time[1], 1, topBox, botBox))
+    if bullFvgs.size() > poiMaxBoxes
+        oldFvg = bullFvgs.pop()
+        box.delete(oldFvg.topBx)
+        box.delete(oldFvg.botBx)
 
-if fvgBull and biasBull and inDiscount
-    bullFvgTop := low
-    bullFvgBot := high[2]
+if showPoi and fvgBear and biasBear and inPremium
+    fvgTop = low[2]
+    fvgBot = high
+    fvgMid = math.avg(fvgTop, fvgBot)
+    topBox = box.new(chart.point.new(time[1], na, fvgTop), chart.point.new(rightTime, na, fvgMid), xloc=xloc.bar_time, bgcolor=color.new(color.red, 90), border_color=color.new(color.red, 75), text=showFvgText ? "FVG" : "", text_color=color.red, text_size=size.tiny, text_halign=text.align_right)
+    botBox = box.new(chart.point.new(time[1], na, fvgMid), chart.point.new(rightTime, na, fvgBot), xloc=xloc.bar_time, bgcolor=color.new(color.red, 78), border_color=color.new(color.red, 60))
+    bearFvgs.unshift(amyFairValueGap.new(fvgTop, fvgBot, time[1], -1, topBox, botBox))
+    if bearFvgs.size() > poiMaxBoxes
+        oldFvg = bearFvgs.pop()
+        box.delete(oldFvg.topBx)
+        box.delete(oldFvg.botBx)
 
-if fvgBear and biasBear and inPremium
-    bearFvgTop := low[2]
-    bearFvgBot := high
+if bullFvgs.size() > 0
+    for i = bullFvgs.size() - 1 to 0
+        fvg = bullFvgs.get(i)
+        if low < fvg.bot
+            box.delete(fvg.topBx)
+            box.delete(fvg.botBx)
+            bullFvgs.remove(i)
+        else
+            mid = math.avg(fvg.top, fvg.bot)
+            box.set_bottom_right_point(fvg.topBx, chart.point.new(rightTime, na, mid))
+            box.set_bottom_right_point(fvg.botBx, chart.point.new(rightTime, na, fvg.bot))
+            box.set_bgcolor(fvg.topBx, color.new(color.green, low <= fvg.top and high >= fvg.bot ? 72 : 88))
 
-if not na(bullFvgBot) and close < bullFvgBot
-    bullFvgTop := na
-    bullFvgBot := na
-if not na(bearFvgTop) and close > bearFvgTop
-    bearFvgTop := na
-    bearFvgBot := na
+if bearFvgs.size() > 0
+    for i = bearFvgs.size() - 1 to 0
+        fvg = bearFvgs.get(i)
+        if high > fvg.top
+            box.delete(fvg.topBx)
+            box.delete(fvg.botBx)
+            bearFvgs.remove(i)
+        else
+            mid = math.avg(fvg.top, fvg.bot)
+            box.set_bottom_right_point(fvg.topBx, chart.point.new(rightTime, na, mid))
+            box.set_bottom_right_point(fvg.botBx, chart.point.new(rightTime, na, fvg.bot))
+            box.set_bgcolor(fvg.botBx, color.new(color.red, high >= fvg.bot and low <= fvg.top ? 72 : 88))
 
-[bullObTopTmp, bullObBotTmp] = f_lastBearish(8)
-[bearObTopTmp, bearObBotTmp] = f_lastBullish(8)
+float bullFvgTop = na
+float bullFvgBot = na
+float bearFvgTop = na
+float bearFvgBot = na
+float bullObTop = na
+float bullObBot = na
+float bearObTop = na
+float bearObBot = na
 
-var float bullObTop = na
-var float bullObBot = na
-var float bearObTop = na
-var float bearObBot = na
+if bullFvgs.size() > 0
+    latestBullFvg = bullFvgs.get(0)
+    bullFvgTop := latestBullFvg.top
+    bullFvgBot := latestBullFvg.bot
+if bearFvgs.size() > 0
+    latestBearFvg = bearFvgs.get(0)
+    bearFvgTop := latestBearFvg.top
+    bearFvgBot := latestBearFvg.bot
+if bullObs.size() > 0
+    latestBullOb = bullObs.get(0)
+    bullObTop := latestBullOb.top
+    bullObBot := latestBullOb.bot
+if bearObs.size() > 0
+    latestBearOb = bearObs.get(0)
+    bearObTop := latestBearOb.top
+    bearObBot := latestBearOb.bot
 
-if (mssBull or bosBull) and not na(bullObTopTmp) and inDiscount
-    bullObTop := bullObTopTmp
-    bullObBot := bullObBotTmp
-
-if (mssBear or bosBear) and not na(bearObTopTmp) and inPremium
-    bearObTop := bearObTopTmp
-    bearObBot := bearObBotTmp
-
-if not na(bullObBot) and close < bullObBot
-    bullObTop := na
-    bullObBot := na
-if not na(bearObTop) and close > bearObTop
-    bearObTop := na
-    bearObBot := na
-
-nearBullFvg = not na(bullFvgTop) and low <= bullFvgTop + atr * 0.8 and high >= bullFvgBot - atr * 0.2
-nearBearFvg = not na(bearFvgBot) and high >= bearFvgBot - atr * 0.8 and low <= bearFvgTop + atr * 0.2
-nearBullOb = not na(bullObTop) and low <= bullObTop + atr * 0.8 and high >= bullObBot - atr * 0.2
-nearBearOb = not na(bearObBot) and high >= bearObBot - atr * 0.8 and low <= bearObTop + atr * 0.2
-
+nearBullFvg = not na(bullFvgTop) and low <= bullFvgTop + atr * poiNearAtr and high >= bullFvgBot - atr * 0.2
+nearBearFvg = not na(bearFvgBot) and high >= bearFvgBot - atr * poiNearAtr and low <= bearFvgTop + atr * 0.2
+nearBullOb = not na(bullObTop) and low <= bullObTop + atr * poiNearAtr and high >= bullObBot - atr * 0.2
+nearBearOb = not na(bearObBot) and high >= bearObBot - atr * poiNearAtr and low <= bearObTop + atr * 0.2
 nearBullPoi = nearBullFvg or nearBullOb
 nearBearPoi = nearBearFvg or nearBearOb
-
-var box bullFvgBox = na
-var box bearFvgBox = na
-var box bullObBox = na
-var box bearObBox = na
-
-if showPoi and not na(bullFvgTop)
-    if na(bullFvgBox)
-        bullFvgBox := box.new(bar_index - 20, bullFvgTop, bar_index + 20, bullFvgBot, bgcolor=color.new(color.green, nearBullFvg ? 78 : 92), border_color=color.new(color.green, nearBullFvg ? 10 : 70))
-    else
-        box.set_lefttop(bullFvgBox, bar_index - 20, bullFvgTop)
-        box.set_rightbottom(bullFvgBox, bar_index + 20, bullFvgBot)
-        box.set_bgcolor(bullFvgBox, color.new(color.green, nearBullFvg ? 78 : 92))
-else
-    if not na(bullFvgBox)
-        box.delete(bullFvgBox)
-        bullFvgBox := na
-
-if showPoi and not na(bearFvgTop)
-    if na(bearFvgBox)
-        bearFvgBox := box.new(bar_index - 20, bearFvgTop, bar_index + 20, bearFvgBot, bgcolor=color.new(color.red, nearBearFvg ? 78 : 92), border_color=color.new(color.red, nearBearFvg ? 10 : 70))
-    else
-        box.set_lefttop(bearFvgBox, bar_index - 20, bearFvgTop)
-        box.set_rightbottom(bearFvgBox, bar_index + 20, bearFvgBot)
-        box.set_bgcolor(bearFvgBox, color.new(color.red, nearBearFvg ? 78 : 92))
-else
-    if not na(bearFvgBox)
-        box.delete(bearFvgBox)
-        bearFvgBox := na
-
-if showPoi and not na(bullObTop)
-    if na(bullObBox)
-        bullObBox := box.new(bar_index - 20, bullObTop, bar_index + 20, bullObBot, bgcolor=color.new(color.teal, nearBullOb ? 78 : 92), border_color=color.new(color.teal, nearBullOb ? 10 : 70))
-    else
-        box.set_lefttop(bullObBox, bar_index - 20, bullObTop)
-        box.set_rightbottom(bullObBox, bar_index + 20, bullObBot)
-        box.set_bgcolor(bullObBox, color.new(color.teal, nearBullOb ? 78 : 92))
-else
-    if not na(bullObBox)
-        box.delete(bullObBox)
-        bullObBox := na
-
-if showPoi and not na(bearObTop)
-    if na(bearObBox)
-        bearObBox := box.new(bar_index - 20, bearObTop, bar_index + 20, bearObBot, bgcolor=color.new(color.orange, nearBearOb ? 78 : 92), border_color=color.new(color.orange, nearBearOb ? 10 : 70))
-    else
-        box.set_lefttop(bearObBox, bar_index - 20, bearObTop)
-        box.set_rightbottom(bearObBox, bar_index + 20, bearObBot)
-        box.set_bgcolor(bearObBox, color.new(color.orange, nearBearOb ? 78 : 92))
-else
-    if not na(bearObBox)
-        box.delete(bearObBox)
-        bearObBox := na
 
 // ============================================================================
 // SCORING + SIGNAL
 // ============================================================================
 minScore = mode == "Aggressive" ? 4 : mode == "Balanced" ? 5 : 6
-
 scoreBull = 0
 if biasBull
     scoreBull += 1
@@ -452,7 +498,6 @@ if finalBuy or finalSell
     sl = finalBuy ? slBuy : slSell
     tp1 = finalBuy ? tp1Buy : tp1Sell
     tp2 = finalBuy ? tp2Buy : tp2Sell
-
     entryLine := line.new(bar_index, entry, bar_index + 25, entry, color=color.new(color.yellow, 0), width=2)
     slLine := line.new(bar_index, sl, bar_index + 25, sl, color=color.new(color.red, 0), width=2)
     tp1Line := line.new(bar_index, tp1, bar_index + 25, tp1, color=color.new(color.green, 10), width=1)
@@ -463,7 +508,7 @@ if finalBuy or finalSell
 // MINI PANEL
 // ============================================================================
 liqText = sslSwept or asiaLowSwept ? "SSL SWEPT" : bslSwept or asiaHighSwept ? "BSL SWEPT" : "WAIT"
-poiText = nearBullPoi ? "BULL POI" : nearBearPoi ? "BEAR POI" : not na(bullFvgTop) or not na(bullObTop) ? "BULL READY" : not na(bearFvgTop) or not na(bearObTop) ? "BEAR READY" : "NONE"
+poiText = nearBullPoi ? "BULL POI" : nearBearPoi ? "BEAR POI" : bullFvgs.size() > 0 or bullObs.size() > 0 ? "BULL READY" : bearFvgs.size() > 0 or bearObs.size() > 0 ? "BEAR READY" : "NONE"
 statusText = finalBuy ? "BUY" : finalSell ? "SELL" : "WAIT"
 maxScore = math.max(scoreBull, scoreBear)
 
