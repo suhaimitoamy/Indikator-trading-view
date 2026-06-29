@@ -162,20 +162,32 @@ grp_exec = "6. Scoring Engine"
 min_score = input.int(5, "Minimum Confluence Score (Max 6)", minval=1, maxval=6, group=grp_exec)
 
 score_bull = 0
-if bias_bull         then score_bull += 1
-if in_discount       then score_bull += 1
-if ssl_swept         then score_bull += 1
-if mss_bull          then score_bull += 1
-if near_bull_poi     then score_bull += 1
-if valid_entry_sess  then score_bull += 1
+if bias_bull
+    score_bull += 1
+if in_discount
+    score_bull += 1
+if ssl_swept
+    score_bull += 1
+if mss_bull
+    score_bull += 1
+if near_bull_poi
+    score_bull += 1
+if valid_entry_sess
+    score_bull += 1
 
 score_bear = 0
-if bias_bear         then score_bear += 1
-if in_premium        then score_bear += 1
-if bsl_swept         then score_bear += 1
-if mss_bear          then score_bear += 1
-if near_bear_poi     then score_bear += 1
-if valid_entry_sess  then score_bear += 1
+if bias_bear
+    score_bear += 1
+if in_premium
+    score_bear += 1
+if bsl_swept
+    score_bear += 1
+if mss_bear
+    score_bear += 1
+if near_bear_poi
+    score_bear += 1
+if valid_entry_sess
+    score_bear += 1
 
 
 // ============================================================================
