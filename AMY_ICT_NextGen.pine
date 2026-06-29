@@ -1,235 +1,423 @@
 //@version=5
-indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=50, max_lines_count=50, max_labels_count=50)
+indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=80, max_lines_count=80, max_labels_count=80)
 
 // ============================================================================
-// 1. CORE ENGINE (Time & Sessions)
+// INPUTS
 // ============================================================================
-grp_core = "1. Core Engine"
-tz = input.string("Asia/Makassar", "Timezone", group=grp_core)
-asia_sess = input.session("0600-1400", "Asia Session (Makassar Time)", group=grp_core)
-lon_sess = input.session("1400-1800", "London Session", group=grp_core)
-ny_sess = input.session("1930-0400", "New York Session", group=grp_core)
+grpCore = "1. Core"
+tz = input.string("Asia/Makassar", "Timezone", group=grpCore)
+asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
+londonSess = input.session("1400-1800", "London Session", group=grpCore)
+nySess = input.session("1930-0400", "New York Session", group=grpCore)
+mode = input.string("Balanced", "Signal Mode", options=["Aggressive", "Balanced", "Conservative"], group=grpCore)
 
-in_asia = not na(time(timeframe.period, asia_sess, tz))
-in_lon = not na(time(timeframe.period, lon_sess, tz))
-in_ny = not na(time(timeframe.period, ny_sess, tz))
-valid_entry_sess = in_lon or in_ny
+showAsia = input.bool(true, "Show Asia Range", group=grpCore)
+showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
+showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
+showPoi = input.bool(true, "Show Active POI", group=grpCore)
+showPanel = input.bool(true, "Show Mini Panel", group=grpCore)
 
-var float asia_hi = na
-var float asia_lo = na
+grpCtx = "2. Context"
+htf = input.timeframe("240", "HTF Bias", group=grpCtx)
+emaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
 
-asia_start = in_asia and not nz(in_asia[1], false)
+grpStruct = "3. Structure"
+swingLen = input.int(4, "Swing Length", minval=1, maxval=20, group=grpStruct)
+pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpStruct)
 
-if asia_start
-    asia_hi := high
-    asia_lo := low
-else if in_asia
-    asia_hi := na(asia_hi) ? high : math.max(asia_hi, high)
-    asia_lo := na(asia_lo) ? low : math.min(asia_lo, low)
-
-plot(valid_entry_sess ? asia_hi : na, title="Asia High", color=color.new(color.fuchsia, 50), style=plot.style_linebr)
-plot(valid_entry_sess ? asia_lo : na, title="Asia Low", color=color.new(color.fuchsia, 50), style=plot.style_linebr)
-
-// ============================================================================
-// 2. CONTEXT ENGINE (HTF Bias)
-// ============================================================================
-grp_ctx = "2. Context Engine"
-htf = input.timeframe("240", "HTF Timeframe", group=grp_ctx)
-
-htf_c = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_off)
-htf_ema = request.security(syminfo.tickerid, htf, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_off)
-
-bias_bull = not na(htf_c) and not na(htf_ema) and htf_c > htf_ema
-bias_bear = not na(htf_c) and not na(htf_ema) and htf_c < htf_ema
+grpRisk = "4. Risk"
+atrLen = input.int(14, "ATR Length", minval=1, group=grpRisk)
+slAtrPad = input.float(0.35, "SL ATR Buffer", minval=0.0, step=0.05, group=grpRisk)
+maxRiskAtr = input.float(3.0, "Max Risk ATR", minval=0.5, step=0.1, group=grpRisk)
 
 // ============================================================================
-// 3. STRUCTURE ENGINE (Swings & MSS)
+// HELPERS
 // ============================================================================
-grp_str = "3. Structure Engine"
-swing_len = input.int(5, "Swing Length", minval=1, group=grp_str)
+f_inSession(sess) =>
+    not na(time(timeframe.period, sess, tz))
 
-ph = ta.pivothigh(high, swing_len, swing_len)
-pl = ta.pivotlow(low, swing_len, swing_len)
+f_price(x) =>
+    na(x) ? "-" : str.tostring(x, format.mintick)
 
-var float last_ph = na
-var float last_pl = na
+f_lastBearish(lookback) =>
+    float zTop = na
+    float zBot = na
+    for i = 1 to lookback
+        if na(zTop) and close[i] < open[i]
+            zTop := open[i]
+            zBot := low[i]
+    [zTop, zBot]
+
+f_lastBullish(lookback) =>
+    float zTop = na
+    float zBot = na
+    for i = 1 to lookback
+        if na(zTop) and close[i] > open[i]
+            zTop := high[i]
+            zBot := open[i]
+    [zTop, zBot]
+
+// ============================================================================
+// CORE ENGINE
+// ============================================================================
+inAsia = f_inSession(asiaSess)
+inLondon = f_inSession(londonSess)
+inNY = f_inSession(nySess)
+validSession = inLondon or inNY
+sessionText = inAsia ? "ASIA" : inLondon ? "LONDON" : inNY ? "NY" : "OFF"
+
+prevAsia = bar_index > 0 ? inAsia[1] : false
+asiaStart = inAsia and not prevAsia
+
+var float asiaHigh = na
+var float asiaLow = na
+
+if asiaStart
+    asiaHigh := high
+    asiaLow := low
+else if inAsia
+    asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
+    asiaLow := na(asiaLow) ? low : math.min(asiaLow, low)
+
+plot(showAsia and validSession ? asiaHigh : na, "Asia High", color=color.new(color.purple, 15), style=plot.style_linebr, linewidth=1)
+plot(showAsia and validSession ? asiaLow : na, "Asia Low", color=color.new(color.purple, 15), style=plot.style_linebr, linewidth=1)
+
+// ============================================================================
+// CONTEXT ENGINE
+// ============================================================================
+htfClose = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_off)
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
+
+biasBull = not na(htfClose) and not na(htfEma) and htfClose > htfEma
+biasBear = not na(htfClose) and not na(htfEma) and htfClose < htfEma
+biasText = biasBull ? "BULL" : biasBear ? "BEAR" : "NEUTRAL"
+
+// ============================================================================
+// STRUCTURE ENGINE
+// ============================================================================
+atr = ta.atr(atrLen)
+body = math.abs(close - open)
+barRange = math.max(high - low, syminfo.mintick)
+bodyRatio = body / barRange
+displacementBull = close > open and body >= atr * 0.25 and bodyRatio >= 0.45
+displacementBear = close < open and body >= atr * 0.25 and bodyRatio >= 0.45
+
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low, swingLen, swingLen)
+
+var float lastHigh = na
+var float lastLow = na
+var int lastHighBar = na
+var int lastLowBar = na
+
+var line bslLine = na
+var line sslLine = na
 
 if not na(ph)
-    last_ph := ph
+    lastHigh := ph
+    lastHighBar := bar_index - swingLen
+    if showLiquidity
+        if not na(bslLine)
+            line.delete(bslLine)
+        bslLine := line.new(lastHighBar, lastHigh, bar_index + 80, lastHigh, color=color.new(color.red, 25), style=line.style_dashed, width=1)
+        label.new(lastHighBar, lastHigh, "BSL", style=label.style_label_down, color=color.new(color.red, 75), textcolor=color.white, size=size.tiny)
+
 if not na(pl)
-    last_pl := pl
+    lastLow := pl
+    lastLowBar := bar_index - swingLen
+    if showLiquidity
+        if not na(sslLine)
+            line.delete(sslLine)
+        sslLine := line.new(lastLowBar, lastLow, bar_index + 80, lastLow, color=color.new(color.green, 25), style=line.style_dashed, width=1)
+        label.new(lastLowBar, lastLow, "SSL", style=label.style_label_up, color=color.new(color.green, 75), textcolor=color.white, size=size.tiny)
 
-have_pd = not na(last_ph) and not na(last_pl) and last_ph > last_pl
-pd_range = have_pd ? last_ph - last_pl : na
-eq_level = have_pd ? last_pl + pd_range / 2.0 : na
+if not na(bslLine)
+    line.set_x2(bslLine, bar_index + 80)
+if not na(sslLine)
+    line.set_x2(sslLine, bar_index + 80)
 
-in_discount = have_pd and close < eq_level
-in_premium = have_pd and close > eq_level
+var string trend = "NEUTRAL"
+rawBreakBull = not na(lastHigh) and close > lastHigh and close[1] <= lastHigh
+rawBreakBear = not na(lastLow) and close < lastLow and close[1] >= lastLow
 
-var string market_trend = "NEUTRAL"
-mss_bull = not na(last_ph) and close > last_ph and close[1] <= last_ph and market_trend != "BULL"
-mss_bear = not na(last_pl) and close < last_pl and close[1] >= last_pl and market_trend != "BEAR"
+mssBull = rawBreakBull and trend != "BULL" and displacementBull and barstate.isconfirmed
+mssBear = rawBreakBear and trend != "BEAR" and displacementBear and barstate.isconfirmed
+bosBull = rawBreakBull and trend == "BULL" and displacementBull and barstate.isconfirmed
+bosBear = rawBreakBear and trend == "BEAR" and displacementBear and barstate.isconfirmed
 
-if mss_bull
-    market_trend := "BULL"
-if mss_bear
-    market_trend := "BEAR"
+if mssBull or bosBull
+    trend := "BULL"
+if mssBear or bosBear
+    trend := "BEAR"
+
+if showStructure and mssBull
+    label.new(bar_index, low, "MSS\nBULL", style=label.style_label_up, color=color.new(color.lime, 0), textcolor=color.black, size=size.tiny)
+if showStructure and mssBear
+    label.new(bar_index, high, "MSS\nBEAR", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+if showStructure and bosBull
+    label.new(bar_index, low, "BOS", style=label.style_label_up, color=color.new(color.green, 35), textcolor=color.white, size=size.tiny)
+if showStructure and bosBear
+    label.new(bar_index, high, "BOS", style=label.style_label_down, color=color.new(color.maroon, 35), textcolor=color.white, size=size.tiny)
+
+pdHigh = ta.highest(high, pdLookback)
+pdLow = ta.lowest(low, pdLookback)
+pdEq = (pdHigh + pdLow) / 2.0
+inDiscount = close < pdEq
+inPremium = close > pdEq
+plot(pdEq, "PD EQ", color=color.new(color.gray, 85), linewidth=1)
 
 // ============================================================================
-// 4. LIQUIDITY ENGINE (Sweep Detection)
+// LIQUIDITY ENGINE
 // ============================================================================
-var bool bsl_swept = false
-var bool ssl_swept = false
+prevLondon = bar_index > 0 ? inLondon[1] : false
+prevNY = bar_index > 0 ? inNY[1] : false
+sessionStart = (inLondon and not prevLondon) or (inNY and not prevNY)
 
-lon_start = in_lon and not nz(in_lon[1], false)
-ny_start = in_ny and not nz(in_ny[1], false)
+var bool bslSwept = false
+var bool sslSwept = false
+var bool asiaHighSwept = false
+var bool asiaLowSwept = false
 
-if lon_start or ny_start
-    bsl_swept := false
-    ssl_swept := false
+if sessionStart
+    bslSwept := false
+    sslSwept := false
+    asiaHighSwept := false
+    asiaLowSwept := false
 
-if (not na(last_ph) and high > last_ph and close < last_ph) or (not na(asia_hi) and high > asia_hi and close < asia_hi)
-    bsl_swept := true
+newBslSweep = not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
+newSslSweep = not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
+newAsiaHighSweep = not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
+newAsiaLowSweep = not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
 
-if (not na(last_pl) and low < last_pl and close > last_pl) or (not na(asia_lo) and low < asia_lo and close > asia_lo)
-    ssl_swept := true
+if newBslSweep
+    bslSwept := true
+if newSslSweep
+    sslSwept := true
+if newAsiaHighSweep
+    asiaHighSwept := true
+if newAsiaLowSweep
+    asiaLowSwept := true
+
+plotshape(showLiquidity and newBslSweep, "BSL Swept", style=shape.xcross, location=location.abovebar, color=color.red, text="BSL\nSWEEP", textcolor=color.red, size=size.tiny)
+plotshape(showLiquidity and newSslSweep, "SSL Swept", style=shape.xcross, location=location.belowbar, color=color.lime, text="SSL\nSWEEP", textcolor=color.green, size=size.tiny)
+plotshape(showLiquidity and newAsiaHighSweep, "Asia High Swept", style=shape.diamond, location=location.abovebar, color=color.purple, text="Asia H", textcolor=color.purple, size=size.tiny)
+plotshape(showLiquidity and newAsiaLowSweep, "Asia Low Swept", style=shape.diamond, location=location.belowbar, color=color.purple, text="Asia L", textcolor=color.purple, size=size.tiny)
 
 // ============================================================================
-// 5. POI ENGINE (Ghost POI - FVG)
+// POI ENGINE: FVG + ORDER BLOCK
 // ============================================================================
-atr = ta.atr(14)
+fvgBull = low > high[2] and (low - high[2]) >= atr * 0.10 and displacementBull[1]
+fvgBear = high < low[2] and (low[2] - high) >= atr * 0.10 and displacementBear[1]
 
-is_fvg_bull = low > high[2] and close[1] > open[1]
-is_fvg_bear = high < low[2] and close[1] < open[1]
+var float bullFvgTop = na
+var float bullFvgBot = na
+var float bearFvgTop = na
+var float bearFvgBot = na
 
-var float fvg_bull_top = na
-var float fvg_bull_bot = na
-var float fvg_bear_top = na
-var float fvg_bear_bot = na
+if fvgBull and biasBull and inDiscount
+    bullFvgTop := low
+    bullFvgBot := high[2]
 
-if is_fvg_bull and in_discount and bias_bull
-    fvg_bull_top := low
-    fvg_bull_bot := high[2]
+if fvgBear and biasBear and inPremium
+    bearFvgTop := low[2]
+    bearFvgBot := high
 
-if is_fvg_bear and in_premium and bias_bear
-    fvg_bear_top := low[2]
-    fvg_bear_bot := high
+if not na(bullFvgBot) and close < bullFvgBot
+    bullFvgTop := na
+    bullFvgBot := na
+if not na(bearFvgTop) and close > bearFvgTop
+    bearFvgTop := na
+    bearFvgBot := na
 
-if not na(fvg_bull_bot) and low < fvg_bull_bot
-    fvg_bull_top := na
-    fvg_bull_bot := na
+[bullObTopTmp, bullObBotTmp] = f_lastBearish(8)
+[bearObTopTmp, bearObBotTmp] = f_lastBullish(8)
 
-if not na(fvg_bear_top) and high > fvg_bear_top
-    fvg_bear_top := na
-    fvg_bear_bot := na
+var float bullObTop = na
+var float bullObBot = na
+var float bearObTop = na
+var float bearObBot = na
 
-near_bull_poi = not na(fvg_bull_top) and not na(fvg_bull_bot) and low <= fvg_bull_top + atr and close >= fvg_bull_bot - atr
-near_bear_poi = not na(fvg_bear_top) and not na(fvg_bear_bot) and high >= fvg_bear_bot - atr and close <= fvg_bear_top + atr
+if (mssBull or bosBull) and not na(bullObTopTmp) and inDiscount
+    bullObTop := bullObTopTmp
+    bullObBot := bullObBotTmp
 
-var box box_bull_poi = na
-var box box_bear_poi = na
+if (mssBear or bosBear) and not na(bearObTopTmp) and inPremium
+    bearObTop := bearObTopTmp
+    bearObBot := bearObBotTmp
 
-if near_bull_poi
-    if na(box_bull_poi)
-        box_bull_poi := box.new(bar_index - 5, fvg_bull_top, bar_index + 1, fvg_bull_bot, bgcolor=color.new(color.green, 85), border_color=color.green)
+if not na(bullObBot) and close < bullObBot
+    bullObTop := na
+    bullObBot := na
+if not na(bearObTop) and close > bearObTop
+    bearObTop := na
+    bearObBot := na
+
+nearBullFvg = not na(bullFvgTop) and low <= bullFvgTop + atr * 0.8 and high >= bullFvgBot - atr * 0.2
+nearBearFvg = not na(bearFvgBot) and high >= bearFvgBot - atr * 0.8 and low <= bearFvgTop + atr * 0.2
+nearBullOb = not na(bullObTop) and low <= bullObTop + atr * 0.8 and high >= bullObBot - atr * 0.2
+nearBearOb = not na(bearObBot) and high >= bearObBot - atr * 0.8 and low <= bearObTop + atr * 0.2
+
+nearBullPoi = nearBullFvg or nearBullOb
+nearBearPoi = nearBearFvg or nearBearOb
+
+var box bullFvgBox = na
+var box bearFvgBox = na
+var box bullObBox = na
+var box bearObBox = na
+
+if showPoi and not na(bullFvgTop)
+    if na(bullFvgBox)
+        bullFvgBox := box.new(bar_index - 20, bullFvgTop, bar_index + 20, bullFvgBot, bgcolor=color.new(color.green, nearBullFvg ? 78 : 92), border_color=color.new(color.green, nearBullFvg ? 10 : 70))
     else
-        box.set_lefttop(box_bull_poi, bar_index - 5, fvg_bull_top)
-        box.set_rightbottom(box_bull_poi, bar_index + 1, fvg_bull_bot)
+        box.set_lefttop(bullFvgBox, bar_index - 20, bullFvgTop)
+        box.set_rightbottom(bullFvgBox, bar_index + 20, bullFvgBot)
+        box.set_bgcolor(bullFvgBox, color.new(color.green, nearBullFvg ? 78 : 92))
 else
-    if not na(box_bull_poi)
-        box.delete(box_bull_poi)
-        box_bull_poi := na
+    if not na(bullFvgBox)
+        box.delete(bullFvgBox)
+        bullFvgBox := na
 
-if near_bear_poi
-    if na(box_bear_poi)
-        box_bear_poi := box.new(bar_index - 5, fvg_bear_top, bar_index + 1, fvg_bear_bot, bgcolor=color.new(color.red, 85), border_color=color.red)
+if showPoi and not na(bearFvgTop)
+    if na(bearFvgBox)
+        bearFvgBox := box.new(bar_index - 20, bearFvgTop, bar_index + 20, bearFvgBot, bgcolor=color.new(color.red, nearBearFvg ? 78 : 92), border_color=color.new(color.red, nearBearFvg ? 10 : 70))
     else
-        box.set_lefttop(box_bear_poi, bar_index - 5, fvg_bear_top)
-        box.set_rightbottom(box_bear_poi, bar_index + 1, fvg_bear_bot)
+        box.set_lefttop(bearFvgBox, bar_index - 20, bearFvgTop)
+        box.set_rightbottom(bearFvgBox, bar_index + 20, bearFvgBot)
+        box.set_bgcolor(bearFvgBox, color.new(color.red, nearBearFvg ? 78 : 92))
 else
-    if not na(box_bear_poi)
-        box.delete(box_bear_poi)
-        box_bear_poi := na
+    if not na(bearFvgBox)
+        box.delete(bearFvgBox)
+        bearFvgBox := na
+
+if showPoi and not na(bullObTop)
+    if na(bullObBox)
+        bullObBox := box.new(bar_index - 20, bullObTop, bar_index + 20, bullObBot, bgcolor=color.new(color.teal, nearBullOb ? 78 : 92), border_color=color.new(color.teal, nearBullOb ? 10 : 70))
+    else
+        box.set_lefttop(bullObBox, bar_index - 20, bullObTop)
+        box.set_rightbottom(bullObBox, bar_index + 20, bullObBot)
+        box.set_bgcolor(bullObBox, color.new(color.teal, nearBullOb ? 78 : 92))
+else
+    if not na(bullObBox)
+        box.delete(bullObBox)
+        bullObBox := na
+
+if showPoi and not na(bearObTop)
+    if na(bearObBox)
+        bearObBox := box.new(bar_index - 20, bearObTop, bar_index + 20, bearObBot, bgcolor=color.new(color.orange, nearBearOb ? 78 : 92), border_color=color.new(color.orange, nearBearOb ? 10 : 70))
+    else
+        box.set_lefttop(bearObBox, bar_index - 20, bearObTop)
+        box.set_rightbottom(bearObBox, bar_index + 20, bearObBot)
+        box.set_bgcolor(bearObBox, color.new(color.orange, nearBearOb ? 78 : 92))
+else
+    if not na(bearObBox)
+        box.delete(bearObBox)
+        bearObBox := na
 
 // ============================================================================
-// 6. SCORING & EXECUTION ENGINE
+// SCORING + SIGNAL
 // ============================================================================
-grp_exec = "6. Scoring Engine"
-min_score = input.int(5, "Minimum Confluence Score (Max 6)", minval=1, maxval=6, group=grp_exec)
+minScore = mode == "Aggressive" ? 4 : mode == "Balanced" ? 5 : 6
 
-score_bull = 0
-if bias_bull
-    score_bull += 1
-if in_discount
-    score_bull += 1
-if ssl_swept
-    score_bull += 1
-if mss_bull
-    score_bull += 1
-if near_bull_poi
-    score_bull += 1
-if valid_entry_sess
-    score_bull += 1
+scoreBull = 0
+if biasBull
+    scoreBull += 1
+if validSession
+    scoreBull += 1
+if inDiscount
+    scoreBull += 1
+if sslSwept or asiaLowSwept
+    scoreBull += 1
+if mssBull or bosBull
+    scoreBull += 1
+if nearBullPoi
+    scoreBull += 1
+if displacementBull
+    scoreBull += 1
 
-score_bear = 0
-if bias_bear
-    score_bear += 1
-if in_premium
-    score_bear += 1
-if bsl_swept
-    score_bear += 1
-if mss_bear
-    score_bear += 1
-if near_bear_poi
-    score_bear += 1
-if valid_entry_sess
-    score_bear += 1
+scoreBear = 0
+if biasBear
+    scoreBear += 1
+if validSession
+    scoreBear += 1
+if inPremium
+    scoreBear += 1
+if bslSwept or asiaHighSwept
+    scoreBear += 1
+if mssBear or bosBear
+    scoreBear += 1
+if nearBearPoi
+    scoreBear += 1
+if displacementBear
+    scoreBear += 1
+
+entry = close
+slBuy = not na(lastLow) ? math.min(low, lastLow) - atr * slAtrPad : na
+slSell = not na(lastHigh) ? math.max(high, lastHigh) + atr * slAtrPad : na
+riskBuy = not na(slBuy) ? entry - slBuy : na
+riskSell = not na(slSell) ? slSell - entry : na
+validRiskBuy = not na(riskBuy) and riskBuy > syminfo.mintick and riskBuy <= atr * maxRiskAtr
+validRiskSell = not na(riskSell) and riskSell > syminfo.mintick and riskSell <= atr * maxRiskAtr
+
+tp1Buy = validRiskBuy ? entry + riskBuy : na
+tp2Buy = validRiskBuy ? entry + riskBuy * 2.0 : na
+tp1Sell = validRiskSell ? entry - riskSell : na
+tp2Sell = validRiskSell ? entry - riskSell * 2.0 : na
+
+finalBuy = barstate.isconfirmed and scoreBull >= minScore and validRiskBuy and scoreBull > scoreBear
+finalSell = barstate.isconfirmed and scoreBear >= minScore and validRiskSell and scoreBear > scoreBull
+
+plotshape(finalBuy, "BUY", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 0), text="BUY", textcolor=color.black, size=size.small)
+plotshape(finalSell, "SELL", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.small)
+
+var line entryLine = na
+var line slLine = na
+var line tp1Line = na
+var line tp2Line = na
+
+if finalBuy or finalSell
+    if not na(entryLine)
+        line.delete(entryLine)
+    if not na(slLine)
+        line.delete(slLine)
+    if not na(tp1Line)
+        line.delete(tp1Line)
+    if not na(tp2Line)
+        line.delete(tp2Line)
+
+    sl = finalBuy ? slBuy : slSell
+    tp1 = finalBuy ? tp1Buy : tp1Sell
+    tp2 = finalBuy ? tp2Buy : tp2Sell
+
+    entryLine := line.new(bar_index, entry, bar_index + 25, entry, color=color.new(color.yellow, 0), width=2)
+    slLine := line.new(bar_index, sl, bar_index + 25, sl, color=color.new(color.red, 0), width=2)
+    tp1Line := line.new(bar_index, tp1, bar_index + 25, tp1, color=color.new(color.green, 10), width=1)
+    tp2Line := line.new(bar_index, tp2, bar_index + 25, tp2, color=color.new(color.green, 0), width=2)
+    label.new(bar_index, finalBuy ? low : high, (finalBuy ? "BUY" : "SELL") + "\nScore: " + str.tostring(finalBuy ? scoreBull : scoreBear) + "/7\nEntry: " + f_price(entry) + "\nSL: " + f_price(sl) + "\nTP1: " + f_price(tp1) + "\nTP2: " + f_price(tp2), style=finalBuy ? label.style_label_up : label.style_label_down, color=finalBuy ? color.new(color.lime, 10) : color.new(color.red, 10), textcolor=finalBuy ? color.black : color.white, size=size.small)
 
 // ============================================================================
-// 7. RISK ENGINE & FINAL TRIGGER
+// MINI PANEL
 // ============================================================================
-entry_p = close
-sl_bull = not na(last_pl) ? last_pl - atr * 0.5 : na
-sl_bear = not na(last_ph) ? last_ph + atr * 0.5 : na
+liqText = sslSwept or asiaLowSwept ? "SSL SWEPT" : bslSwept or asiaHighSwept ? "BSL SWEPT" : "WAIT"
+poiText = nearBullPoi ? "BULL POI" : nearBearPoi ? "BEAR POI" : not na(bullFvgTop) or not na(bullObTop) ? "BULL READY" : not na(bearFvgTop) or not na(bearObTop) ? "BEAR READY" : "NONE"
+statusText = finalBuy ? "BUY" : finalSell ? "SELL" : "WAIT"
+maxScore = math.max(scoreBull, scoreBear)
 
-risk_bull = not na(sl_bull) ? entry_p - sl_bull : na
-risk_bear = not na(sl_bear) ? sl_bear - entry_p : na
+var table panel = table.new(position.bottom_right, 2, 7, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 70))
+if showPanel and barstate.islast
+    table.cell(panel, 0, 0, "AMY ICT", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 0, "NEXTGEN", text_color=color.yellow, text_size=size.small)
+    table.cell(panel, 0, 1, "Bias", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 1, biasText, text_color=biasBull ? color.lime : biasBear ? color.red : color.white, text_size=size.small)
+    table.cell(panel, 0, 2, "Session", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 2, sessionText, text_color=validSession ? color.lime : color.gray, text_size=size.small)
+    table.cell(panel, 0, 3, "Structure", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 3, trend, text_color=trend == "BULL" ? color.lime : trend == "BEAR" ? color.red : color.white, text_size=size.small)
+    table.cell(panel, 0, 4, "Liquidity", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 4, liqText, text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 5, "POI / Score", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 5, poiText + " " + str.tostring(maxScore) + "/7", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 6, "Status", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 6, statusText, text_color=finalBuy ? color.lime : finalSell ? color.red : color.white, text_size=size.small)
 
-tp1_bull = not na(risk_bull) ? entry_p + risk_bull : na
-tp2_bull = not na(risk_bull) ? entry_p + risk_bull * 2.0 : na
-
-tp1_bear = not na(risk_bear) ? entry_p - risk_bear : na
-tp2_bear = not na(risk_bear) ? entry_p - risk_bear * 2.0 : na
-
-valid_rr_bull = not na(risk_bull) and risk_bull > atr * 0.2
-valid_rr_bear = not na(risk_bear) and risk_bear > atr * 0.2
-
-final_buy = score_bull >= min_score and valid_rr_bull and barstate.isconfirmed
-final_sell = score_bear >= min_score and valid_rr_bear and barstate.isconfirmed
-
-// ============================================================================
-// 8. VISUAL & ALERT ENGINE
-// ============================================================================
-plotshape(final_buy, title="BUY Signal", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.normal, text="BUY")
-plotshape(final_sell, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="SELL")
-
-if final_buy
-    label.new(bar_index, low, text="BUY\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bull, format.mintick) + "\nTP1: " + str.tostring(tp1_bull, format.mintick) + "\nTP2: " + str.tostring(tp2_bull, format.mintick), color=color.new(color.lime, 80), style=label.style_label_up, textcolor=color.white)
-
-if final_sell
-    label.new(bar_index, high, text="SELL\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bear, format.mintick) + "\nTP1: " + str.tostring(tp1_bear, format.mintick) + "\nTP2: " + str.tostring(tp2_bear, format.mintick), color=color.new(color.red, 80), style=label.style_label_down, textcolor=color.white)
-
-// Mini Panel
-var table dash = table.new(position.bottom_right, 2, 4, bgcolor=color.new(color.black, 80))
-if barstate.islast
-    table.cell(dash, 0, 0, "Bias", text_color=color.white)
-    table.cell(dash, 1, 0, bias_bull ? "BULL" : bias_bear ? "BEAR" : "NEUTRAL", text_color=color.white)
-    table.cell(dash, 0, 1, "Session", text_color=color.white)
-    table.cell(dash, 1, 1, in_asia ? "ASIA" : in_lon ? "LONDON" : in_ny ? "NY" : "OFF", text_color=color.white)
-    table.cell(dash, 0, 2, "Score", text_color=color.white)
-    table.cell(dash, 1, 2, str.tostring(math.max(score_bull, score_bear)), text_color=color.white)
-    table.cell(dash, 0, 3, "Status", text_color=color.white)
-    table.cell(dash, 1, 3, final_buy ? "BUY" : final_sell ? "SELL" : "WAIT", text_color=color.white)
-
-alertcondition(final_buy, title="Buy Alert", message="AMY ICT NextGen BUY")
-alertcondition(final_sell, title="Sell Alert", message="AMY ICT NextGen SELL")
+alertcondition(finalBuy, title="AMY ICT BUY", message="AMY ICT NextGen BUY")
+alertcondition(finalSell, title="AMY ICT SELL", message="AMY ICT NextGen SELL")
