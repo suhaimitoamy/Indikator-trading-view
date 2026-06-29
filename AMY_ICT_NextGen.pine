@@ -1,5 +1,5 @@
 //@version=5
-indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=80, max_lines_count=80, max_labels_count=80)
+indicator("AMY ICT NextGen Core", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
 
 // ============================================================================
 // INPUTS
@@ -29,6 +29,12 @@ grpRisk = "4. Risk"
 atrLen = input.int(14, "ATR Length", minval=1, group=grpRisk)
 slAtrPad = input.float(0.35, "SL ATR Buffer", minval=0.0, step=0.05, group=grpRisk)
 maxRiskAtr = input.float(3.0, "Max Risk ATR", minval=0.5, step=0.1, group=grpRisk)
+
+grpSR = "5. Support Resistance Boxes"
+showSRBoxes = input.bool(true, "Show Support / Resistance Boxes", group=grpSR)
+srBoxAtrPad = input.float(0.20, "Box Thickness ATR", minval=0.05, maxval=2.0, step=0.05, group=grpSR)
+srBoxExtend = input.int(55, "Box Extend Bars", minval=10, maxval=200, group=grpSR)
+showSRLabels = input.bool(true, "Show Support / Resistance Labels", group=grpSR)
 
 // ============================================================================
 // HELPERS
@@ -202,6 +208,65 @@ plotshape(showLiquidity and newBslSweep, "BSL Swept", style=shape.xcross, locati
 plotshape(showLiquidity and newSslSweep, "SSL Swept", style=shape.xcross, location=location.belowbar, color=color.lime, text="SSL\nSWEEP", textcolor=color.green, size=size.tiny)
 plotshape(showLiquidity and newAsiaHighSweep, "Asia High Swept", style=shape.diamond, location=location.abovebar, color=color.purple, text="Asia H", textcolor=color.purple, size=size.tiny)
 plotshape(showLiquidity and newAsiaLowSweep, "Asia Low Swept", style=shape.diamond, location=location.belowbar, color=color.purple, text="Asia L", textcolor=color.purple, size=size.tiny)
+
+// ============================================================================
+// SUPPORT RESISTANCE BOX ENGINE
+// ============================================================================
+var box resistanceBox = na
+var box supportBox = na
+var label resistanceLabel = na
+var label supportLabel = na
+
+resTop = not na(lastHigh) ? lastHigh + atr * srBoxAtrPad : na
+resBot = not na(lastHigh) ? lastHigh - atr * srBoxAtrPad : na
+supTop = not na(lastLow) ? lastLow + atr * srBoxAtrPad : na
+supBot = not na(lastLow) ? lastLow - atr * srBoxAtrPad : na
+
+if showSRBoxes and not na(lastHigh) and not na(lastHighBar)
+    if na(resistanceBox)
+        resistanceBox := box.new(lastHighBar, resTop, bar_index + srBoxExtend, resBot, bgcolor=color.new(color.purple, 82), border_color=color.new(color.purple, 55), text="resistance", text_color=color.purple, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+    else
+        box.set_lefttop(resistanceBox, lastHighBar, resTop)
+        box.set_rightbottom(resistanceBox, bar_index + srBoxExtend, resBot)
+        box.set_text(resistanceBox, "resistance")
+        box.set_bgcolor(resistanceBox, color.new(color.purple, 82))
+        box.set_border_color(resistanceBox, color.new(color.purple, 55))
+    if showSRLabels
+        if na(resistanceLabel)
+            resistanceLabel := label.new(bar_index + srBoxExtend, lastHigh, "resistance\n" + f_price(lastHigh), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
+        else
+            label.set_xy(resistanceLabel, bar_index + srBoxExtend, lastHigh)
+            label.set_text(resistanceLabel, "resistance\n" + f_price(lastHigh))
+else
+    if not na(resistanceBox)
+        box.delete(resistanceBox)
+        resistanceBox := na
+    if not na(resistanceLabel)
+        label.delete(resistanceLabel)
+        resistanceLabel := na
+
+if showSRBoxes and not na(lastLow) and not na(lastLowBar)
+    if na(supportBox)
+        supportBox := box.new(lastLowBar, supTop, bar_index + srBoxExtend, supBot, bgcolor=color.new(color.blue, 84), border_color=color.new(color.blue, 58), text="Support", text_color=color.purple, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+    else
+        box.set_lefttop(supportBox, lastLowBar, supTop)
+        box.set_rightbottom(supportBox, bar_index + srBoxExtend, supBot)
+        box.set_text(supportBox, "Support")
+        box.set_bgcolor(supportBox, color.new(color.blue, 84))
+        box.set_border_color(supportBox, color.new(color.blue, 58))
+    if showSRLabels
+        if na(supportLabel)
+            supportLabel := label.new(bar_index + srBoxExtend, lastLow, "Support\n" + f_price(lastLow), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
+        else
+            label.set_xy(supportLabel, bar_index + srBoxExtend, lastLow)
+            label.set_text(supportLabel, "Support\n" + f_price(lastLow))
+else
+    if not na(supportBox)
+        box.delete(supportBox)
+        supportBox := na
+    if not na(supportLabel)
+        label.delete(supportLabel)
+        supportLabel := na
 
 // ============================================================================
 // POI ENGINE: FVG + ORDER BLOCK
