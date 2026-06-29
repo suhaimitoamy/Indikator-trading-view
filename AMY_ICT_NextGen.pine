@@ -11,48 +11,43 @@ lon_sess = input.session("1400-1800", "London Session", group=grp_core)
 ny_sess = input.session("1930-0400", "New York Session", group=grp_core)
 
 in_asia = not na(time(timeframe.period, asia_sess, tz))
-in_lon  = not na(time(timeframe.period, lon_sess, tz))
-in_ny   = not na(time(timeframe.period, ny_sess, tz))
-
+in_lon = not na(time(timeframe.period, lon_sess, tz))
+in_ny = not na(time(timeframe.period, ny_sess, tz))
 valid_entry_sess = in_lon or in_ny
 
 var float asia_hi = na
 var float asia_lo = na
 
-// Deteksi Asia Range
-if in_asia and not in_asia[1]
+asia_start = in_asia and not nz(in_asia[1], false)
+
+if asia_start
     asia_hi := high
     asia_lo := low
 else if in_asia
-    asia_hi := math.max(asia_hi, high)
-    asia_lo := math.min(asia_lo, low)
+    asia_hi := na(asia_hi) ? high : math.max(asia_hi, high)
+    asia_lo := na(asia_lo) ? low : math.min(asia_lo, low)
 
-// Tampilkan Garis Asia Range hanya saat sesi London/NY aktif agar chart bersih
 plot(valid_entry_sess ? asia_hi : na, title="Asia High", color=color.new(color.fuchsia, 50), style=plot.style_linebr)
 plot(valid_entry_sess ? asia_lo : na, title="Asia Low", color=color.new(color.fuchsia, 50), style=plot.style_linebr)
-
 
 // ============================================================================
 // 2. CONTEXT ENGINE (HTF Bias)
 // ============================================================================
 grp_ctx = "2. Context Engine"
-htf = input.timeframe("240", "HTF Timeframe (e.g. 4H)", group=grp_ctx)
+htf = input.timeframe("240", "HTF Timeframe", group=grp_ctx)
 
-// Mencegah Repaint: Ambil nilai close[1] dan ema[1] dari time frame besar
-htf_c = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_ignore)
-htf_ema = request.security(syminfo.tickerid, htf, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_ignore)
+htf_c = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_off)
+htf_ema = request.security(syminfo.tickerid, htf, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_off)
 
-bias_bull = htf_c > htf_ema
-bias_bear = htf_c < htf_ema
-
+bias_bull = not na(htf_c) and not na(htf_ema) and htf_c > htf_ema
+bias_bear = not na(htf_c) and not na(htf_ema) and htf_c < htf_ema
 
 // ============================================================================
 // 3. STRUCTURE ENGINE (Swings & MSS)
 // ============================================================================
 grp_str = "3. Structure Engine"
-swing_len = input.int(5, "Swing Length", group=grp_str)
+swing_len = input.int(5, "Swing Length", minval=1, group=grp_str)
 
-// Deteksi Swing High/Low setelah candle close
 ph = ta.pivothigh(high, swing_len, swing_len)
 pl = ta.pivotlow(low, swing_len, swing_len)
 
@@ -64,23 +59,21 @@ if not na(ph)
 if not na(pl)
     last_pl := pl
 
-// Hitung rentang Premium vs Discount dari swing terakhir
-pd_range = last_ph - last_pl
-eq_level = last_pl + (pd_range / 2)
+have_pd = not na(last_ph) and not na(last_pl) and last_ph > last_pl
+pd_range = have_pd ? last_ph - last_pl : na
+eq_level = have_pd ? last_pl + pd_range / 2.0 : na
 
-in_discount = close < eq_level
-in_premium  = close > eq_level
+in_discount = have_pd and close < eq_level
+in_premium = have_pd and close > eq_level
 
-// Market Structure Shift (MSS)
 var string market_trend = "NEUTRAL"
-mss_bull = close > last_ph and close[1] <= last_ph and market_trend != "BULL"
-mss_bear = close < last_pl and close[1] >= last_pl and market_trend != "BEAR"
+mss_bull = not na(last_ph) and close > last_ph and close[1] <= last_ph and market_trend != "BULL"
+mss_bear = not na(last_pl) and close < last_pl and close[1] >= last_pl and market_trend != "BEAR"
 
 if mss_bull
     market_trend := "BULL"
 if mss_bear
     market_trend := "BEAR"
-
 
 // ============================================================================
 // 4. LIQUIDITY ENGINE (Sweep Detection)
@@ -88,24 +81,24 @@ if mss_bear
 var bool bsl_swept = false
 var bool ssl_swept = false
 
-// Reset status sweep setiap awal sesi London atau New York
-if (in_lon and not in_lon[1]) or (in_ny and not in_ny[1])
+lon_start = in_lon and not nz(in_lon[1], false)
+ny_start = in_ny and not nz(in_ny[1], false)
+
+if lon_start or ny_start
     bsl_swept := false
     ssl_swept := false
 
-// Sweep BSL (Buyside Liquidity) -> Tembus high lama tapi tutup di bawahnya
-if (high > last_ph and close < last_ph) or (high > asia_hi and close < asia_hi)
+if (not na(last_ph) and high > last_ph and close < last_ph) or (not na(asia_hi) and high > asia_hi and close < asia_hi)
     bsl_swept := true
 
-// Sweep SSL (Sellside Liquidity) -> Tembus low lama tapi tutup di atasnya
-if (low < last_pl and close > last_pl) or (low < asia_lo and close > asia_lo)
+if (not na(last_pl) and low < last_pl and close > last_pl) or (not na(asia_lo) and low < asia_lo and close > asia_lo)
     ssl_swept := true
 
+// ============================================================================
+// 5. POI ENGINE (Ghost POI - FVG)
+// ============================================================================
+atr = ta.atr(14)
 
-// ============================================================================
-// 5. POI ENGINE (Ghost POI - FVG/OB)
-// ============================================================================
-// FVG dasar
 is_fvg_bull = low > high[2] and close[1] > open[1]
 is_fvg_bear = high < low[2] and close[1] < open[1]
 
@@ -114,7 +107,6 @@ var float fvg_bull_bot = na
 var float fvg_bear_top = na
 var float fvg_bear_bot = na
 
-// Hanya simpan POI jika sesuai bias dan zonasi
 if is_fvg_bull and in_discount and bias_bull
     fvg_bull_top := low
     fvg_bull_bot := high[2]
@@ -123,37 +115,41 @@ if is_fvg_bear and in_premium and bias_bear
     fvg_bear_top := low[2]
     fvg_bear_bot := high
 
-// Mitigasi (Hapus POI jika sudah ditembus harga)
 if not na(fvg_bull_bot) and low < fvg_bull_bot
     fvg_bull_top := na
     fvg_bull_bot := na
+
 if not na(fvg_bear_top) and high > fvg_bear_top
     fvg_bear_top := na
     fvg_bear_bot := na
 
-atr = ta.atr(14)
-// Deteksi jika harga mendekati POI (Ghost POI concept)
-near_bull_poi = not na(fvg_bull_top) and (low <= fvg_bull_top + atr and close >= fvg_bull_bot - atr)
-near_bear_poi = not na(fvg_bear_bot) and (high >= fvg_bear_bot - atr and close <= fvg_bear_top + atr)
+near_bull_poi = not na(fvg_bull_top) and not na(fvg_bull_bot) and low <= fvg_bull_top + atr and close >= fvg_bull_bot - atr
+near_bear_poi = not na(fvg_bear_top) and not na(fvg_bear_bot) and high >= fvg_bear_bot - atr and close <= fvg_bear_top + atr
 
-// Visual Render: Hanya gambar kotak jika harga mendekati area POI (Ghost POI)
-var box box_bull_poi = box.new(na, na, na, na, bgcolor=color.new(color.green, 85), border_color=color.green)
-var box box_bear_poi = box.new(na, na, na, na, bgcolor=color.new(color.red, 85), border_color=color.red)
+var box box_bull_poi = na
+var box box_bear_poi = na
 
-if near_bull_poi and not na(fvg_bull_top)
-    box.set_lefttop(box_bull_poi, bar_index - 5, fvg_bull_top)
-    box.set_rightbottom(box_bull_poi, bar_index + 1, fvg_bull_bot)
+if near_bull_poi
+    if na(box_bull_poi)
+        box_bull_poi := box.new(bar_index - 5, fvg_bull_top, bar_index + 1, fvg_bull_bot, bgcolor=color.new(color.green, 85), border_color=color.green)
+    else
+        box.set_lefttop(box_bull_poi, bar_index - 5, fvg_bull_top)
+        box.set_rightbottom(box_bull_poi, bar_index + 1, fvg_bull_bot)
 else
-    box.set_lefttop(box_bull_poi, na, na)
-    box.set_rightbottom(box_bull_poi, na, na)
+    if not na(box_bull_poi)
+        box.delete(box_bull_poi)
+        box_bull_poi := na
 
-if near_bear_poi and not na(fvg_bear_top)
-    box.set_lefttop(box_bear_poi, bar_index - 5, fvg_bear_top)
-    box.set_rightbottom(box_bear_poi, bar_index + 1, fvg_bear_bot)
+if near_bear_poi
+    if na(box_bear_poi)
+        box_bear_poi := box.new(bar_index - 5, fvg_bear_top, bar_index + 1, fvg_bear_bot, bgcolor=color.new(color.red, 85), border_color=color.red)
+    else
+        box.set_lefttop(box_bear_poi, bar_index - 5, fvg_bear_top)
+        box.set_rightbottom(box_bear_poi, bar_index + 1, fvg_bear_bot)
 else
-    box.set_lefttop(box_bear_poi, na, na)
-    box.set_rightbottom(box_bear_poi, na, na)
-
+    if not na(box_bear_poi)
+        box.delete(box_bear_poi)
+        box_bear_poi := na
 
 // ============================================================================
 // 6. SCORING & EXECUTION ENGINE
@@ -189,49 +185,51 @@ if near_bear_poi
 if valid_entry_sess
     score_bear += 1
 
-
 // ============================================================================
 // 7. RISK ENGINE & FINAL TRIGGER
 // ============================================================================
-// Entry Price
 entry_p = close
+sl_bull = not na(last_pl) ? last_pl - atr * 0.5 : na
+sl_bear = not na(last_ph) ? last_ph + atr * 0.5 : na
 
-// Stop Loss: Penempatan SL berdasarkan ayunan ekstrem dengan buffer 0.5 ATR
-sl_bull = last_pl - (atr * 0.5)
-sl_bear = last_ph + (atr * 0.5)
+risk_bull = not na(sl_bull) ? entry_p - sl_bull : na
+risk_bear = not na(sl_bear) ? sl_bear - entry_p : na
 
-// Risk Calculation
-risk_bull = entry_p - sl_bull
-risk_bear = sl_bear - entry_p
+tp1_bull = not na(risk_bull) ? entry_p + risk_bull : na
+tp2_bull = not na(risk_bull) ? entry_p + risk_bull * 2.0 : na
 
-// TP Calculation (RR 1:1 dan 1:2)
-tp1_bull = entry_p + risk_bull
-tp2_bull = entry_p + (risk_bull * 2.0)
+tp1_bear = not na(risk_bear) ? entry_p - risk_bear : na
+tp2_bear = not na(risk_bear) ? entry_p - risk_bear * 2.0 : na
 
-tp1_bear = entry_p - risk_bear
-tp2_bear = entry_p - (risk_bear * 2.0)
+valid_rr_bull = not na(risk_bull) and risk_bull > atr * 0.2
+valid_rr_bear = not na(risk_bear) and risk_bear > atr * 0.2
 
-// Validasi RR (Mencegah risk negatif atau terlalu sempit)
-valid_rr_bull = risk_bull > (atr * 0.2) // Minimal risk > 20% ATR untuk cegah spread trap
-valid_rr_bear = risk_bear > (atr * 0.2)
-
-// Final Execution (Semua kondisi harus terpenuhi, dan candle sudah close)
-final_buy  = (score_bull >= min_score) and valid_rr_bull and barstate.isconfirmed
-final_sell = (score_bear >= min_score) and valid_rr_bear and barstate.isconfirmed
+final_buy = score_bull >= min_score and valid_rr_bull and barstate.isconfirmed
+final_sell = score_bear >= min_score and valid_rr_bear and barstate.isconfirmed
 
 // ============================================================================
 // 8. VISUAL & ALERT ENGINE
 // ============================================================================
-plotshape(final_buy,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.lime, size=size.normal, text="BUY")
-plotshape(final_sell, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.red,  size=size.normal, text="SELL")
+plotshape(final_buy, title="BUY Signal", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.normal, text="BUY")
+plotshape(final_sell, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="SELL")
 
-// Tampilkan Label Entry, SL, TP jika ada sinyal
 if final_buy
-    label.new(bar_index, low, text="BUY\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bull, format.mintick) + "\nTP2: " + str.tostring(tp2_bull, format.mintick), color=color.new(color.lime, 80), style=label.style_label_up, textcolor=color.white)
+    label.new(bar_index, low, text="BUY\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bull, format.mintick) + "\nTP1: " + str.tostring(tp1_bull, format.mintick) + "\nTP2: " + str.tostring(tp2_bull, format.mintick), color=color.new(color.lime, 80), style=label.style_label_up, textcolor=color.white)
 
 if final_sell
-    label.new(bar_index, high, text="SELL\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bear, format.mintick) + "\nTP2: " + str.tostring(tp2_bear, format.mintick), color=color.new(color.red, 80), style=label.style_label_down, textcolor=color.white)
+    label.new(bar_index, high, text="SELL\nEP: " + str.tostring(entry_p, format.mintick) + "\nSL: " + str.tostring(sl_bear, format.mintick) + "\nTP1: " + str.tostring(tp1_bear, format.mintick) + "\nTP2: " + str.tostring(tp2_bear, format.mintick), color=color.new(color.red, 80), style=label.style_label_down, textcolor=color.white)
 
-// Webhook Alerts
-alertcondition(final_buy, title="Buy Alert", message='{"action": "BUY", "price": "{{close}}", "sl": "{{sl_bull}}", "tp": "{{tp2_bull}}"}')
-alertcondition(final_sell, title="Sell Alert", message='{"action": "SELL", "price": "{{close}}", "sl": "{{sl_bear}}", "tp": "{{tp2_bear}}"}')
+// Mini Panel
+var table dash = table.new(position.bottom_right, 2, 4, bgcolor=color.new(color.black, 80))
+if barstate.islast
+    table.cell(dash, 0, 0, "Bias", text_color=color.white)
+    table.cell(dash, 1, 0, bias_bull ? "BULL" : bias_bear ? "BEAR" : "NEUTRAL", text_color=color.white)
+    table.cell(dash, 0, 1, "Session", text_color=color.white)
+    table.cell(dash, 1, 1, in_asia ? "ASIA" : in_lon ? "LONDON" : in_ny ? "NY" : "OFF", text_color=color.white)
+    table.cell(dash, 0, 2, "Score", text_color=color.white)
+    table.cell(dash, 1, 2, str.tostring(math.max(score_bull, score_bear)), text_color=color.white)
+    table.cell(dash, 0, 3, "Status", text_color=color.white)
+    table.cell(dash, 1, 3, final_buy ? "BUY" : final_sell ? "SELL" : "WAIT", text_color=color.white)
+
+alertcondition(final_buy, title="Buy Alert", message="AMY ICT NextGen BUY")
+alertcondition(final_sell, title="Sell Alert", message="AMY ICT NextGen SELL")
