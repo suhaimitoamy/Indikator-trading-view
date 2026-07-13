@@ -27,12 +27,12 @@ tz = input.string("Asia/Makassar", "Timezone", group=grpCore)
 asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
 londonSess = input.session("1400-1800", "London Session", group=grpCore)
 nySess = input.session("1930-0400", "New York Session", group=grpCore)
-mode = input.string("Balanced", "Signal Mode", options=["Aggressive", "Balanced", "Conservative"], group=grpCore)
 showAsia = input.bool(true, "Show Asia Range", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
 showPoi = input.bool(true, "Show Active POI", group=grpCore)
 showPanel = input.bool(true, "Show Mini Panel", group=grpCore)
+showMappingPanel = input.bool(true, "Show Market Explanation", group=grpCore)
 
 grpCtx = "2. Context"
 htf = input.timeframe("240", "HTF Bias", group=grpCtx)
@@ -41,19 +41,15 @@ emaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
 grpStruct = "3. Structure"
 swingLen = input.int(4, "Swing Length", minval=1, maxval=20, group=grpStruct)
 pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpStruct)
+atrLen = input.int(14, "ATR Length", minval=1, group=grpStruct)
 
-grpRisk = "4. Risk"
-atrLen = input.int(14, "ATR Length", minval=1, group=grpRisk)
-slAtrPad = input.float(0.35, "SL ATR Buffer", minval=0.0, step=0.05, group=grpRisk)
-maxRiskAtr = input.float(3.0, "Max Risk ATR", minval=0.5, step=0.1, group=grpRisk)
-
-grpSR = "5. Support Resistance Boxes"
+grpSR = "4. Support Resistance Boxes"
 showSRBoxes = input.bool(true, "Show Support / Resistance Boxes", group=grpSR)
 srBoxAtrPad = input.float(0.20, "Box Thickness ATR", minval=0.05, maxval=2.0, step=0.05, group=grpSR)
 srBoxExtend = input.int(55, "Box Extend Bars", minval=10, maxval=200, group=grpSR)
 showSRLabels = input.bool(true, "Show Support / Resistance Labels", group=grpSR)
 
-grpPoi = "6. SMC POI Boxes"
+grpPoi = "5. SMC POI Boxes"
 poiMaxBoxes = input.int(3, "Visible OB / FVG Count", minval=1, maxval=10, group=grpPoi)
 poiExtendBars = input.int(80, "POI Extend Bars", minval=10, maxval=300, group=grpPoi)
 poiNearAtr = input.float(0.80, "POI Near ATR", minval=0.10, maxval=3.0, step=0.05, group=grpPoi)
@@ -71,6 +67,14 @@ f_price(x) =>
 
 f_rightTime(bars) =>
     time + (time - time[1]) * bars
+
+f_meter(percent) =>
+    safePercent = int(math.max(0, math.min(100, percent)))
+    filled = int(math.round(safePercent / 10.0))
+    string meter = ""
+    for i = 1 to 10
+        meter += i <= filled ? "█" : "░"
+    meter
 
 f_lastBearish(lookback) =>
     float zTop = na
@@ -426,9 +430,8 @@ nearBullPoi = nearBullFvg or nearBullOb
 nearBearPoi = nearBearFvg or nearBearOb
 
 // ============================================================================
-// SCORING + SIGNAL
+// MARKET MAPPING ENGINE
 // ============================================================================
-minScore = mode == "Aggressive" ? 4 : mode == "Balanced" ? 5 : 6
 scoreBull = 0
 if biasBull
     scoreBull += 1
@@ -438,7 +441,7 @@ if inDiscount
     scoreBull += 1
 if sslSwept or asiaLowSwept
     scoreBull += 1
-if mssBull or bosBull
+if trend == "BULL"
     scoreBull += 1
 if nearBullPoi
     scoreBull += 1
@@ -454,63 +457,99 @@ if inPremium
     scoreBear += 1
 if bslSwept or asiaHighSwept
     scoreBear += 1
-if mssBear or bosBear
+if trend == "BEAR"
     scoreBear += 1
 if nearBearPoi
     scoreBear += 1
 if displacementBear
     scoreBear += 1
 
-entry = close
-slBuy = not na(lastLow) ? math.min(low, lastLow) - atr * slAtrPad : na
-slSell = not na(lastHigh) ? math.max(high, lastHigh) + atr * slAtrPad : na
-riskBuy = not na(slBuy) ? entry - slBuy : na
-riskSell = not na(slSell) ? slSell - entry : na
-validRiskBuy = not na(riskBuy) and riskBuy > syminfo.mintick and riskBuy <= atr * maxRiskAtr
-validRiskSell = not na(riskSell) and riskSell > syminfo.mintick and riskSell <= atr * maxRiskAtr
+mappingTotal = scoreBull + scoreBear
+bslPercent = mappingTotal > 0 ? int(math.round(scoreBull * 100.0 / mappingTotal)) : 50
+sslPercent = 100 - bslPercent
 
-tp1Buy = validRiskBuy ? entry + riskBuy : na
-tp2Buy = validRiskBuy ? entry + riskBuy * 2.0 : na
-tp1Sell = validRiskSell ? entry - riskSell : na
-tp2Sell = validRiskSell ? entry - riskSell * 2.0 : na
-
-finalBuy = barstate.isconfirmed and scoreBull >= minScore and validRiskBuy and scoreBull > scoreBear
-finalSell = barstate.isconfirmed and scoreBear >= minScore and validRiskSell and scoreBear > scoreBull
-
-plotshape(finalBuy, "BUY", style=shape.labelup, location=location.belowbar, color=color.new(color.lime, 0), text="BUY", textcolor=color.black, size=size.small)
-plotshape(finalSell, "SELL", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.small)
-
-var line entryLine = na
-var line slLine = na
-var line tp1Line = na
-var line tp2Line = na
-
-if finalBuy or finalSell
-    if not na(entryLine)
-        line.delete(entryLine)
-    if not na(slLine)
-        line.delete(slLine)
-    if not na(tp1Line)
-        line.delete(tp1Line)
-    if not na(tp2Line)
-        line.delete(tp2Line)
-
-    sl = finalBuy ? slBuy : slSell
-    tp1 = finalBuy ? tp1Buy : tp1Sell
-    tp2 = finalBuy ? tp2Buy : tp2Sell
-    entryLine := line.new(bar_index, entry, bar_index + 25, entry, color=color.new(color.yellow, 0), width=2)
-    slLine := line.new(bar_index, sl, bar_index + 25, sl, color=color.new(color.red, 0), width=2)
-    tp1Line := line.new(bar_index, tp1, bar_index + 25, tp1, color=color.new(color.green, 10), width=1)
-    tp2Line := line.new(bar_index, tp2, bar_index + 25, tp2, color=color.new(color.green, 0), width=2)
-    label.new(bar_index, finalBuy ? low : high, (finalBuy ? "BUY" : "SELL") + "\nScore: " + str.tostring(finalBuy ? scoreBull : scoreBear) + "/7\nEntry: " + f_price(entry) + "\nSL: " + f_price(sl) + "\nTP1: " + f_price(tp1) + "\nTP2: " + f_price(tp2), style=finalBuy ? label.style_label_up : label.style_label_down, color=finalBuy ? color.new(color.lime, 10) : color.new(color.red, 10), textcolor=finalBuy ? color.black : color.white, size=size.small)
+bullishReady = biasBull and trend == "BULL" and (sslSwept or asiaLowSwept) and nearBullPoi
+bearishReady = biasBear and trend == "BEAR" and (bslSwept or asiaHighSwept) and nearBearPoi
+mappingStatus = bullishReady ? "BULLISH READY" : bearishReady ? "BEARISH READY" : "NEUTRAL"
+mappingColor = bullishReady ? color.lime : bearishReady ? color.red : color.yellow
 
 // ============================================================================
-// MINI PANEL
+// EVENT HISTORY
+// ============================================================================
+var array<string> eventLog = array.new_string()
+string eventName = ""
+float eventPrice = na
+
+if mssBull
+    eventName := "MSS BULL"
+    eventPrice := lastHigh
+else if mssBear
+    eventName := "MSS BEAR"
+    eventPrice := lastLow
+else if bosBull
+    eventName := "BOS BULL"
+    eventPrice := lastHigh
+else if bosBear
+    eventName := "BOS BEAR"
+    eventPrice := lastLow
+else if newBslSweep
+    eventName := "BSL SWEEP"
+    eventPrice := lastHigh
+else if newSslSweep
+    eventName := "SSL SWEEP"
+    eventPrice := lastLow
+else if newAsiaHighSweep
+    eventName := "ASIA HIGH SWEEP"
+    eventPrice := asiaHigh
+else if newAsiaLowSweep
+    eventName := "ASIA LOW SWEEP"
+    eventPrice := asiaLow
+
+eventHasSweep = newBslSweep or newSslSweep or newAsiaHighSweep or newAsiaLowSweep
+if barstate.isconfirmed and str.length(eventName) > 0
+    eventSuffix = eventHasSweep ? "  SWEEP" : "  ✓"
+    eventLine = str.format_time(time, "HH:mm", tz) + "  " + eventName + " @ " + f_price(eventPrice) + eventSuffix
+    eventLog.unshift(eventLine)
+    if eventLog.size() > 3
+        eventLog.pop()
+
+event0 = eventLog.size() > 0 ? eventLog.get(0) : "No confirmed event"
+event1 = eventLog.size() > 1 ? eventLog.get(1) : "—"
+event2 = eventLog.size() > 2 ? eventLog.get(2) : "—"
+
+// ============================================================================
+// MARKET EXPLANATION PANEL — BOTTOM LEFT
+// ============================================================================
+var table mappingPanel = table.new(position.bottom_left, 3, 8, bgcolor=color.new(color.black, 78), border_width=1, border_color=color.new(color.gray, 55))
+
+if barstate.isfirst
+    table.merge_cells(mappingPanel, 0, 0, 2, 0)
+    table.merge_cells(mappingPanel, 0, 1, 2, 1)
+    table.merge_cells(mappingPanel, 0, 4, 2, 4)
+    table.merge_cells(mappingPanel, 0, 5, 2, 5)
+    table.merge_cells(mappingPanel, 0, 6, 2, 6)
+    table.merge_cells(mappingPanel, 0, 7, 2, 7)
+
+if showMappingPanel and barstate.islast
+    table.cell(mappingPanel, 0, 0, "🎯 " + timeframe.period + " — ENTRY PRECISION", text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 1, "● " + mappingStatus, text_color=mappingColor, text_size=size.small, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 2, "⬆ BSL", text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 1, 2, f_meter(bslPercent), text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 2, 2, str.tostring(bslPercent) + "%", text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 0, 3, "⬇ SSL", text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 1, 3, f_meter(sslPercent), text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 2, 3, str.tostring(sslPercent) + "%", text_color=color.white, text_size=size.small)
+    table.cell(mappingPanel, 0, 4, "⚡ Event:", text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 5, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 6, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 7, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
+
+// ============================================================================
+// MINI PANEL — BOTTOM RIGHT
 // ============================================================================
 liqText = sslSwept or asiaLowSwept ? "SSL SWEPT" : bslSwept or asiaHighSwept ? "BSL SWEPT" : "WAIT"
 poiText = nearBullPoi ? "BULL POI" : nearBearPoi ? "BEAR POI" : bullFvgs.size() > 0 or bullObs.size() > 0 ? "BULL READY" : bearFvgs.size() > 0 or bearObs.size() > 0 ? "BEAR READY" : "NONE"
-statusText = finalBuy ? "BUY" : finalSell ? "SELL" : "WAIT"
-maxScore = math.max(scoreBull, scoreBear)
+mapText = scoreBull > scoreBear ? "BULL " + str.tostring(scoreBull) + "/7" : scoreBear > scoreBull ? "BEAR " + str.tostring(scoreBear) + "/7" : "BALANCED " + str.tostring(scoreBull) + "/7"
 
 var table panel = table.new(position.bottom_right, 2, 7, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 70))
 if showPanel and barstate.islast
@@ -524,10 +563,7 @@ if showPanel and barstate.islast
     table.cell(panel, 1, 3, trend, text_color=trend == "BULL" ? color.lime : trend == "BEAR" ? color.red : color.white, text_size=size.small)
     table.cell(panel, 0, 4, "Liquidity", text_color=color.white, text_size=size.small)
     table.cell(panel, 1, 4, liqText, text_color=color.white, text_size=size.small)
-    table.cell(panel, 0, 5, "POI / Score", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 5, poiText + " " + str.tostring(maxScore) + "/7", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 5, "POI / Map", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 5, poiText + " | " + mapText, text_color=color.white, text_size=size.small)
     table.cell(panel, 0, 6, "Status", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 6, statusText, text_color=finalBuy ? color.lime : finalSell ? color.red : color.white, text_size=size.small)
-
-alertcondition(finalBuy, title="AMY ICT BUY", message="AMY ICT NextGen BUY")
-alertcondition(finalSell, title="AMY ICT SELL", message="AMY ICT NextGen SELL")
+    table.cell(panel, 1, 6, mappingStatus, text_color=mappingColor, text_size=size.small)
