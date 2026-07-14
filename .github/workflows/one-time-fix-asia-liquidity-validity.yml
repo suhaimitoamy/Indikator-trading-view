@@ -1,0 +1,97 @@
+name: One-time fix Asia liquidity validity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-fix-asia-liquidity-validity.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Fix Asia target consumption and suppress premature dominance
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('AMY_ICT_NextGen.pine')
+          text = path.read_text(encoding='utf-8')
+
+          old_sweep_block = '''newBslSweep = not bslConsumed and not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
+          newSslSweep = not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
+          newAsiaHighSweep = validSession and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
+          newAsiaLowSweep = validSession and not inAsia and not asiaLowConsumed and not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
+
+          var int lastBuySweepBar = na
+          var int lastSellSweepBar = na
+          if newBslSweep
+              bslConsumed := true
+              lastBuySweepBar := bar_index
+          if newSslSweep
+              sslConsumed := true
+              lastSellSweepBar := bar_index
+          if newAsiaHighSweep
+              asiaHighConsumed := true
+              lastBuySweepBar := bar_index
+          if newAsiaLowSweep
+              asiaLowConsumed := true
+              lastSellSweepBar := bar_index'''
+
+          new_sweep_block = '''newBslSweep = not bslConsumed and not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
+          newSslSweep = not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
+          newAsiaHighSweep = validSession and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
+          newAsiaLowSweep = validSession and not inAsia and not asiaLowConsumed and not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
+          asiaHighReached = not inAsia and not asiaHighConsumed and not na(asiaHigh) and high >= asiaHigh and barstate.isconfirmed
+          asiaLowReached = not inAsia and not asiaLowConsumed and not na(asiaLow) and low <= asiaLow and barstate.isconfirmed
+
+          var int lastBuySweepBar = na
+          var int lastSellSweepBar = na
+          if newBslSweep
+              bslConsumed := true
+              lastBuySweepBar := bar_index
+          if newSslSweep
+              sslConsumed := true
+              lastSellSweepBar := bar_index
+          if asiaHighReached
+              asiaHighConsumed := true
+          if asiaLowReached
+              asiaLowConsumed := true
+          if newAsiaHighSweep
+              lastBuySweepBar := bar_index
+          if newAsiaLowSweep
+              lastSellSweepBar := bar_index'''
+
+          if old_sweep_block not in text:
+              raise SystemExit('Asia sweep block marker not found')
+          text = text.replace(old_sweep_block, new_sweep_block, 1)
+
+          old_dominance = '''bslHighConfidence = hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
+          sslHighConfidence = hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
+          liquidityDominance = bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"'''
+
+          new_dominance = '''bslHighConfidence = not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
+          sslHighConfidence = not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
+          liquidityDominance = inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"'''
+
+          if old_dominance not in text:
+              raise SystemExit('Liquidity dominance marker not found')
+          text = text.replace(old_dominance, new_dominance, 1)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/one-time-fix-asia-liquidity-validity.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AMY_ICT_NextGen.pine .github/workflows/one-time-fix-asia-liquidity-validity.yml
+          git commit -m "Fix Asia liquidity target validity and premature dominance"
+          git push origin HEAD:main
