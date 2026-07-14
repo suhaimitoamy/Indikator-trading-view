@@ -614,7 +614,7 @@ bearPenalty = (bothSidesConflict ? 15 : 0) + (inDiscount ? 10 : 0) + (nearBullPo
 bullAlignmentAdjusted = int(math.max(0, bullAlignmentRaw - bullPenalty))
 bearAlignmentAdjusted = int(math.max(0, bearAlignmentRaw - bearPenalty))
 alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
-alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BULL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "BEAR" : "BALANCED"
+alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BSL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "SSL" : "WAIT"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
@@ -851,7 +851,7 @@ if showDashboard and barstate.islast
     table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " CURRENT MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
     table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 2, "Alignment", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 0, 2, "Liquidity Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
     table.cell(dashboard, 1, 2, alignmentSide + " " + str.tostring(alignmentPercent) + "%  " + f_meter(alignmentPercent), text_color=marketColor, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 
     table.cell(dashboard, 0, 3, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
