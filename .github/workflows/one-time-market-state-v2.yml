@@ -7,6 +7,13 @@ on:
     paths:
       - .github/workflows/one-time-market-state-v2.yml
       - .market-state-v2-trigger
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
