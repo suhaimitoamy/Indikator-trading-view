@@ -25,6 +25,7 @@ asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
 londonSess = input.session("1400-1800", "London Session", group=grpCore)
 nySess = input.session("1930-0400", "New York Session", group=grpCore)
 showAsia = input.bool(true, "Show Asia High / Low", group=grpCore)
+showPrevDay = input.bool(true, "Show PDH / PDL", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
 structureHistory = input.int(3, "Visible BOS / MSS", minval=1, maxval=10, group=grpCore)
@@ -36,6 +37,7 @@ htf = input.timeframe("240", "HTF Bias", group=grpCtx)
 htfEmaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
 pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpCtx)
 atrLen = input.int(14, "ATR Length", minval=1, group=grpCtx)
+liquidityDirectionThreshold = input.int(90, "BSL / SSL Direction Threshold", minval=50, maxval=99, group=grpCtx)
 
 grpEma = "3. EMA"
 showEma = input.bool(true, "Show EMA", group=grpEma)
@@ -160,6 +162,69 @@ else if not showAsia
     if not na(asiaLowLabel)
         label.delete(asiaLowLabel)
         asiaLowLabel := na
+
+// ============================================================================
+// PREVIOUS DAY LIQUIDITY — PDH / PDL
+// ============================================================================
+pdh = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
+newTradingDay = nz(ta.change(time("D"))) != 0
+
+var line pdhLine = na
+var line pdlLine = na
+var label pdhLabel = na
+var label pdlLabel = na
+var bool pdhConsumed = false
+var bool pdlConsumed = false
+
+if newTradingDay
+    pdhConsumed := false
+    pdlConsumed := false
+
+if not na(pdh) and high >= pdh
+    pdhConsumed := true
+if not na(pdl) and low <= pdl
+    pdlConsumed := true
+
+if showPrevDay and not na(pdh) and not na(pdl)
+    if newTradingDay or na(pdhLine)
+        if not na(pdhLine)
+            line.delete(pdhLine)
+        if not na(pdlLine)
+            line.delete(pdlLine)
+        if not na(pdhLabel)
+            label.delete(pdhLabel)
+        if not na(pdlLabel)
+            label.delete(pdlLabel)
+        pdhLine := line.new(bar_index, pdh, bar_index + 1, pdh, extend=extend.right, color=color.new(color.orange, 10), style=line.style_dashed, width=1)
+        pdlLine := line.new(bar_index, pdl, bar_index + 1, pdl, extend=extend.right, color=color.new(color.blue, 10), style=line.style_dashed, width=1)
+        pdhLabel := label.new(bar_index + 3, pdh, "PDH " + f_price(pdh), style=label.style_label_left, color=color.new(color.orange, 35), textcolor=color.white, size=size.tiny)
+        pdlLabel := label.new(bar_index + 3, pdl, "PDL " + f_price(pdl), style=label.style_label_left, color=color.new(color.blue, 35), textcolor=color.white, size=size.tiny)
+    line.set_y1(pdhLine, pdh)
+    line.set_y2(pdhLine, pdh)
+    line.set_y1(pdlLine, pdl)
+    line.set_y2(pdlLine, pdl)
+    line.set_color(pdhLine, color.new(color.orange, pdhConsumed ? 72 : 10))
+    line.set_color(pdlLine, color.new(color.blue, pdlConsumed ? 72 : 10))
+    label.set_xy(pdhLabel, bar_index + 3, pdh)
+    label.set_xy(pdlLabel, bar_index + 3, pdl)
+    label.set_text(pdhLabel, "PDH " + f_price(pdh))
+    label.set_text(pdlLabel, "PDL " + f_price(pdl))
+    label.set_color(pdhLabel, color.new(color.orange, pdhConsumed ? 72 : 35))
+    label.set_color(pdlLabel, color.new(color.blue, pdlConsumed ? 72 : 35))
+else if not showPrevDay
+    if not na(pdhLine)
+        line.delete(pdhLine)
+        pdhLine := na
+    if not na(pdlLine)
+        line.delete(pdlLine)
+        pdlLine := na
+    if not na(pdhLabel)
+        label.delete(pdhLabel)
+        pdhLabel := na
+    if not na(pdlLabel)
+        label.delete(pdlLabel)
+        pdlLabel := na
 
 // ============================================================================
 // CONTEXT + EMA
@@ -606,19 +671,42 @@ bearTransition = not coreBull and not coreBear and structureBear and (htfBearCon
 mappingDir = coreBull ? 1 : coreBear ? -1 : 0
 marketState = coreBull ? (bullPullback ? "BULLISH PULLBACK" : "UPTREND CONFIRMED") : coreBear ? (bearPullback ? "BEARISH PULLBACK" : "DOWNTREND CONFIRMED") : bullTransition ? "BULLISH TRANSITION" : bearTransition ? "BEARISH TRANSITION" : "RANGE / TRANSITION"
 marketColor = mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : bullTransition ? color.aqua : bearTransition ? color.orange : color.yellow
-bullAlignmentRaw = bullAlignment * 20
-bearAlignmentRaw = bearAlignment * 20
-bothSidesConflict = recentBuySweep and recentSellSweep
-bullPenalty = (bothSidesConflict ? 15 : 0) + (inPremium ? 10 : 0) + (nearBearPoi ? 10 : 0)
-bearPenalty = (bothSidesConflict ? 15 : 0) + (inDiscount ? 10 : 0) + (nearBullPoi ? 10 : 0)
-bullAlignmentAdjusted = int(math.max(0, bullAlignmentRaw - bullPenalty))
-bearAlignmentAdjusted = int(math.max(0, bearAlignmentRaw - bearPenalty))
-alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
-alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BSL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "SSL" : "WAIT"
-liquidityStrengthTotal = bullAlignmentAdjusted + bearAlignmentAdjusted
-bslDrawPercent = liquidityStrengthTotal > 0 ? int(math.round(bullAlignmentAdjusted * 100.0 / liquidityStrengthTotal)) : 50
+// Liquidity draw is calculated from the nearest valid liquidity on both sides.
+// Candidate BSL: active swing high, Asia High, or unswept PDH.
+// Candidate SSL: active swing low, Asia Low, or unswept PDL.
+float nearestBslTarget = na
+string nearestBslName = "NONE"
+if not bslConsumed and not bslBroken and not na(lastHigh) and lastHigh > close
+    nearestBslTarget := lastHigh
+    nearestBslName := "BSL"
+if not asiaHighConsumed and not na(asiaHigh) and asiaHigh > close and (na(nearestBslTarget) or asiaHigh < nearestBslTarget)
+    nearestBslTarget := asiaHigh
+    nearestBslName := "ASIA HIGH"
+if not pdhConsumed and not na(pdh) and pdh > close and (na(nearestBslTarget) or pdh < nearestBslTarget)
+    nearestBslTarget := pdh
+    nearestBslName := "PDH"
+
+float nearestSslTarget = na
+string nearestSslName = "NONE"
+if not sslConsumed and not sslBroken and not na(lastLow) and lastLow < close
+    nearestSslTarget := lastLow
+    nearestSslName := "SSL"
+if not asiaLowConsumed and not na(asiaLow) and asiaLow < close and (na(nearestSslTarget) or asiaLow > nearestSslTarget)
+    nearestSslTarget := asiaLow
+    nearestSslName := "ASIA LOW"
+if not pdlConsumed and not na(pdl) and pdl < close and (na(nearestSslTarget) or pdl > nearestSslTarget)
+    nearestSslTarget := pdl
+    nearestSslName := "PDL"
+
+bslDistance = not na(nearestBslTarget) ? nearestBslTarget - close : na
+sslDistance = not na(nearestSslTarget) ? close - nearestSslTarget : na
+hasTwoSidedLiquidity = not na(bslDistance) and not na(sslDistance) and bslDistance > syminfo.mintick and sslDistance > syminfo.mintick
+rawBslDraw = hasTwoSidedLiquidity ? sslDistance * 100.0 / (bslDistance + sslDistance) : 50.0
+bslDrawPercent = hasTwoSidedLiquidity ? int(math.round(math.max(1.0, math.min(99.0, rawBslDraw)))) : 50
 sslDrawPercent = 100 - bslDrawPercent
-liquidityDominance = bslDrawPercent > sslDrawPercent ? "BSL DOMINANT" : sslDrawPercent > bslDrawPercent ? "SSL DOMINANT" : "BALANCED"
+bslHighConfidence = hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
+sslHighConfidence = hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
+liquidityDominance = bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
