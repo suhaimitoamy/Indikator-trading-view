@@ -615,6 +615,10 @@ bullAlignmentAdjusted = int(math.max(0, bullAlignmentRaw - bullPenalty))
 bearAlignmentAdjusted = int(math.max(0, bearAlignmentRaw - bearPenalty))
 alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
 alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BSL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "SSL" : "WAIT"
+liquidityStrengthTotal = bullAlignmentAdjusted + bearAlignmentAdjusted
+bslDrawPercent = liquidityStrengthTotal > 0 ? int(math.round(bullAlignmentAdjusted * 100.0 / liquidityStrengthTotal)) : 50
+sslDrawPercent = 100 - bslDrawPercent
+liquidityDominance = bslDrawPercent > sslDrawPercent ? "BSL DOMINANT" : sslDrawPercent > bslDrawPercent ? "SSL DOMINANT" : "BALANCED"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
@@ -837,47 +841,50 @@ dashBg = color.rgb(86, 86, 86)
 dashAlt = color.rgb(74, 74, 74)
 dashBorder = color.rgb(120, 120, 120)
 
-var table dashboard = table.new(position.bottom_right, 2, 14, bgcolor=dashBg, border_width=1, border_color=dashBorder)
+var table dashboard = table.new(position.bottom_right, 2, 15, bgcolor=dashBg, border_width=1, border_color=dashBorder)
 
 if barstate.isfirst
     table.merge_cells(dashboard, 0, 0, 1, 0)
     table.merge_cells(dashboard, 0, 1, 1, 1)
-    table.merge_cells(dashboard, 0, 10, 1, 10)
     table.merge_cells(dashboard, 0, 11, 1, 11)
     table.merge_cells(dashboard, 0, 12, 1, 12)
     table.merge_cells(dashboard, 0, 13, 1, 13)
+    table.merge_cells(dashboard, 0, 14, 1, 14)
 
 if showDashboard and barstate.islast
     table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " CURRENT MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
     table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
     table.cell(dashboard, 0, 2, "Liquidity Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 2, alignmentSide + " " + str.tostring(alignmentPercent) + "%  " + f_meter(alignmentPercent), text_color=marketColor, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 1, 2, liquidityDominance, text_color=bslDrawPercent > sslDrawPercent ? color.lime : sslDrawPercent > bslDrawPercent ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 3, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 3, biasText, text_color=htfBullConfirmed ? color.lime : htfBearConfirmed ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 3, "BSL", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 3, f_meter(bslDrawPercent) + "  " + str.tostring(bslDrawPercent) + "%", text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 4, "Structure", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 4, trend, text_color=structureBull ? color.lime : structureBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 4, "SSL", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 4, f_meter(sslDrawPercent) + "  " + str.tostring(sslDrawPercent) + "%", text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 5, "EMA", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 5, emaText, text_color=emaBull ? color.lime : emaBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 5, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 5, biasText, text_color=htfBullConfirmed ? color.lime : htfBearConfirmed ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 6, "Session", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 6, sessionText, text_color=validSession ? color.lime : color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 6, "Structure", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 6, trend, text_color=structureBull ? color.lime : structureBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 7, "Liquidity", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 7, liqText, text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 7, "EMA", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 7, emaText, text_color=emaBull ? color.lime : emaBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 8, "Range", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 8, rangeText, text_color=inDiscount ? color.lime : inPremium ? color.orange : color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 8, "Session", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 8, sessionText, text_color=validSession ? color.lime : color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 9, "OB / FVG", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 9, poiText, text_color=nearBullPoi ? color.lime : nearBearPoi ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 9, "Liquidity", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 9, liqText, text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 10, "EVENT HISTORY", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
-    table.cell(dashboard, 0, 11, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
-    table.cell(dashboard, 0, 12, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
-    table.cell(dashboard, 0, 13, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 10, "Range / POI", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 10, rangeText + " | " + poiText, text_color=inDiscount ? color.lime : inPremium ? color.orange : color.silver, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+
+    table.cell(dashboard, 0, 11, "EVENT HISTORY", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+    table.cell(dashboard, 0, 12, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 13, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 14, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 else if barstate.islast
-    table.clear(dashboard, 0, 0, 1, 13)
+    table.clear(dashboard, 0, 0, 1, 14)
