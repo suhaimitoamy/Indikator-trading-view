@@ -27,7 +27,7 @@ tz = input.string("Asia/Makassar", "Timezone", group=grpCore)
 asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
 londonSess = input.session("1400-1800", "London Session", group=grpCore)
 nySess = input.session("1930-0400", "New York Session", group=grpCore)
-showAsia = input.bool(true, "Show Asia Range", group=grpCore)
+showAsia = input.bool(true, "Show Asia High / Low", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
 showPoi = input.bool(true, "Show Active POI", group=grpCore)
@@ -47,7 +47,7 @@ grpSR = "4. Support Resistance Boxes"
 showSRBoxes = input.bool(true, "Show Support / Resistance Boxes", group=grpSR)
 srBoxAtrPad = input.float(0.20, "Box Thickness ATR", minval=0.05, maxval=2.0, step=0.05, group=grpSR)
 srBoxExtend = input.int(55, "Box Extend Bars", minval=10, maxval=200, group=grpSR)
-showSRLabels = input.bool(true, "Show Support / Resistance Labels", group=grpSR)
+showSRLabels = input.bool(true, "Show Support / Resistance Text", group=grpSR)
 
 grpPoi = "5. SMC POI Boxes"
 poiMaxBoxes = input.int(3, "Visible OB / FVG Count", minval=1, maxval=10, group=grpPoi)
@@ -112,16 +112,64 @@ asiaStart = inAsia and not prevAsia
 
 var float asiaHigh = na
 var float asiaLow = na
+var int asiaStartBar = na
+var line asiaHighLine = na
+var line asiaLowLine = na
+var label asiaHighLabel = na
+var label asiaLowLabel = na
+var bool asiaHighConsumed = false
+var bool asiaLowConsumed = false
 
 if asiaStart
     asiaHigh := high
     asiaLow := low
+    asiaStartBar := bar_index
+    asiaHighConsumed := false
+    asiaLowConsumed := false
+    if not na(asiaHighLine)
+        line.delete(asiaHighLine)
+        asiaHighLine := na
+    if not na(asiaLowLine)
+        line.delete(asiaLowLine)
+        asiaLowLine := na
+    if not na(asiaHighLabel)
+        label.delete(asiaHighLabel)
+        asiaHighLabel := na
+    if not na(asiaLowLabel)
+        label.delete(asiaLowLabel)
+        asiaLowLabel := na
 else if inAsia
     asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
     asiaLow := na(asiaLow) ? low : math.min(asiaLow, low)
 
-plot(showAsia and validSession ? asiaHigh : na, "Asia High", color=color.new(color.purple, 15), style=plot.style_linebr, linewidth=1)
-plot(showAsia and validSession ? asiaLow : na, "Asia Low", color=color.new(color.purple, 15), style=plot.style_linebr, linewidth=1)
+if showAsia and not na(asiaHigh) and not na(asiaLow)
+    if na(asiaHighLine)
+        asiaHighLine := line.new(na(asiaStartBar) ? bar_index : asiaStartBar, asiaHigh, bar_index + 1, asiaHigh, xloc=xloc.bar_index, extend=extend.right, color=color.new(color.purple, 15), style=line.style_solid, width=1)
+    if na(asiaLowLine)
+        asiaLowLine := line.new(na(asiaStartBar) ? bar_index : asiaStartBar, asiaLow, bar_index + 1, asiaLow, xloc=xloc.bar_index, extend=extend.right, color=color.new(color.purple, 15), style=line.style_solid, width=1)
+    line.set_xy1(asiaHighLine, na(asiaStartBar) ? bar_index : asiaStartBar, asiaHigh)
+    line.set_xy2(asiaHighLine, bar_index + 1, asiaHigh)
+    line.set_xy1(asiaLowLine, na(asiaStartBar) ? bar_index : asiaStartBar, asiaLow)
+    line.set_xy2(asiaLowLine, bar_index + 1, asiaLow)
+    if na(asiaHighLabel)
+        asiaHighLabel := label.new(bar_index + 3, asiaHigh, "ASIA HIGH", style=label.style_label_left, color=color.new(color.purple, 70), textcolor=color.white, size=size.tiny)
+    if na(asiaLowLabel)
+        asiaLowLabel := label.new(bar_index + 3, asiaLow, "ASIA LOW", style=label.style_label_left, color=color.new(color.purple, 70), textcolor=color.white, size=size.tiny)
+    label.set_xy(asiaHighLabel, bar_index + 3, asiaHigh)
+    label.set_xy(asiaLowLabel, bar_index + 3, asiaLow)
+else if not showAsia
+    if not na(asiaHighLine)
+        line.delete(asiaHighLine)
+        asiaHighLine := na
+    if not na(asiaLowLine)
+        line.delete(asiaLowLine)
+        asiaLowLine := na
+    if not na(asiaHighLabel)
+        label.delete(asiaHighLabel)
+        asiaHighLabel := na
+    if not na(asiaLowLabel)
+        label.delete(asiaLowLabel)
+        asiaLowLabel := na
 
 // ============================================================================
 // CONTEXT ENGINE
@@ -152,33 +200,66 @@ var int lastHighBar = na
 var int lastLowBar = na
 var line bslLine = na
 var line sslLine = na
+var label bslLabel = na
+var label sslLabel = na
+var bool bslConsumed = false
+var bool sslConsumed = false
+var bool bslBroken = false
+var bool sslBroken = false
+var array<label> structureLabels = array.new<label>()
 
 if not na(ph)
     lastHigh := ph
     lastHighBar := bar_index - swingLen
+    bslConsumed := false
+    bslBroken := false
+    if not na(bslLine)
+        line.delete(bslLine)
+        bslLine := na
+    if not na(bslLabel)
+        label.delete(bslLabel)
+        bslLabel := na
     if showLiquidity
-        if not na(bslLine)
-            line.delete(bslLine)
         bslLine := line.new(lastHighBar, lastHigh, bar_index + 80, lastHigh, color=color.new(color.red, 25), style=line.style_dashed, width=1)
-        label.new(lastHighBar, lastHigh, "BSL", style=label.style_label_down, color=color.new(color.red, 75), textcolor=color.white, size=size.tiny)
+        bslLabel := label.new(lastHighBar, lastHigh, "BSL", style=label.style_label_down, color=color.new(color.red, 72), textcolor=color.white, size=size.tiny)
 
 if not na(pl)
     lastLow := pl
     lastLowBar := bar_index - swingLen
+    sslConsumed := false
+    sslBroken := false
+    if not na(sslLine)
+        line.delete(sslLine)
+        sslLine := na
+    if not na(sslLabel)
+        label.delete(sslLabel)
+        sslLabel := na
     if showLiquidity
-        if not na(sslLine)
-            line.delete(sslLine)
         sslLine := line.new(lastLowBar, lastLow, bar_index + 80, lastLow, color=color.new(color.green, 25), style=line.style_dashed, width=1)
-        label.new(lastLowBar, lastLow, "SSL", style=label.style_label_up, color=color.new(color.green, 75), textcolor=color.white, size=size.tiny)
+        sslLabel := label.new(lastLowBar, lastLow, "SSL", style=label.style_label_up, color=color.new(color.green, 72), textcolor=color.white, size=size.tiny)
 
-if not na(bslLine)
-    line.set_x2(bslLine, bar_index + 80)
-if not na(sslLine)
-    line.set_x2(sslLine, bar_index + 80)
+if showLiquidity
+    if not na(bslLine)
+        line.set_x2(bslLine, bar_index + 80)
+    if not na(sslLine)
+        line.set_x2(sslLine, bar_index + 80)
+else
+    if not na(bslLine)
+        line.delete(bslLine)
+        bslLine := na
+    if not na(sslLine)
+        line.delete(sslLine)
+        sslLine := na
+    if not na(bslLabel)
+        label.delete(bslLabel)
+        bslLabel := na
+    if not na(sslLabel)
+        label.delete(sslLabel)
+        sslLabel := na
 
 var string trend = "NEUTRAL"
-rawBreakBull = not na(lastHigh) and close > lastHigh and close[1] <= lastHigh
-rawBreakBear = not na(lastLow) and close < lastLow and close[1] >= lastLow
+rawBreakBull = not bslBroken and not na(lastHigh) and close > lastHigh and close[1] <= lastHigh
+rawBreakBear = not sslBroken and not na(lastLow) and close < lastLow and close[1] >= lastLow
 mssBull = rawBreakBull and trend != "BULL" and displacementBull and barstate.isconfirmed
 mssBear = rawBreakBear and trend != "BEAR" and displacementBear and barstate.isconfirmed
 bosBull = rawBreakBull and trend == "BULL" and displacementBull and barstate.isconfirmed
@@ -186,17 +267,27 @@ bosBear = rawBreakBear and trend == "BEAR" and displacementBear and barstate.isc
 
 if mssBull or bosBull
     trend := "BULL"
+    bslBroken := true
 if mssBear or bosBear
     trend := "BEAR"
+    sslBroken := true
 
-if showStructure and mssBull
-    label.new(bar_index, low, "MSS\nBULL", style=label.style_label_up, color=color.new(color.lime, 0), textcolor=color.black, size=size.tiny)
-if showStructure and mssBear
-    label.new(bar_index, high, "MSS\nBEAR", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
-if showStructure and bosBull
-    label.new(bar_index, low, "BOS", style=label.style_label_up, color=color.new(color.green, 35), textcolor=color.white, size=size.tiny)
-if showStructure and bosBear
-    label.new(bar_index, high, "BOS", style=label.style_label_down, color=color.new(color.maroon, 35), textcolor=color.white, size=size.tiny)
+label newStructureLabel = na
+if showStructure
+    if mssBull
+        newStructureLabel := label.new(bar_index, low, "MSS", style=label.style_label_up, color=color.new(color.lime, 10), textcolor=color.black, size=size.tiny)
+    else if mssBear
+        newStructureLabel := label.new(bar_index, high, "MSS", style=label.style_label_down, color=color.new(color.red, 10), textcolor=color.white, size=size.tiny)
+    else if bosBull
+        newStructureLabel := label.new(bar_index, low, "BOS", style=label.style_label_up, color=color.new(color.green, 35), textcolor=color.white, size=size.tiny)
+    else if bosBear
+        newStructureLabel := label.new(bar_index, high, "BOS", style=label.style_label_down, color=color.new(color.maroon, 35), textcolor=color.white, size=size.tiny)
+
+if not na(newStructureLabel)
+    structureLabels.unshift(newStructureLabel)
+    if structureLabels.size() > 3
+        oldStructureLabel = structureLabels.pop()
+        label.delete(oldStructureLabel)
 
 pdHigh = ta.highest(high, pdLookback)
 pdLow = ta.lowest(low, pdLookback)
@@ -216,6 +307,7 @@ var bool bslSwept = false
 var bool sslSwept = false
 var bool asiaHighSwept = false
 var bool asiaLowSwept = false
+var array<label> sweepLabels = array.new<label>()
 
 if sessionStart
     bslSwept := false
@@ -223,78 +315,76 @@ if sessionStart
     asiaHighSwept := false
     asiaLowSwept := false
 
-newBslSweep = not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
-newSslSweep = not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
-newAsiaHighSweep = not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
-newAsiaLowSweep = not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
+newBslSweep = not bslConsumed and not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
+newSslSweep = not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
+newAsiaHighSweep = validSession and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
+newAsiaLowSweep = validSession and not inAsia and not asiaLowConsumed and not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
 
 if newBslSweep
     bslSwept := true
+    bslConsumed := true
 if newSslSweep
     sslSwept := true
+    sslConsumed := true
 if newAsiaHighSweep
     asiaHighSwept := true
+    asiaHighConsumed := true
 if newAsiaLowSweep
     asiaLowSwept := true
+    asiaLowConsumed := true
 
-plotshape(showLiquidity and newBslSweep, "BSL Swept", style=shape.xcross, location=location.abovebar, color=color.red, text="BSL\nSWEEP", textcolor=color.red, size=size.tiny)
-plotshape(showLiquidity and newSslSweep, "SSL Swept", style=shape.xcross, location=location.belowbar, color=color.lime, text="SSL\nSWEEP", textcolor=color.green, size=size.tiny)
-plotshape(showLiquidity and newAsiaHighSweep, "Asia High Swept", style=shape.diamond, location=location.abovebar, color=color.purple, text="Asia H", textcolor=color.purple, size=size.tiny)
-plotshape(showLiquidity and newAsiaLowSweep, "Asia Low Swept", style=shape.diamond, location=location.belowbar, color=color.purple, text="Asia L", textcolor=color.purple, size=size.tiny)
+label newSweepLabel = na
+if showLiquidity
+    if newBslSweep
+        newSweepLabel := label.new(bar_index, high, "×", style=label.style_none, textcolor=color.red, size=size.small)
+    else if newSslSweep
+        newSweepLabel := label.new(bar_index, low, "×", style=label.style_none, textcolor=color.lime, size=size.small)
+    else if newAsiaHighSweep
+        newSweepLabel := label.new(bar_index, high, "◆", style=label.style_none, textcolor=color.purple, size=size.tiny)
+    else if newAsiaLowSweep
+        newSweepLabel := label.new(bar_index, low, "◆", style=label.style_none, textcolor=color.purple, size=size.tiny)
+
+if not na(newSweepLabel)
+    sweepLabels.unshift(newSweepLabel)
+    if sweepLabels.size() > 3
+        oldSweepLabel = sweepLabels.pop()
+        label.delete(oldSweepLabel)
 
 // ============================================================================
 // SUPPORT RESISTANCE BOX ENGINE
 // ============================================================================
 var box resistanceBox = na
 var box supportBox = na
-var label resistanceLabel = na
-var label supportLabel = na
 resTop = not na(lastHigh) ? lastHigh + atr * srBoxAtrPad : na
 resBot = not na(lastHigh) ? lastHigh - atr * srBoxAtrPad : na
 supTop = not na(lastLow) ? lastLow + atr * srBoxAtrPad : na
 supBot = not na(lastLow) ? lastLow - atr * srBoxAtrPad : na
+resText = showSRLabels and not na(lastHigh) ? "Resistance\n" + f_price(lastHigh) : ""
+supText = showSRLabels and not na(lastLow) ? "Support\n" + f_price(lastLow) : ""
 
 if showSRBoxes and not na(lastHigh) and not na(lastHighBar)
     if na(resistanceBox)
-        resistanceBox := box.new(lastHighBar, resTop, bar_index + srBoxExtend, resBot, bgcolor=color.new(color.purple, 82), border_color=color.new(color.purple, 55), text="resistance", text_color=color.purple, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+        resistanceBox := box.new(lastHighBar, resTop, bar_index + srBoxExtend, resBot, bgcolor=color.new(color.purple, 82), border_color=color.new(color.purple, 55), text=resText, text_color=color.purple, text_size=size.tiny, text_halign=text.align_center, text_valign=text.align_center)
     else
         box.set_lefttop(resistanceBox, lastHighBar, resTop)
         box.set_rightbottom(resistanceBox, bar_index + srBoxExtend, resBot)
-        box.set_text(resistanceBox, "resistance")
-    if showSRLabels
-        if na(resistanceLabel)
-            resistanceLabel := label.new(bar_index + srBoxExtend, lastHigh, "resistance\n" + f_price(lastHigh), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
-        else
-            label.set_xy(resistanceLabel, bar_index + srBoxExtend, lastHigh)
-            label.set_text(resistanceLabel, "resistance\n" + f_price(lastHigh))
+        box.set_text(resistanceBox, resText)
 else
     if not na(resistanceBox)
         box.delete(resistanceBox)
         resistanceBox := na
-    if not na(resistanceLabel)
-        label.delete(resistanceLabel)
-        resistanceLabel := na
 
 if showSRBoxes and not na(lastLow) and not na(lastLowBar)
     if na(supportBox)
-        supportBox := box.new(lastLowBar, supTop, bar_index + srBoxExtend, supBot, bgcolor=color.new(color.blue, 84), border_color=color.new(color.blue, 58), text="Support", text_color=color.purple, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+        supportBox := box.new(lastLowBar, supTop, bar_index + srBoxExtend, supBot, bgcolor=color.new(color.blue, 84), border_color=color.new(color.blue, 58), text=supText, text_color=color.blue, text_size=size.tiny, text_halign=text.align_center, text_valign=text.align_center)
     else
         box.set_lefttop(supportBox, lastLowBar, supTop)
         box.set_rightbottom(supportBox, bar_index + srBoxExtend, supBot)
-        box.set_text(supportBox, "Support")
-    if showSRLabels
-        if na(supportLabel)
-            supportLabel := label.new(bar_index + srBoxExtend, lastLow, "Support\n" + f_price(lastLow), style=label.style_label_left, color=color.new(color.purple, 15), textcolor=color.white, size=size.tiny)
-        else
-            label.set_xy(supportLabel, bar_index + srBoxExtend, lastLow)
-            label.set_text(supportLabel, "Support\n" + f_price(lastLow))
+        box.set_text(supportBox, supText)
 else
     if not na(supportBox)
         box.delete(supportBox)
         supportBox := na
-    if not na(supportLabel)
-        label.delete(supportLabel)
-        supportLabel := na
 
 // ============================================================================
 // SMC POI ENGINE: ARRAY ORDER BLOCK + SPLIT FVG
@@ -396,38 +486,39 @@ if bearFvgs.size() > 0
             box.set_bottom_right_point(fvg.botBx, chart.point.new(rightTime, na, fvg.bot))
             box.set_bgcolor(fvg.botBx, color.new(color.red, high >= fvg.bot and low <= fvg.top ? 72 : 88))
 
-float bullFvgTop = na
-float bullFvgBot = na
-float bearFvgTop = na
-float bearFvgBot = na
-float bullObTop = na
-float bullObBot = na
-float bearObTop = na
-float bearObBot = na
+nearBullFvg = false
+nearBearFvg = false
+nearBullOb = false
+nearBearOb = false
 
 if bullFvgs.size() > 0
-    latestBullFvg = bullFvgs.get(0)
-    bullFvgTop := latestBullFvg.top
-    bullFvgBot := latestBullFvg.bot
-if bearFvgs.size() > 0
-    latestBearFvg = bearFvgs.get(0)
-    bearFvgTop := latestBearFvg.top
-    bearFvgBot := latestBearFvg.bot
-if bullObs.size() > 0
-    latestBullOb = bullObs.get(0)
-    bullObTop := latestBullOb.top
-    bullObBot := latestBullOb.bot
-if bearObs.size() > 0
-    latestBearOb = bearObs.get(0)
-    bearObTop := latestBearOb.top
-    bearObBot := latestBearOb.bot
+    for i = 0 to bullFvgs.size() - 1
+        fvg = bullFvgs.get(i)
+        if low <= fvg.top + atr * poiNearAtr and high >= fvg.bot - atr * 0.2
+            nearBullFvg := true
 
-nearBullFvg = not na(bullFvgTop) and low <= bullFvgTop + atr * poiNearAtr and high >= bullFvgBot - atr * 0.2
-nearBearFvg = not na(bearFvgBot) and high >= bearFvgBot - atr * poiNearAtr and low <= bearFvgTop + atr * 0.2
-nearBullOb = not na(bullObTop) and low <= bullObTop + atr * poiNearAtr and high >= bullObBot - atr * 0.2
-nearBearOb = not na(bearObBot) and high >= bearObBot - atr * poiNearAtr and low <= bearObTop + atr * 0.2
+if bearFvgs.size() > 0
+    for i = 0 to bearFvgs.size() - 1
+        fvg = bearFvgs.get(i)
+        if high >= fvg.bot - atr * poiNearAtr and low <= fvg.top + atr * 0.2
+            nearBearFvg := true
+
+if bullObs.size() > 0
+    for i = 0 to bullObs.size() - 1
+        ob = bullObs.get(i)
+        if low <= ob.top + atr * poiNearAtr and high >= ob.bot - atr * 0.2
+            nearBullOb := true
+
+if bearObs.size() > 0
+    for i = 0 to bearObs.size() - 1
+        ob = bearObs.get(i)
+        if high >= ob.bot - atr * poiNearAtr and low <= ob.top + atr * 0.2
+            nearBearOb := true
+
 nearBullPoi = nearBullFvg or nearBullOb
 nearBearPoi = nearBearFvg or nearBearOb
+bullPoiActive = bullFvgs.size() > 0 or bullObs.size() > 0
+bearPoiActive = bearFvgs.size() > 0 or bearObs.size() > 0
 
 // ============================================================================
 // MARKET MAPPING ENGINE
@@ -464,14 +555,13 @@ if nearBearPoi
 if displacementBear
     scoreBear += 1
 
-mappingTotal = scoreBull + scoreBear
-bslPercent = mappingTotal > 0 ? int(math.round(scoreBull * 100.0 / mappingTotal)) : 50
-sslPercent = 100 - bslPercent
+bullContextPercent = int(math.round(scoreBull * 100.0 / 7.0))
+bearContextPercent = int(math.round(scoreBear * 100.0 / 7.0))
 
 bullishReady = biasBull and trend == "BULL" and (sslSwept or asiaLowSwept) and nearBullPoi
 bearishReady = biasBear and trend == "BEAR" and (bslSwept or asiaHighSwept) and nearBearPoi
-mappingStatus = bullishReady ? "BULLISH READY" : bearishReady ? "BEARISH READY" : "NEUTRAL"
-mappingColor = bullishReady ? color.lime : bearishReady ? color.red : color.yellow
+mappingStatus = bullishReady ? "BULLISH READY" : bearishReady ? "BEARISH READY" : scoreBull >= 4 and scoreBull > scoreBear ? "BULLISH CONTEXT" : scoreBear >= 4 and scoreBear > scoreBull ? "BEARISH CONTEXT" : "NEUTRAL"
+mappingColor = bullishReady or mappingStatus == "BULLISH CONTEXT" ? color.lime : bearishReady or mappingStatus == "BEARISH CONTEXT" ? color.red : color.yellow
 
 // ============================================================================
 // EVENT HISTORY
@@ -479,6 +569,7 @@ mappingColor = bullishReady ? color.lime : bearishReady ? color.red : color.yell
 var array<string> eventLog = array.new_string()
 string eventName = ""
 float eventPrice = na
+bool eventHasSweep = false
 
 if mssBull
     eventName := "MSS BULL"
@@ -495,32 +586,39 @@ else if bosBear
 else if newBslSweep
     eventName := "BSL SWEEP"
     eventPrice := lastHigh
+    eventHasSweep := true
 else if newSslSweep
     eventName := "SSL SWEEP"
     eventPrice := lastLow
+    eventHasSweep := true
 else if newAsiaHighSweep
     eventName := "ASIA HIGH SWEEP"
     eventPrice := asiaHigh
+    eventHasSweep := true
 else if newAsiaLowSweep
     eventName := "ASIA LOW SWEEP"
     eventPrice := asiaLow
+    eventHasSweep := true
 
-eventHasSweep = newBslSweep or newSslSweep or newAsiaHighSweep or newAsiaLowSweep
 if barstate.isconfirmed and str.length(eventName) > 0
-    eventSuffix = eventHasSweep ? "  SWEEP" : "  ✓"
+    eventSuffix = eventHasSweep ? "" : "  ✓"
     eventLine = str.format_time(time, "HH:mm", tz) + "  " + eventName + " @ " + f_price(eventPrice) + eventSuffix
-    eventLog.unshift(eventLine)
-    if eventLog.size() > 3
-        eventLog.pop()
+    isNewEvent = true
+    if eventLog.size() > 0
+        isNewEvent := eventLog.get(0) != eventLine
+    if isNewEvent
+        eventLog.unshift(eventLine)
+        if eventLog.size() > 3
+            eventLog.pop()
 
 event0 = eventLog.size() > 0 ? eventLog.get(0) : "No confirmed event"
 event1 = eventLog.size() > 1 ? eventLog.get(1) : "—"
 event2 = eventLog.size() > 2 ? eventLog.get(2) : "—"
 
 // ============================================================================
-// MARKET EXPLANATION PANEL — BOTTOM LEFT
+// MARKET EXPLANATION PANEL — MIDDLE LEFT
 // ============================================================================
-var table mappingPanel = table.new(position.bottom_left, 3, 8, bgcolor=color.new(color.black, 78), border_width=1, border_color=color.new(color.gray, 55))
+var table mappingPanel = table.new(position.middle_left, 3, 8, bgcolor=color.new(color.black, 12), border_width=1, border_color=color.new(color.gray, 35))
 
 if barstate.isfirst
     table.merge_cells(mappingPanel, 0, 0, 2, 0)
@@ -531,39 +629,43 @@ if barstate.isfirst
     table.merge_cells(mappingPanel, 0, 7, 2, 7)
 
 if showMappingPanel and barstate.islast
-    table.cell(mappingPanel, 0, 0, "🎯 " + timeframe.period + " — ENTRY PRECISION", text_color=color.white, text_size=size.small, text_halign=text.align_left)
-    table.cell(mappingPanel, 0, 1, "● " + mappingStatus, text_color=mappingColor, text_size=size.small, text_halign=text.align_left)
-    table.cell(mappingPanel, 0, 2, "⬆ BSL", text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 1, 2, f_meter(bslPercent), text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 2, 2, str.tostring(bslPercent) + "%", text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 0, 3, "⬇ SSL", text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 1, 3, f_meter(sslPercent), text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 2, 3, str.tostring(sslPercent) + "%", text_color=color.white, text_size=size.small)
-    table.cell(mappingPanel, 0, 4, "⚡ Event:", text_color=color.white, text_size=size.small, text_halign=text.align_left)
-    table.cell(mappingPanel, 0, 5, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
-    table.cell(mappingPanel, 0, 6, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
-    table.cell(mappingPanel, 0, 7, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(mappingPanel, 0, 0, "◎ " + timeframe.period + " — MARKET MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 5))
+    table.cell(mappingPanel, 0, 1, "● " + mappingStatus, text_color=mappingColor, text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 8))
+    table.cell(mappingPanel, 0, 2, "↑ Bull", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 1, 2, f_meter(bullContextPercent), text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 2, 2, str.tostring(bullContextPercent) + "%", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 0, 3, "↓ Bear", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 1, 3, f_meter(bearContextPercent), text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 2, 3, str.tostring(bearContextPercent) + "%", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 0, 4, "⚡ Event:", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=color.new(color.black, 8))
+    table.cell(mappingPanel, 0, 5, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 0, 6, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=color.new(color.black, 12))
+    table.cell(mappingPanel, 0, 7, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=color.new(color.black, 12))
+else if barstate.islast
+    table.clear(mappingPanel, 0, 0, 2, 7)
 
 // ============================================================================
 // MINI PANEL — BOTTOM RIGHT
 // ============================================================================
 liqText = sslSwept or asiaLowSwept ? "SSL SWEPT" : bslSwept or asiaHighSwept ? "BSL SWEPT" : "WAIT"
-poiText = nearBullPoi ? "BULL POI" : nearBearPoi ? "BEAR POI" : bullFvgs.size() > 0 or bullObs.size() > 0 ? "BULL READY" : bearFvgs.size() > 0 or bearObs.size() > 0 ? "BEAR READY" : "NONE"
-mapText = scoreBull > scoreBear ? "BULL " + str.tostring(scoreBull) + "/7" : scoreBear > scoreBull ? "BEAR " + str.tostring(scoreBear) + "/7" : "BALANCED " + str.tostring(scoreBull) + "/7"
+poiText = nearBullPoi and nearBearPoi ? "BOTH POI NEAR" : nearBullPoi ? "NEAR BULL POI" : nearBearPoi ? "NEAR BEAR POI" : bullPoiActive and bearPoiActive ? "BULL + BEAR POI ACTIVE" : bullPoiActive ? "BULL POI ACTIVE" : bearPoiActive ? "BEAR POI ACTIVE" : "NONE"
+mapText = "BULL " + str.tostring(scoreBull) + "/7 | BEAR " + str.tostring(scoreBear) + "/7"
 
-var table panel = table.new(position.bottom_right, 2, 7, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 70))
+var table panel = table.new(position.bottom_right, 2, 7, bgcolor=color.new(color.black, 12), border_width=1, border_color=color.new(color.gray, 35))
 if showPanel and barstate.islast
-    table.cell(panel, 0, 0, "AMY ICT", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 0, "NEXTGEN", text_color=color.yellow, text_size=size.small)
-    table.cell(panel, 0, 1, "Bias", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 1, biasText, text_color=biasBull ? color.lime : biasBear ? color.red : color.white, text_size=size.small)
-    table.cell(panel, 0, 2, "Session", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 2, sessionText, text_color=validSession ? color.lime : color.gray, text_size=size.small)
-    table.cell(panel, 0, 3, "Structure", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 3, trend, text_color=trend == "BULL" ? color.lime : trend == "BEAR" ? color.red : color.white, text_size=size.small)
-    table.cell(panel, 0, 4, "Liquidity", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 4, liqText, text_color=color.white, text_size=size.small)
-    table.cell(panel, 0, 5, "POI / Map", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 5, poiText + " | " + mapText, text_color=color.white, text_size=size.small)
-    table.cell(panel, 0, 6, "Status", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 6, mappingStatus, text_color=mappingColor, text_size=size.small)
+    table.cell(panel, 0, 0, "AMY ICT", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 5))
+    table.cell(panel, 1, 0, "NEXTGEN", text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.black, 5))
+    table.cell(panel, 0, 1, "Bias", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 1, biasText, text_color=biasBull ? color.lime : biasBear ? color.red : color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 0, 2, "Session", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 2, sessionText, text_color=validSession ? color.lime : color.gray, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 0, 3, "Structure", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 3, trend, text_color=trend == "BULL" ? color.lime : trend == "BEAR" ? color.red : color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 0, 4, "Liquidity", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 4, liqText, text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 0, 5, "POI / Map", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 5, poiText + " | " + mapText, text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 0, 6, "Status", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 12))
+    table.cell(panel, 1, 6, mappingStatus, text_color=mappingColor, text_size=size.small, bgcolor=color.new(color.black, 12))
+else if barstate.islast
+    table.clear(panel, 0, 0, 1, 6)
