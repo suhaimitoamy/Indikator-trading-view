@@ -28,6 +28,7 @@ showAsia = input.bool(true, "Show Asia High / Low", group=grpCore)
 showPrevDay = input.bool(true, "Show PDH / PDL", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
+showTrendInvalidation = input.bool(true, "Show Trend Invalidation", group=grpCore)
 structureHistory = input.int(3, "Visible BOS / MSS", minval=1, maxval=10, group=grpCore)
 liquidityHistory = input.int(3, "Visible BSL / SSL Each Side", minval=1, maxval=10, group=grpCore)
 showDashboard = input.bool(true, "Show Unified Dashboard", group=grpCore)
@@ -37,7 +38,7 @@ htf = input.timeframe("240", "HTF Bias", group=grpCtx)
 htfEmaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
 pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpCtx)
 atrLen = input.int(14, "ATR Length", minval=1, group=grpCtx)
-liquidityDirectionThreshold = input.int(99, "BSL / SSL Direction Threshold", minval=50, maxval=99, group=grpCtx)
+liquidityDirectionThreshold = input.int(97, "Prediction Confidence Threshold", minval=50, maxval=99, group=grpCtx)
 
 grpEma = "3. EMA"
 showEma = input.bool(true, "Show EMA", group=grpEma)
@@ -438,6 +439,37 @@ if not showStructure
             label.delete(oldLabel)
 
 // ============================================================================
+// STRUCTURAL TREND INVALIDATION
+// Bull trend invalidates below the latest confirmed swing low.
+// Bear trend invalidates above the latest confirmed swing high.
+// ============================================================================
+trendInvalidation = trend == "BULL" ? lastLow : trend == "BEAR" ? lastHigh : na
+trendInvalidationBar = trend == "BULL" ? lastLowBar : trend == "BEAR" ? lastHighBar : na
+trendInvalidationText = trend == "BULL" ? "BULL INVALID < " + f_price(trendInvalidation) : trend == "BEAR" ? "BEAR INVALID > " + f_price(trendInvalidation) : ""
+trendInvalidationColor = trend == "BULL" ? color.new(color.red, 10) : color.new(color.orange, 10)
+var line trendInvalidationLine = na
+var label trendInvalidationLabel = na
+
+if showTrendInvalidation and not na(trendInvalidation) and not na(trendInvalidationBar)
+    if na(trendInvalidationLine)
+        trendInvalidationLine := line.new(trendInvalidationBar, trendInvalidation, bar_index + 12, trendInvalidation, color=trendInvalidationColor, style=line.style_dotted, width=2)
+    if na(trendInvalidationLabel)
+        trendInvalidationLabel := label.new(bar_index + 12, trendInvalidation, trendInvalidationText, style=label.style_label_left, color=color.new(trendInvalidationColor, 55), textcolor=color.white, size=size.tiny)
+    line.set_xy1(trendInvalidationLine, trendInvalidationBar, trendInvalidation)
+    line.set_xy2(trendInvalidationLine, bar_index + 12, trendInvalidation)
+    line.set_color(trendInvalidationLine, trendInvalidationColor)
+    label.set_xy(trendInvalidationLabel, bar_index + 12, trendInvalidation)
+    label.set_text(trendInvalidationLabel, trendInvalidationText)
+    label.set_color(trendInvalidationLabel, color.new(trendInvalidationColor, 55))
+else
+    if not na(trendInvalidationLine)
+        line.delete(trendInvalidationLine)
+        trendInvalidationLine := na
+    if not na(trendInvalidationLabel)
+        label.delete(trendInvalidationLabel)
+        trendInvalidationLabel := na
+
+// ============================================================================
 // SUPPORT / RESISTANCE
 // ============================================================================
 var box resistanceBox = na
@@ -705,12 +737,33 @@ if not pdlConsumed and not na(pdl) and pdl < close and (na(nearestSslTarget) or 
 bslDistance = not na(nearestBslTarget) ? nearestBslTarget - close : na
 sslDistance = not na(nearestSslTarget) ? close - nearestSslTarget : na
 hasTwoSidedLiquidity = not na(bslDistance) and not na(sslDistance) and bslDistance > syminfo.mintick and sslDistance > syminfo.mintick
-rawBslDraw = hasTwoSidedLiquidity ? sslDistance * 100.0 / (bslDistance + sslDistance) : 50.0
-bslDrawPercent = hasTwoSidedLiquidity ? int(math.round(math.max(1.0, math.min(99.0, rawBslDraw)))) : 50
+
+// First-hit prediction model calibrated on XAUUSD January-April 2026.
+// Distance is only one factor. Trend, structure, sweeps, location and momentum
+// adjust the probability of BSL being reached before SSL.
+distanceLocation = hasTwoSidedLiquidity ? sslDistance / (bslDistance + sslDistance) : 0.50
+htfDirection = (htfBullConfirmed ? 1.0 : 0.0) - (htfBearConfirmed ? 1.0 : 0.0)
+structureDirection = (structureBull ? 1.0 : 0.0) - (structureBear ? 1.0 : 0.0)
+emaDirection = (emaBull ? 1.0 : 0.0) - (emaBear ? 1.0 : 0.0)
+priceDirection = (priceBull ? 1.0 : 0.0) - (priceBear ? 1.0 : 0.0)
+sweepDirection = (recentSellSweep ? 1.0 : 0.0) - (recentBuySweep ? 1.0 : 0.0)
+rangeDirection = (inDiscount ? 1.0 : 0.0) - (inPremium ? 1.0 : 0.0)
+eventDirection = (mssBull or bosBull ? 1.0 : 0.0) - (mssBear or bosBear ? 1.0 : 0.0)
+bodyAtr = atr > 0 ? math.max(-2.0, math.min(2.0, (close - open) / atr)) : 0.0
+emaSlopeAtr = atr > 0 and not na(ema1[3]) ? math.max(-2.0, math.min(2.0, (ema1 - ema1[3]) / atr)) : 0.0
+
+predictionLogit = 5.0 * (distanceLocation - 0.50) + 0.40 * htfDirection + 0.50 * structureDirection + 0.40 * emaDirection + 0.20 * priceDirection + 0.60 * sweepDirection + 0.25 * rangeDirection + 0.30 * eventDirection + 0.25 * emaSlopeAtr + 0.15 * bodyAtr
+rawBslProbability = hasTwoSidedLiquidity ? 100.0 / (1.0 + math.exp(-predictionLogit)) : 50.0
+bslDrawPercent = int(math.round(math.max(1.0, math.min(99.0, rawBslProbability))))
 sslDrawPercent = 100 - bslDrawPercent
-bslHighConfidence = not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
-sslHighConfidence = not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
-liquidityDominance = inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"
+
+predictionM5 = timeframe.isminutes and timeframe.multiplier <= 5
+predictionM15 = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
+predictionH1 = timeframe.isminutes and timeframe.multiplier > 30 and timeframe.multiplier <= 60
+predictionSupported = predictionM5 or predictionM15 or predictionH1
+bslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
+sslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
+liquidityDominance = not predictionSupported ? "PREDICTION UNSUPPORTED" : inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "PREDICT BSL FIRST" : sslHighConfidence ? "PREDICT SSL FIRST" : hasTwoSidedLiquidity ? "WAIT - LOW CONFIDENCE" : "WAIT - LEVELS INCOMPLETE"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
@@ -949,7 +1002,7 @@ if showDashboard and barstate.islast
     table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " CURRENT MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
     table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 2, "Liquidity Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 0, 2, "Predicted Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
     table.cell(dashboard, 1, 2, liquidityDominance, text_color=bslDrawPercent > sslDrawPercent ? color.lime : sslDrawPercent > bslDrawPercent ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
 
     table.cell(dashboard, 0, 3, "BSL", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
