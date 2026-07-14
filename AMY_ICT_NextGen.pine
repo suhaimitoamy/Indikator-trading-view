@@ -883,12 +883,26 @@ profileM15 = entryProfile == "M15" or entryProfile == "Auto" and isM15Auto
 profileH1 = entryProfile == "H1" or entryProfile == "Auto" and isH1Auto
 profileSupported = profileM5 or profileM15 or profileH1
 
-profileExpiryBars = profileM5 ? 96 : profileM15 ? 72 : 36
-profileTp2R = profileM15 ? 1.75 : 2.0
-effectiveSlAtrPad = entryProfile == "Auto" and profileH1 ? 0.30 : slAtrPad
-profileNeedsPoi = profileM5 or profileH1
-profileBullTrigger = profileM5 ? mssBull : mssBull or bosBull
-profileBearTrigger = profileM5 ? mssBear : mssBear or bosBear
+profileExpiryBars = profileM5 ? 48 : profileM15 ? 36 : 36
+profileTp1R = profileM5 ? 0.50 : profileM15 ? 0.35 : 0.30
+profileTp2R = profileM5 ? 1.25 : 1.75
+calibratedSlAtrPad = profileM5 ? 0.20 : profileM15 ? 0.10 : 0.25
+effectiveSlAtrPad = entryProfile == "Auto" ? calibratedSlAtrPad : slAtrPad
+profileMaxRiskAtr = 6.0
+profileSweepMemory = profileM5 ? 36 : profileM15 ? 12 : 18
+profileNeedsPoi = profileM5
+profileBullTrigger = mssBull
+profileBearTrigger = mssBear
+entryRecentBuySweep = not na(lastBuySweepBar) and bar_index - lastBuySweepBar <= profileSweepMemory
+entryRecentSellSweep = not na(lastSellSweepBar) and bar_index - lastSellSweepBar <= profileSweepMemory
+profileSessionValid = profileH1 ? inNY : validSession
+profileBullCandle = profileM5 ? close > open : profileM15 ? close >= low + barRange * 0.70 : close > open
+profileBearCandle = profileM5 ? close < open : profileM15 ? close <= high - barRange * 0.70 : close < open
+profileBullProbability = not profileM5 or bslDrawPercent >= 80
+profileBearProbability = not profileM5 or sslDrawPercent >= 80
+profileBullRejectionOk = not upperLiquidityRejection
+profileBearRejectionOk = not lowerLiquidityRejection
+profileEmaDistanceOk = not profileH1 or math.abs(close - ema1) <= atr * 2.0
 
 var bool setupLive = false
 var bool setupTp1Hit = false
@@ -963,8 +977,8 @@ if setupLive
     if not na(tp2Label)
         label.set_x(tp2Label, visualRight)
 
-longFilter = validSession and htfBullConfirmed and emaBull and recentSellSweep and mappingDir == 1 and (not profileNeedsPoi or nearBullPoi)
-shortFilter = validSession and htfBearConfirmed and emaBear and recentBuySweep and mappingDir == -1 and (not profileNeedsPoi or nearBearPoi)
+longFilter = profileSessionValid and htfBullConfirmed and emaBull and entryRecentSellSweep and mappingDir == 1 and (not profileNeedsPoi or nearBullPoi) and profileBullCandle and profileBullProbability and profileBullRejectionOk and profileEmaDistanceOk
+shortFilter = profileSessionValid and htfBearConfirmed and emaBear and entryRecentBuySweep and mappingDir == -1 and (not profileNeedsPoi or nearBearPoi) and profileBearCandle and profileBearProbability and profileBearRejectionOk and profileEmaDistanceOk
 newLongSetup = showEntryMap and profileSupported and not setupLive and profileBullTrigger and longFilter and not na(lastLow)
 newShortSetup = showEntryMap and profileSupported and not setupLive and profileBearTrigger and shortFilter and not na(lastHigh)
 
@@ -991,9 +1005,9 @@ if newLongSetup or newShortSetup
     rawSetupSl = setupDir == 1 ? math.min(low, lastLow) - atr * effectiveSlAtrPad : math.max(high, lastHigh) + atr * effectiveSlAtrPad
     setupRisk = setupDir == 1 ? setupEntry - rawSetupSl : rawSetupSl - setupEntry
 
-    if setupRisk > 0 and setupRisk <= atr * 8.0
+    if setupRisk > 0 and setupRisk <= atr * profileMaxRiskAtr
         setupSl := rawSetupSl
-        setupTp1 := setupEntry + setupDir * setupRisk
+        setupTp1 := setupEntry + setupDir * setupRisk * profileTp1R
         setupTp2 := setupEntry + setupDir * setupRisk * profileTp2R
         setupStartBar := bar_index
         setupTp1Hit := false
