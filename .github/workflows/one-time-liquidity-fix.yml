@@ -1,0 +1,136 @@
+name: One-time liquidity and alignment repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-liquidity-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch Pine indicator
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('AMY_ICT_NextGen.pine')
+          text = path.read_text(encoding='utf-8')
+
+          old_input = '''structureHistory = input.int(3, "Visible BOS / MSS", minval=1, maxval=10, group=grpCore)
+          showDashboard = input.bool(true, "Show Unified Dashboard", group=grpCore)'''
+          new_input = '''structureHistory = input.int(3, "Visible BOS / MSS", minval=1, maxval=10, group=grpCore)
+          liquidityHistory = input.int(3, "Visible BSL / SSL Each Side", minval=1, maxval=10, group=grpCore)
+          showDashboard = input.bool(true, "Show Unified Dashboard", group=grpCore)'''
+          if old_input not in text:
+              raise SystemExit('Core input marker not found')
+          text = text.replace(old_input, new_input, 1)
+
+          old_vars = '''var line bslLine = na
+          var line sslLine = na
+          var label bslLabel = na
+          var label sslLabel = na'''
+          new_vars = '''var array<line> bslLines = array.new<line>()
+          var array<line> sslLines = array.new<line>()
+          var array<label> bslLabels = array.new<label>()
+          var array<label> sslLabels = array.new<label>()'''
+          if old_vars not in text:
+              raise SystemExit('Liquidity variable marker not found')
+          text = text.replace(old_vars, new_vars, 1)
+
+          start = text.index('if not na(ph)\n')
+          end = text.index('newBslSweep =', start)
+          new_liquidity = '''if not na(ph)
+              lastHigh := ph
+              lastHighBar := bar_index - swingLen
+              bslConsumed := false
+              bslBroken := false
+              if showLiquidity
+                  newBslLine = line.new(lastHighBar, lastHigh, bar_index + 80, lastHigh, color=color.new(color.red, 25), style=line.style_dashed, width=1)
+                  newBslLabel = label.new(lastHighBar, lastHigh, "BSL " + f_price(lastHigh), style=label.style_label_down, color=color.new(color.red, 68), textcolor=color.white, size=size.tiny)
+                  bslLines.unshift(newBslLine)
+                  bslLabels.unshift(newBslLabel)
+                  if bslLines.size() > liquidityHistory
+                      oldBslLine = bslLines.pop()
+                      line.delete(oldBslLine)
+                  if bslLabels.size() > liquidityHistory
+                      oldBslLabel = bslLabels.pop()
+                      label.delete(oldBslLabel)
+
+          if not na(pl)
+              lastLow := pl
+              lastLowBar := bar_index - swingLen
+              sslConsumed := false
+              sslBroken := false
+              if showLiquidity
+                  newSslLine = line.new(lastLowBar, lastLow, bar_index + 80, lastLow, color=color.new(color.green, 25), style=line.style_dashed, width=1)
+                  newSslLabel = label.new(lastLowBar, lastLow, "SSL " + f_price(lastLow), style=label.style_label_up, color=color.new(color.green, 68), textcolor=color.white, size=size.tiny)
+                  sslLines.unshift(newSslLine)
+                  sslLabels.unshift(newSslLabel)
+                  if sslLines.size() > liquidityHistory
+                      oldSslLine = sslLines.pop()
+                      line.delete(oldSslLine)
+                  if sslLabels.size() > liquidityHistory
+                      oldSslLabel = sslLabels.pop()
+                      label.delete(oldSslLabel)
+
+          if showLiquidity
+              if bslLines.size() > 0
+                  for i = 0 to bslLines.size() - 1
+                      line.set_x2(bslLines.get(i), bar_index + 80)
+              if sslLines.size() > 0
+                  for i = 0 to sslLines.size() - 1
+                      line.set_x2(sslLines.get(i), bar_index + 80)
+          else
+              if bslLines.size() > 0
+                  for i = bslLines.size() - 1 to 0
+                      oldBslLine = bslLines.pop()
+                      line.delete(oldBslLine)
+              if sslLines.size() > 0
+                  for i = sslLines.size() - 1 to 0
+                      oldSslLine = sslLines.pop()
+                      line.delete(oldSslLine)
+              if bslLabels.size() > 0
+                  for i = bslLabels.size() - 1 to 0
+                      oldBslLabel = bslLabels.pop()
+                      label.delete(oldBslLabel)
+              if sslLabels.size() > 0
+                  for i = sslLabels.size() - 1 to 0
+                      oldSslLabel = sslLabels.pop()
+                      label.delete(oldSslLabel)
+
+          '''
+          text = text[:start] + new_liquidity + text[end:]
+
+          old_alignment = '''alignmentPercent = int(math.round(math.max(bullAlignment, bearAlignment) * 20.0))
+          alignmentSide = bullAlignment > bearAlignment ? "BULL" : bearAlignment > bullAlignment ? "BEAR" : "BALANCED"'''
+          new_alignment = '''bullAlignmentRaw = bullAlignment * 20
+          bearAlignmentRaw = bearAlignment * 20
+          bothSidesConflict = recentBuySweep and recentSellSweep
+          bullPenalty = (bothSidesConflict ? 15 : 0) + (inPremium ? 10 : 0) + (nearBearPoi ? 10 : 0)
+          bearPenalty = (bothSidesConflict ? 15 : 0) + (inDiscount ? 10 : 0) + (nearBullPoi ? 10 : 0)
+          bullAlignmentAdjusted = int(math.max(0, bullAlignmentRaw - bullPenalty))
+          bearAlignmentAdjusted = int(math.max(0, bearAlignmentRaw - bearPenalty))
+          alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
+          alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BULL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "BEAR" : "BALANCED"'''
+          if old_alignment not in text:
+              raise SystemExit('Alignment marker not found')
+          text = text.replace(old_alignment, new_alignment, 1)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/one-time-liquidity-fix.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AMY_ICT_NextGen.pine .github/workflows/one-time-liquidity-fix.yml
+          git commit -m "Preserve BSL SSL history and correct alignment conflicts"
+          git push origin HEAD:main
