@@ -41,6 +41,9 @@ pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300,
 atrLen = input.int(14, "ATR Length", minval=1, group=grpCtx)
 liquidityDirectionThreshold = input.int(97, "Prediction Confidence Threshold", minval=50, maxval=99, group=grpCtx)
 
+grpForecast = "3. Direction Forecast"
+showDirectionForecast = input.bool(true, "Show Direction Forecast", group=grpForecast)
+
 grpEma = "3. EMA"
 showEma = input.bool(true, "Show EMA", group=grpEma)
 ema1Len = input.int(21, "EMA 1 Length", minval=1, group=grpEma)
@@ -799,6 +802,64 @@ bearTransition = not coreBull and not coreBear and structureBear and (htfBearCon
 mappingDir = coreBull ? 1 : coreBear ? -1 : 0
 marketState = coreBull ? (bullPullback ? "BULLISH PULLBACK" : "UPTREND CONFIRMED") : coreBear ? (bearPullback ? "BEARISH PULLBACK" : "DOWNTREND CONFIRMED") : bullTransition ? "BULLISH TRANSITION" : bearTransition ? "BEARISH TRANSITION" : "RANGE / TRANSITION"
 marketColor = mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : bullTransition ? color.aqua : bearTransition ? color.orange : color.yellow
+
+// ============================================================================
+// DIRECTION FORECAST — CALIBRATED M15 MODEL, 48-HOUR HORIZON
+// Training: 2022-2024. Validation: 2025. Out-of-sample: Jan-Jun 2026.
+// Uses only completed M15 and H4 candles. NO CLEAR DIRECTION is intentional.
+// ============================================================================
+forecastClose = request.security(syminfo.tickerid, "15", close[1], lookahead=barmerge.lookahead_on)
+forecastEma21 = request.security(syminfo.tickerid, "15", ta.ema(close, 21)[1], lookahead=barmerge.lookahead_on)
+forecastEma34 = request.security(syminfo.tickerid, "15", ta.ema(close, 34)[1], lookahead=barmerge.lookahead_on)
+forecastEma90 = request.security(syminfo.tickerid, "15", ta.ema(close, 90)[1], lookahead=barmerge.lookahead_on)
+forecastEma21Prev3 = request.security(syminfo.tickerid, "15", ta.ema(close, 21)[4], lookahead=barmerge.lookahead_on)
+forecastEma90Prev3 = request.security(syminfo.tickerid, "15", ta.ema(close, 90)[4], lookahead=barmerge.lookahead_on)
+forecastClose12 = request.security(syminfo.tickerid, "15", close[13], lookahead=barmerge.lookahead_on)
+forecastClose24 = request.security(syminfo.tickerid, "15", close[25], lookahead=barmerge.lookahead_on)
+forecastRsi14 = request.security(syminfo.tickerid, "15", ta.rsi(close, 14)[1], lookahead=barmerge.lookahead_on)
+forecastAtr14 = request.security(syminfo.tickerid, "15", ta.atr(14)[1], lookahead=barmerge.lookahead_on)
+forecastAtrMean50 = request.security(syminfo.tickerid, "15", ta.sma(ta.atr(14), 50)[1], lookahead=barmerge.lookahead_on)
+forecastRangeHigh80 = request.security(syminfo.tickerid, "15", ta.highest(high, 80)[1], lookahead=barmerge.lookahead_on)
+forecastRangeLow80 = request.security(syminfo.tickerid, "15", ta.lowest(low, 80)[1], lookahead=barmerge.lookahead_on)
+
+forecastHtfClose = request.security(syminfo.tickerid, "240", close[1], lookahead=barmerge.lookahead_on)
+forecastHtfEma20 = request.security(syminfo.tickerid, "240", ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+forecastHtfEma20Prev = request.security(syminfo.tickerid, "240", ta.ema(close, 20)[2], lookahead=barmerge.lookahead_on)
+forecastHtfAtr14 = request.security(syminfo.tickerid, "240", ta.atr(14)[1], lookahead=barmerge.lookahead_on)
+
+forecastDataReady = not na(forecastClose) and not na(forecastEma21) and not na(forecastEma34) and not na(forecastEma90) and not na(forecastEma21Prev3) and not na(forecastEma90Prev3) and not na(forecastClose12) and not na(forecastClose24) and not na(forecastRsi14) and not na(forecastAtr14) and not na(forecastAtrMean50) and not na(forecastRangeHigh80) and not na(forecastRangeLow80) and not na(forecastHtfClose) and not na(forecastHtfEma20) and not na(forecastHtfEma20Prev) and not na(forecastHtfAtr14)
+
+forecastHtfBull = forecastHtfClose > forecastHtfEma20 and forecastHtfEma20 >= forecastHtfEma20Prev
+forecastHtfBear = forecastHtfClose < forecastHtfEma20 and forecastHtfEma20 <= forecastHtfEma20Prev
+forecastHtfDirection = forecastHtfBull ? 1.0 : forecastHtfBear ? -1.0 : 0.0
+
+forecastEmaBull = forecastEma21 > forecastEma34 and forecastEma34 > forecastEma90
+forecastEmaBear = forecastEma21 < forecastEma34 and forecastEma34 < forecastEma90
+forecastEmaDirection = forecastEmaBull ? 1.0 : forecastEmaBear ? -1.0 : 0.0
+
+forecastPriceDirection = forecastClose > forecastEma90 ? 1.0 : forecastClose < forecastEma90 ? -1.0 : 0.0
+forecastSlopeBull = forecastEma21 > forecastEma21Prev3 and forecastEma90 >= forecastEma90Prev3
+forecastSlopeBear = forecastEma21 < forecastEma21Prev3 and forecastEma90 <= forecastEma90Prev3
+forecastSlopeDirection = forecastSlopeBull ? 1.0 : forecastSlopeBear ? -1.0 : 0.0
+
+forecastMomentum = 0.50 * (forecastClose - forecastClose12) + 0.50 * (forecastClose - forecastClose24)
+forecastMomentumDirection = forecastMomentum > 0 ? 1.0 : forecastMomentum < 0 ? -1.0 : 0.0
+forecastRsiDirection = forecastRsi14 > 57.5 ? 1.0 : forecastRsi14 < 42.5 ? -1.0 : 0.0
+forecastTrendDirection = forecastEma34 > forecastEma90 ? 1.0 : forecastEma34 < forecastEma90 ? -1.0 : 0.0
+
+directionScore = 1.00 * forecastHtfDirection + 1.50 * forecastEmaDirection + 1.00 * forecastPriceDirection + 1.00 * forecastSlopeDirection + 0.75 * forecastMomentumDirection + 0.25 * forecastRsiDirection + 0.50 * forecastTrendDirection
+forecastVolRegime = forecastAtrMean50 > 0 ? forecastAtr14 / forecastAtrMean50 - 1.0 : na
+forecastRangeSpan = forecastRangeHigh80 - forecastRangeLow80
+forecastRangePosition = forecastRangeSpan > 0 ? ((forecastClose - forecastRangeLow80) / forecastRangeSpan - 0.50) * 2.0 : 0.0
+forecastHtfGap = forecastHtfAtr14 > 0 ? (forecastHtfClose - forecastHtfEma20) / forecastHtfAtr14 : 0.0
+
+bullishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore >= 5.0 and forecastVolRegime <= 0.25
+bearishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore <= -6.0 and forecastHtfGap >= -0.50 and forecastRangePosition >= -0.40
+directionForecastDir = bullishDirectionForecast ? 1 : bearishDirectionForecast ? -1 : 0
+directionForecast = directionForecastDir == 1 ? "BULLISH" : directionForecastDir == -1 ? "BEARISH" : "NO CLEAR DIRECTION"
+directionForecastProbability = directionForecastDir == 0 ? 50 : 56
+directionForecastText = directionForecastDir == 0 ? directionForecast : directionForecast + " · " + str.tostring(directionForecastProbability) + "% EST."
+directionForecastColor = directionForecastDir == 1 ? color.lime : directionForecastDir == -1 ? color.red : color.yellow
 // Liquidity draw is calculated from the nearest valid liquidity on both sides.
 // Candidate BSL: active swing high, Asia High, unswept PDH, or unswept PWH.
 // Candidate SSL: active swing low, Asia Low, unswept PDL, or unswept PWL.
@@ -1116,57 +1177,57 @@ bslTargetDashboard = na(nearestBslTarget) ? "NONE" : nearestBslName + " " + f_pr
 sslTargetDashboard = na(nearestSslTarget) ? "NONE" : nearestSslName + " " + f_price(nearestSslTarget) + (hasTwoSidedLiquidity ? " · " + str.tostring(sslDrawPercent) + "%" : " · -")
 
 // ============================================================================
-// COMPACT MAPPING DASHBOARD — ENTRY IS CHART-ONLY
+// UNIFIED DASHBOARD — MARKET STATE / DIRECTION FORECAST / LIQUIDITY DRAW
 // ============================================================================
 dashHeader = color.rgb(58, 58, 58)
 dashBg = color.rgb(86, 86, 86)
 dashAlt = color.rgb(74, 74, 74)
 dashBorder = color.rgb(120, 120, 120)
 
-var table dashboard = table.new(position.bottom_right, 2, 15, bgcolor=dashBg, border_width=1, border_color=dashBorder)
+var table dashboard = table.new(position.bottom_right, 2, 18, bgcolor=dashBg, border_width=1, border_color=dashBorder)
 
 if barstate.isfirst
     table.merge_cells(dashboard, 0, 0, 1, 0)
     table.merge_cells(dashboard, 0, 1, 1, 1)
-    table.merge_cells(dashboard, 0, 11, 1, 11)
-    table.merge_cells(dashboard, 0, 12, 1, 12)
-    table.merge_cells(dashboard, 0, 13, 1, 13)
+    table.merge_cells(dashboard, 0, 5, 1, 5)
+    table.merge_cells(dashboard, 0, 9, 1, 9)
     table.merge_cells(dashboard, 0, 14, 1, 14)
+    table.merge_cells(dashboard, 0, 15, 1, 15)
+    table.merge_cells(dashboard, 0, 16, 1, 16)
+    table.merge_cells(dashboard, 0, 17, 1, 17)
 
 if showDashboard and barstate.islast
-    table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " CURRENT MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
-    table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " MARKET MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
 
-    table.cell(dashboard, 0, 2, "Predicted Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 2, liquidityDominance, text_color=predictionTextColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 1, "MARKET STATE — CURRENT CONDITION", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+    table.cell(dashboard, 0, 2, "Condition", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 2, marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 3, "HTF / Structure", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 3, biasText + " / " + trend, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 4, "EMA / Context", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 4, emaText + " / " + rangeText, text_color=inDiscount ? color.lime : inPremium ? color.orange : color.silver, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 3, "BSL TARGET", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 3, bslTargetDashboard, text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 5, "DIRECTION FORECAST — PROBABILISTIC", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+    table.cell(dashboard, 0, 6, "Forecast", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 6, directionForecastText, text_color=directionForecastColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 7, "Horizon", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 7, "48 HOURS · M15 MODEL", text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 8, "Evidence", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 8, "Score " + str.tostring(directionScore, "#.##") + " · Vol " + str.tostring(forecastVolRegime, "#.##"), text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 4, "SSL TARGET", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 4, sslTargetDashboard, text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 9, "LIQUIDITY DRAW — FIRST TARGET", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+    table.cell(dashboard, 0, 10, "First Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 10, liquidityDominance, text_color=predictionTextColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 11, "BSL Target", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 11, bslTargetDashboard, text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 12, "SSL Target", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 12, sslTargetDashboard, text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 13, "Session / Liquidity", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 13, sessionText + " / " + liqText, text_color=validSession ? color.lime : color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 5, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 5, biasText, text_color=htfBullConfirmed ? color.lime : htfBearConfirmed ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
-
-    table.cell(dashboard, 0, 6, "Structure", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 6, trend, text_color=structureBull ? color.lime : structureBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
-
-    table.cell(dashboard, 0, 7, "EMA", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 7, emaText, text_color=emaBull ? color.lime : emaBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
-
-    table.cell(dashboard, 0, 8, "Session", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 8, sessionText, text_color=validSession ? color.lime : color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
-
-    table.cell(dashboard, 0, 9, "Liquidity", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 9, liqText, text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
-
-    table.cell(dashboard, 0, 10, "Range / POI", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 10, rangeText + " | " + poiText, text_color=inDiscount ? color.lime : inPremium ? color.orange : color.silver, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
-
-    table.cell(dashboard, 0, 11, "EVENT HISTORY", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
-    table.cell(dashboard, 0, 12, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
-    table.cell(dashboard, 0, 13, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
-    table.cell(dashboard, 0, 14, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 14, "EVENT HISTORY", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+    table.cell(dashboard, 0, 15, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 16, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 17, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 else if barstate.islast
-    table.clear(dashboard, 0, 0, 1, 14)
+    table.clear(dashboard, 0, 0, 1, 17)
