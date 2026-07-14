@@ -353,6 +353,8 @@ newBslSweep = not bslConsumed and not na(lastHigh) and high > lastHigh and close
 newSslSweep = not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
 newAsiaHighSweep = validSession and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high > asiaHigh and close < asiaHigh and barstate.isconfirmed
 newAsiaLowSweep = validSession and not inAsia and not asiaLowConsumed and not na(asiaLow) and low < asiaLow and close > asiaLow and barstate.isconfirmed
+asiaHighReached = not inAsia and not asiaHighConsumed and not na(asiaHigh) and high >= asiaHigh and barstate.isconfirmed
+asiaLowReached = not inAsia and not asiaLowConsumed and not na(asiaLow) and low <= asiaLow and barstate.isconfirmed
 
 var int lastBuySweepBar = na
 var int lastSellSweepBar = na
@@ -362,11 +364,13 @@ if newBslSweep
 if newSslSweep
     sslConsumed := true
     lastSellSweepBar := bar_index
-if newAsiaHighSweep
+if asiaHighReached
     asiaHighConsumed := true
+if asiaLowReached
+    asiaLowConsumed := true
+if newAsiaHighSweep
     lastBuySweepBar := bar_index
 if newAsiaLowSweep
-    asiaLowConsumed := true
     lastSellSweepBar := bar_index
 
 recentBuySweep = not na(lastBuySweepBar) and bar_index - lastBuySweepBar <= entrySweepMemoryBars
@@ -704,9 +708,9 @@ hasTwoSidedLiquidity = not na(bslDistance) and not na(sslDistance) and bslDistan
 rawBslDraw = hasTwoSidedLiquidity ? sslDistance * 100.0 / (bslDistance + sslDistance) : 50.0
 bslDrawPercent = hasTwoSidedLiquidity ? int(math.round(math.max(1.0, math.min(99.0, rawBslDraw)))) : 50
 sslDrawPercent = 100 - bslDrawPercent
-bslHighConfidence = hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
-sslHighConfidence = hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
-liquidityDominance = bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"
+bslHighConfidence = not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
+sslHighConfidence = not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
+liquidityDominance = inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "BSL DOMINANT" : sslHighConfidence ? "SSL DOMINANT" : hasTwoSidedLiquidity ? "WAIT — BALANCED" : "WAIT — LEVELS INCOMPLETE"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
