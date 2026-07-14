@@ -807,6 +807,7 @@ marketColor = mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : bull
 // DIRECTION FORECAST — CALIBRATED M15 MODEL, 48-HOUR HORIZON
 // Training: 2022-2024. Validation: 2025. Out-of-sample: Jan-Jun 2026.
 // Uses only completed M15 and H4 candles. NO CLEAR DIRECTION is intentional.
+// Once issued, a forecast is locked for the full 48-hour evaluation horizon.
 // ============================================================================
 forecastClose = request.security(syminfo.tickerid, "15", close[1], lookahead=barmerge.lookahead_on)
 forecastEma21 = request.security(syminfo.tickerid, "15", ta.ema(close, 21)[1], lookahead=barmerge.lookahead_on)
@@ -853,12 +854,37 @@ forecastRangeSpan = forecastRangeHigh80 - forecastRangeLow80
 forecastRangePosition = forecastRangeSpan > 0 ? ((forecastClose - forecastRangeLow80) / forecastRangeSpan - 0.50) * 2.0 : 0.0
 forecastHtfGap = forecastHtfAtr14 > 0 ? (forecastHtfClose - forecastHtfEma20) / forecastHtfAtr14 : 0.0
 
-bullishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore >= 5.0 and forecastVolRegime <= 0.25
-bearishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore <= -6.0 and forecastHtfGap >= -0.50 and forecastRangePosition >= -0.40
-directionForecastDir = bullishDirectionForecast ? 1 : bearishDirectionForecast ? -1 : 0
+rawBullishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore >= 5.0 and forecastVolRegime <= 0.25
+rawBearishDirectionForecast = showDirectionForecast and forecastDataReady and directionScore <= -6.0 and forecastHtfGap >= -0.50 and forecastRangePosition >= -0.40
+forecastHorizonMs = 48 * 60 * 60 * 1000
+
+var int directionForecastDir = 0
+var int directionForecastStartedAt = na
+var int directionForecastExpiresAt = na
+
+forecastWindowExpired = directionForecastDir != 0 and not na(directionForecastExpiresAt) and time_close >= directionForecastExpiresAt
+forecastCanStart = directionForecastDir == 0 or forecastWindowExpired
+
+if barstate.isconfirmed and forecastCanStart
+    if rawBullishDirectionForecast or rawBearishDirectionForecast
+        directionForecastDir := rawBullishDirectionForecast ? 1 : -1
+        directionForecastStartedAt := time_close
+        directionForecastExpiresAt := time_close + forecastHorizonMs
+    else
+        directionForecastDir := 0
+        directionForecastStartedAt := na
+        directionForecastExpiresAt := na
+
+if not showDirectionForecast
+    directionForecastDir := 0
+    directionForecastStartedAt := na
+    directionForecastExpiresAt := na
+
 directionForecast = directionForecastDir == 1 ? "BULLISH" : directionForecastDir == -1 ? "BEARISH" : "NO CLEAR DIRECTION"
 directionForecastProbability = directionForecastDir == 0 ? 50 : 56
+directionForecastRemainingHours = directionForecastDir != 0 and not na(directionForecastExpiresAt) ? int(math.max(0, math.ceil((directionForecastExpiresAt - time_close) / 3600000.0))) : 0
 directionForecastText = directionForecastDir == 0 ? directionForecast : directionForecast + " · " + str.tostring(directionForecastProbability) + "% EST."
+directionForecastHorizonText = directionForecastDir == 0 ? "48 HOURS · WAITING" : str.tostring(directionForecastRemainingHours) + "H LEFT · M15 MODEL"
 directionForecastColor = directionForecastDir == 1 ? color.lime : directionForecastDir == -1 ? color.red : color.yellow
 // Liquidity draw is calculated from the nearest valid liquidity on both sides.
 // Candidate BSL: active swing high, Asia High, unswept PDH, or unswept PWH.
@@ -1211,7 +1237,7 @@ if showDashboard and barstate.islast
     table.cell(dashboard, 0, 6, "Forecast", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
     table.cell(dashboard, 1, 6, directionForecastText, text_color=directionForecastColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
     table.cell(dashboard, 0, 7, "Horizon", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 7, "48 HOURS · M15 MODEL", text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 1, 7, directionForecastHorizonText, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
     table.cell(dashboard, 0, 8, "Evidence", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
     table.cell(dashboard, 1, 8, "Score " + str.tostring(directionScore, "#.##") + " · Vol " + str.tostring(forecastVolRegime, "#.##"), text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
 
