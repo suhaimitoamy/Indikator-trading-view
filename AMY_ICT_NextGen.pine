@@ -717,9 +717,11 @@ liquidityDominance = inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "BSL D
 // ============================================================================
 isM5Auto = timeframe.isminutes and timeframe.multiplier <= 5
 isM15Auto = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
+isH1Auto = timeframe.isminutes and timeframe.multiplier > 30 and timeframe.multiplier <= 60
 profileM5 = entryProfile == "M5" or entryProfile == "Auto" and isM5Auto
 profileM15 = entryProfile == "M15" or entryProfile == "Auto" and isM15Auto
-profileH1 = entryProfile == "H1" or entryProfile == "Auto" and not isM5Auto and not isM15Auto
+profileH1 = entryProfile == "H1" or entryProfile == "Auto" and isH1Auto
+profileSupported = profileM5 or profileM15 or profileH1
 
 profileExpiryBars = profileM5 ? 96 : profileM15 ? 72 : 36
 profileTp2R = profileM15 ? 1.75 : 2.0
@@ -803,8 +805,8 @@ if setupLive
 
 longFilter = validSession and htfBullConfirmed and emaBull and recentSellSweep and mappingDir == 1 and (not profileNeedsPoi or nearBullPoi)
 shortFilter = validSession and htfBearConfirmed and emaBear and recentBuySweep and mappingDir == -1 and (not profileNeedsPoi or nearBearPoi)
-newLongSetup = showEntryMap and not setupLive and profileBullTrigger and longFilter and not na(lastLow)
-newShortSetup = showEntryMap and not setupLive and profileBearTrigger and shortFilter and not na(lastHigh)
+newLongSetup = showEntryMap and profileSupported and not setupLive and profileBullTrigger and longFilter and not na(lastLow)
+newShortSetup = showEntryMap and profileSupported and not setupLive and profileBearTrigger and shortFilter and not na(lastHigh)
 
 if newLongSetup or newShortSetup
     if not na(entryLine)
