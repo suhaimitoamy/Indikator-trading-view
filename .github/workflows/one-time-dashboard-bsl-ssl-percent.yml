@@ -1,0 +1,107 @@
+name: One-time dashboard BSL SSL percentage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-dashboard-bsl-ssl-percent.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Add separate BSL and SSL percentages to dashboard
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('AMY_ICT_NextGen.pine')
+          text = path.read_text(encoding='utf-8')
+
+          old_calc = '''alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
+          alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BSL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "SSL" : "WAIT"'''
+          new_calc = '''alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
+          alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BSL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "SSL" : "WAIT"
+          liquidityStrengthTotal = bullAlignmentAdjusted + bearAlignmentAdjusted
+          bslDrawPercent = liquidityStrengthTotal > 0 ? int(math.round(bullAlignmentAdjusted * 100.0 / liquidityStrengthTotal)) : 50
+          sslDrawPercent = 100 - bslDrawPercent
+          liquidityDominance = bslDrawPercent > sslDrawPercent ? "BSL DOMINANT" : sslDrawPercent > bslDrawPercent ? "SSL DOMINANT" : "BALANCED"'''
+          if old_calc not in text:
+              raise SystemExit('Liquidity percentage calculation marker not found')
+          text = text.replace(old_calc, new_calc, 1)
+
+          text = text.replace(
+              'var table dashboard = table.new(position.bottom_right, 2, 14, bgcolor=dashBg, border_width=1, border_color=dashBorder)',
+              'var table dashboard = table.new(position.bottom_right, 2, 15, bgcolor=dashBg, border_width=1, border_color=dashBorder)',
+              1,
+          )
+
+          old_merge = '''    table.merge_cells(dashboard, 0, 10, 1, 10)
+              table.merge_cells(dashboard, 0, 11, 1, 11)
+              table.merge_cells(dashboard, 0, 12, 1, 12)
+              table.merge_cells(dashboard, 0, 13, 1, 13)'''
+          new_merge = '''    table.merge_cells(dashboard, 0, 11, 1, 11)
+              table.merge_cells(dashboard, 0, 12, 1, 12)
+              table.merge_cells(dashboard, 0, 13, 1, 13)
+              table.merge_cells(dashboard, 0, 14, 1, 14)'''
+          if old_merge not in text:
+              raise SystemExit('Dashboard merge marker not found')
+          text = text.replace(old_merge, new_merge, 1)
+
+          start = text.index('if showDashboard and barstate.islast\n')
+          replacement = '''if showDashboard and barstate.islast
+              table.cell(dashboard, 0, 0, "AMY ICT — " + timeframe.period + " CURRENT MAPPING", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+              table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+
+              table.cell(dashboard, 0, 2, "Liquidity Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+              table.cell(dashboard, 1, 2, liquidityDominance, text_color=bslDrawPercent > sslDrawPercent ? color.lime : sslDrawPercent > bslDrawPercent ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+
+              table.cell(dashboard, 0, 3, "BSL", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+              table.cell(dashboard, 1, 3, f_meter(bslDrawPercent) + "  " + str.tostring(bslDrawPercent) + "%", text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+
+              table.cell(dashboard, 0, 4, "SSL", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+              table.cell(dashboard, 1, 4, f_meter(sslDrawPercent) + "  " + str.tostring(sslDrawPercent) + "%", text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+
+              table.cell(dashboard, 0, 5, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+              table.cell(dashboard, 1, 5, biasText, text_color=htfBullConfirmed ? color.lime : htfBearConfirmed ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+
+              table.cell(dashboard, 0, 6, "Structure", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+              table.cell(dashboard, 1, 6, trend, text_color=structureBull ? color.lime : structureBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+
+              table.cell(dashboard, 0, 7, "EMA", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+              table.cell(dashboard, 1, 7, emaText, text_color=emaBull ? color.lime : emaBear ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+
+              table.cell(dashboard, 0, 8, "Session", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+              table.cell(dashboard, 1, 8, sessionText, text_color=validSession ? color.lime : color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+
+              table.cell(dashboard, 0, 9, "Liquidity", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+              table.cell(dashboard, 1, 9, liqText, text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
+
+              table.cell(dashboard, 0, 10, "Range / POI", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+              table.cell(dashboard, 1, 10, rangeText + " | " + poiText, text_color=inDiscount ? color.lime : inPremium ? color.orange : color.silver, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+
+              table.cell(dashboard, 0, 11, "EVENT HISTORY", text_color=color.white, text_size=size.small, text_halign=text.align_left, bgcolor=dashHeader)
+              table.cell(dashboard, 0, 12, event0, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+              table.cell(dashboard, 0, 13, event1, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+              table.cell(dashboard, 0, 14, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+          else if barstate.islast
+              table.clear(dashboard, 0, 0, 1, 14)
+          '''
+          text = text[:start] + replacement
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/one-time-dashboard-bsl-ssl-percent.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AMY_ICT_NextGen.pine .github/workflows/one-time-dashboard-bsl-ssl-percent.yml
+          git commit -m "Show separate BSL and SSL draw percentages in dashboard"
+          git push origin HEAD:main
