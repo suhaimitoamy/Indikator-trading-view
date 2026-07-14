@@ -183,9 +183,14 @@ if newTradingDay
     pdhConsumed := false
     pdlConsumed := false
 
-if not na(pdh) and high >= pdh
+newPdhSweep = not pdhConsumed and not na(pdh) and high > pdh and close < pdh and barstate.isconfirmed
+newPdlSweep = not pdlConsumed and not na(pdl) and low < pdl and close > pdl and barstate.isconfirmed
+pdhReached = not pdhConsumed and not na(pdh) and high >= pdh and barstate.isconfirmed
+pdlReached = not pdlConsumed and not na(pdl) and low <= pdl and barstate.isconfirmed
+
+if pdhReached
     pdhConsumed := true
-if not na(pdl) and low <= pdl
+if pdlReached
     pdlConsumed := true
 
 if showPrevDay and not na(pdh) and not na(pdl)
@@ -246,9 +251,14 @@ if newTradingWeek
     pwhConsumed := false
     pwlConsumed := false
 
-if not na(pwh) and high >= pwh
+newPwhSweep = not pwhConsumed and not na(pwh) and high > pwh and close < pwh and barstate.isconfirmed
+newPwlSweep = not pwlConsumed and not na(pwl) and low < pwl and close > pwl and barstate.isconfirmed
+pwhReached = not pwhConsumed and not na(pwh) and high >= pwh and barstate.isconfirmed
+pwlReached = not pwlConsumed and not na(pwl) and low <= pwl and barstate.isconfirmed
+
+if pwhReached
     pwhConsumed := true
-if not na(pwl) and low <= pwl
+if pwlReached
     pwlConsumed := true
 
 if showPrevWeek and not na(pwh) and not na(pwl)
@@ -423,24 +433,42 @@ asiaLowReached = not inAsia and not asiaLowConsumed and not na(asiaLow) and low 
 
 var int lastBuySweepBar = na
 var int lastSellSweepBar = na
+var string lastBuySweepName = "BUYSIDE"
+var string lastSellSweepName = "SELLSIDE"
 if newBslSweep
     bslConsumed := true
     lastBuySweepBar := bar_index
+    lastBuySweepName := "INTERNAL BSL SWEPT"
 if newSslSweep
     sslConsumed := true
     lastSellSweepBar := bar_index
+    lastSellSweepName := "INTERNAL SSL SWEPT"
 if asiaHighReached
     asiaHighConsumed := true
 if asiaLowReached
     asiaLowConsumed := true
 if newAsiaHighSweep
     lastBuySweepBar := bar_index
+    lastBuySweepName := "ASIA HIGH SWEPT"
 if newAsiaLowSweep
     lastSellSweepBar := bar_index
+    lastSellSweepName := "ASIA LOW SWEPT"
+if newPdhSweep
+    lastBuySweepBar := bar_index
+    lastBuySweepName := "PDH SWEPT"
+if newPdlSweep
+    lastSellSweepBar := bar_index
+    lastSellSweepName := "PDL SWEPT"
+if newPwhSweep
+    lastBuySweepBar := bar_index
+    lastBuySweepName := "PWH SWEPT"
+if newPwlSweep
+    lastSellSweepBar := bar_index
+    lastSellSweepName := "PWL SWEPT"
 
 recentBuySweep = not na(lastBuySweepBar) and bar_index - lastBuySweepBar <= entrySweepMemoryBars
 recentSellSweep = not na(lastSellSweepBar) and bar_index - lastSellSweepBar <= entrySweepMemoryBars
-liqText = recentSellSweep and recentBuySweep ? "BOTH SIDES SWEPT" : recentSellSweep ? "SELLSIDE SWEPT" : recentBuySweep ? "BUYSIDE SWEPT" : "WAITING"
+liqText = recentSellSweep and recentBuySweep ? "BOTH SIDES SWEPT" : recentSellSweep ? lastSellSweepName : recentBuySweep ? lastBuySweepName : "WAITING"
 
 label newSweepLabel = na
 if showLiquidity
@@ -804,6 +832,14 @@ if not pwlConsumed and not na(pwl) and pwl < close and (na(nearestSslTarget) or 
     nearestSslTarget := pwl
     nearestSslName := "PWL"
 
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+upperRejectionCandle = upperWick >= math.max(body * 0.75, atr * 0.10) and close <= high - barRange * 0.35
+lowerRejectionCandle = lowerWick >= math.max(body * 0.75, atr * 0.10) and close >= low + barRange * 0.35
+upperLiquidityRejection = upperRejectionCandle and not na(nearestBslTarget) and high >= nearestBslTarget - atr * 0.25 and close < nearestBslTarget
+lowerLiquidityRejection = lowerRejectionCandle and not na(nearestSslTarget) and low <= nearestSslTarget + atr * 0.25 and close > nearestSslTarget
+rejectionDirection = (lowerLiquidityRejection ? 1.0 : 0.0) - (upperLiquidityRejection ? 1.0 : 0.0)
+
 bslDistance = not na(nearestBslTarget) ? nearestBslTarget - close : na
 sslDistance = not na(nearestSslTarget) ? close - nearestSslTarget : na
 hasTwoSidedLiquidity = not na(bslDistance) and not na(sslDistance) and bslDistance > syminfo.mintick and sslDistance > syminfo.mintick
@@ -822,7 +858,7 @@ eventDirection = (mssBull or bosBull ? 1.0 : 0.0) - (mssBear or bosBear ? 1.0 : 
 bodyAtr = atr > 0 ? math.max(-2.0, math.min(2.0, (close - open) / atr)) : 0.0
 emaSlopeAtr = atr > 0 and not na(ema1[3]) ? math.max(-2.0, math.min(2.0, (ema1 - ema1[3]) / atr)) : 0.0
 
-predictionLogit = 5.0 * (distanceLocation - 0.50) + 0.40 * htfDirection + 0.50 * structureDirection + 0.40 * emaDirection + 0.20 * priceDirection + 0.60 * sweepDirection + 0.25 * rangeDirection + 0.30 * eventDirection + 0.25 * emaSlopeAtr + 0.15 * bodyAtr
+predictionLogit = 5.0 * (distanceLocation - 0.50) + 0.40 * htfDirection + 0.50 * structureDirection + 0.40 * emaDirection + 0.20 * priceDirection + 0.60 * sweepDirection + 0.25 * rangeDirection + 0.30 * eventDirection + 0.25 * emaSlopeAtr + 0.15 * bodyAtr + 0.40 * rejectionDirection
 rawBslProbability = hasTwoSidedLiquidity ? 100.0 / (1.0 + math.exp(-predictionLogit)) : 50.0
 bslDrawPercent = int(math.round(math.max(1.0, math.min(99.0, rawBslProbability))))
 sslDrawPercent = 100 - bslDrawPercent
@@ -831,9 +867,10 @@ predictionM5 = timeframe.isminutes and timeframe.multiplier <= 5
 predictionM15 = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
 predictionH1 = timeframe.isminutes and timeframe.multiplier > 30 and timeframe.multiplier <= 60
 predictionSupported = predictionM5 or predictionM15 or predictionH1
-bslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold
-sslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold
-liquidityDominance = not predictionSupported ? "PREDICTION UNSUPPORTED" : inAsia ? "ASIA RANGE BUILDING" : bslHighConfidence ? "PREDICT BSL FIRST" : sslHighConfidence ? "PREDICT SSL FIRST" : hasTwoSidedLiquidity ? "WAIT - LOW CONFIDENCE" : "WAIT - LEVELS INCOMPLETE"
+bslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and bslDrawPercent >= liquidityDirectionThreshold and not upperLiquidityRejection
+sslHighConfidence = predictionSupported and not inAsia and hasTwoSidedLiquidity and sslDrawPercent >= liquidityDirectionThreshold and not lowerLiquidityRejection
+predictionTextColor = bslHighConfidence ? color.lime : sslHighConfidence ? color.red : color.yellow
+liquidityDominance = not predictionSupported ? "PREDICTION UNSUPPORTED" : inAsia ? "ASIA RANGE BUILDING" : upperLiquidityRejection and bslDrawPercent > sslDrawPercent ? "WAIT - UPPER REJECTION" : lowerLiquidityRejection and sslDrawPercent > bslDrawPercent ? "WAIT - LOWER REJECTION" : bslHighConfidence ? "PREDICT BSL FIRST" : sslHighConfidence ? "PREDICT SSL FIRST" : hasTwoSidedLiquidity ? "WAIT - LOW CONFIDENCE" : "WAIT - LEVELS INCOMPLETE"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
@@ -1023,6 +1060,18 @@ else if bosBull
 else if bosBear
     eventName := "BOS BEAR"
     eventPrice := lastLow
+else if newPwhSweep
+    eventName := "PWH SWEEP"
+    eventPrice := pwh
+else if newPwlSweep
+    eventName := "PWL SWEEP"
+    eventPrice := pwl
+else if newPdhSweep
+    eventName := "PDH SWEEP"
+    eventPrice := pdh
+else if newPdlSweep
+    eventName := "PDL SWEEP"
+    eventPrice := pdl
 else if newBslSweep
     eventName := "BSL SWEEP"
     eventPrice := lastHigh
@@ -1049,6 +1098,8 @@ if barstate.isconfirmed and str.length(eventName) > 0
 event0 = eventLog.size() > 0 ? eventLog.get(0) : "No confirmed event"
 event1 = eventLog.size() > 1 ? eventLog.get(1) : "-"
 event2 = eventLog.size() > 2 ? eventLog.get(2) : "-"
+bslTargetDashboard = na(nearestBslTarget) ? "NONE" : nearestBslName + " " + f_price(nearestBslTarget) + (hasTwoSidedLiquidity ? " · " + str.tostring(bslDrawPercent) + "%" : " · -")
+sslTargetDashboard = na(nearestSslTarget) ? "NONE" : nearestSslName + " " + f_price(nearestSslTarget) + (hasTwoSidedLiquidity ? " · " + str.tostring(sslDrawPercent) + "%" : " · -")
 
 // ============================================================================
 // COMPACT MAPPING DASHBOARD — ENTRY IS CHART-ONLY
@@ -1073,13 +1124,13 @@ if showDashboard and barstate.islast
     table.cell(dashboard, 0, 1, "STATE: " + marketState, text_color=marketColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)
 
     table.cell(dashboard, 0, 2, "Predicted Draw", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 2, liquidityDominance, text_color=bslDrawPercent > sslDrawPercent ? color.lime : sslDrawPercent > bslDrawPercent ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 1, 2, liquidityDominance, text_color=predictionTextColor, text_size=size.small, text_halign=text.align_left, bgcolor=dashBg)
 
-    table.cell(dashboard, 0, 3, "BSL", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
-    table.cell(dashboard, 1, 3, f_meter(bslDrawPercent) + "  " + str.tostring(bslDrawPercent) + "%", text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
+    table.cell(dashboard, 0, 3, "BSL TARGET", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
+    table.cell(dashboard, 1, 3, bslTargetDashboard, text_color=color.lime, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashAlt)
 
-    table.cell(dashboard, 0, 4, "SSL", text_color=color.white, text_size=size.small, bgcolor=dashBg)
-    table.cell(dashboard, 1, 4, f_meter(sslDrawPercent) + "  " + str.tostring(sslDrawPercent) + "%", text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
+    table.cell(dashboard, 0, 4, "SSL TARGET", text_color=color.white, text_size=size.small, bgcolor=dashBg)
+    table.cell(dashboard, 1, 4, sslTargetDashboard, text_color=color.red, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 
     table.cell(dashboard, 0, 5, "HTF", text_color=color.white, text_size=size.small, bgcolor=dashAlt)
     table.cell(dashboard, 1, 5, biasText, text_color=htfBullConfirmed ? color.lime : htfBearConfirmed ? color.red : color.silver, text_size=size.small, text_halign=text.align_left, bgcolor=dashAlt)

@@ -7,6 +7,7 @@ Repositori ini berisi koleksi indikator dan strategi TradingView untuk **XAUUSD 
 | File | Tipe | Status | Isi Utama |
 |---|---|---|---|
 | `README.md` | Dokumentasi | Aktif | Dokumentasi utama dan index seluruh isi repo. |
+| `AMY_ICT_NextGen.pine` | Indicator Pine v5 | Aktif | Market mapping utama dengan session, BOS/MSS, BSL/SSL, PDH/PDL, PWH/PWL, OB/FVG, liquidity draw, rejection context, entry map, dan dashboard. |
 | `indikator-v1.pine` | Strategy Pine v6 | Aktif | XAUUSD Smart Context + Entry PRO Non-Repaint dengan session filter, HTF bias, structure, FVG, OB, OTE, Asia range, confluence score, entry BUY/SELL, SL/TP, dan alert. |
 | `indikator-v2.pine` | Strategy Pine v6 | Aktif | Versi production lanjutan dari v1 dengan dashboard, trade level, signal memory, quality tag, compact/full mode, dan visual trade plan. |
 | `indikator-v3.pine` | Strategy Pine v6 | Aktif | Versi modular dengan Context Engine, Warning Engine, Entry Engine, Risk Engine, risk-based sizing, session-native timezone, premium/discount guide, dan debug label. |
@@ -70,6 +71,23 @@ File indikator GCX untuk context matrix dan entry-only execution.
 - `GCX-Entry-Only-V1.pine`
 
 ## Detail File
+
+### `AMY_ICT_NextGen.pine`
+
+Indikator market mapping utama dengan pembacaan struktur dan liquidity terintegrasi.
+
+Fitur utama:
+
+- Asia High/Low.
+- PDH/PDL dan PWH/PWL.
+- BOS/MSS dan structural invalidation.
+- BSL/SSL dengan riwayat sweep spesifik.
+- HTF bias dan EMA stack.
+- Order Block dan Fair Value Gap.
+- Premium/Discount.
+- Predicted liquidity draw dengan rejection filter.
+- Target liquidity terdekat pada dashboard.
+- Compact entry map M5, M15, dan H1.
 
 ### `indikator-v1.pine`
 
