@@ -44,22 +44,22 @@ liquidityDirectionThreshold = input.int(97, "Prediction Confidence Threshold", m
 grpForecast = "3. Direction Forecast"
 showDirectionForecast = input.bool(true, "Show Direction Forecast", group=grpForecast)
 
-grpEma = "3. EMA"
+grpEma = "4. EMA"
 showEma = input.bool(true, "Show EMA", group=grpEma)
 ema1Len = input.int(21, "EMA 1 Length", minval=1, group=grpEma)
 ema2Len = input.int(34, "EMA 2 Length", minval=1, group=grpEma)
 ema3Len = input.int(90, "EMA 3 Length", minval=1, group=grpEma)
 
-grpStruct = "4. Structure"
+grpStruct = "5. Structure"
 swingLen = input.int(4, "Swing Length", minval=1, maxval=20, group=grpStruct)
 
-grpSR = "5. Support Resistance"
+grpSR = "6. Support Resistance"
 showSRBoxes = input.bool(true, "Show Support / Resistance", group=grpSR)
 srBoxAtrPad = input.float(0.20, "Zone Thickness ATR", minval=0.05, maxval=2.0, step=0.05, group=grpSR)
 srBoxExtend = input.int(55, "Zone Extend Bars", minval=10, maxval=200, group=grpSR)
 showSRLabels = input.bool(true, "Show Zone Text", group=grpSR)
 
-grpPoi = "6. ICT Base OB / FVG"
+grpPoi = "7. ICT Base OB / FVG"
 showFvg = input.bool(true, "Show FVG", group=grpPoi)
 fvgVisible = input.int(3, "Visible FVG Each Direction", minval=1, maxval=10, group=grpPoi)
 fvgExtend = input.int(12, "FVG Extend Bars", minval=2, maxval=100, group=grpPoi)
@@ -70,7 +70,7 @@ obExtend = input.int(16, "OB Extend Bars", minval=2, maxval=100, group=grpPoi)
 obUseBody = input.bool(true, "Use Candle Body", group=grpPoi)
 poiNearAtr = input.float(0.35, "Near POI ATR", minval=0.05, maxval=2.0, step=0.05, group=grpPoi)
 
-grpEntry = "7. Entry Map"
+grpEntry = "8. Entry Map"
 showEntryMap = input.bool(true, "Show Entry Map On Chart", group=grpEntry)
 entryProfile = input.string("Auto", "Profile", options=["Auto", "M5", "M15", "H1"], group=grpEntry)
 slAtrPad = input.float(0.50, "SL ATR Buffer", minval=0.0, maxval=2.0, step=0.05, group=grpEntry)
