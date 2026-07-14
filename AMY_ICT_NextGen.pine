@@ -28,6 +28,7 @@ showAsia = input.bool(true, "Show Asia High / Low", group=grpCore)
 showLiquidity = input.bool(true, "Show Liquidity", group=grpCore)
 showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
 structureHistory = input.int(3, "Visible BOS / MSS", minval=1, maxval=10, group=grpCore)
+liquidityHistory = input.int(3, "Visible BSL / SSL Each Side", minval=1, maxval=10, group=grpCore)
 showDashboard = input.bool(true, "Show Unified Dashboard", group=grpCore)
 
 grpCtx = "2. Context"
@@ -211,10 +212,10 @@ var float lastHigh = na
 var float lastLow = na
 var int lastHighBar = na
 var int lastLowBar = na
-var line bslLine = na
-var line sslLine = na
-var label bslLabel = na
-var label sslLabel = na
+var array<line> bslLines = array.new<line>()
+var array<line> sslLines = array.new<line>()
+var array<label> bslLabels = array.new<label>()
+var array<label> sslLabels = array.new<label>()
 var bool bslConsumed = false
 var bool sslConsumed = false
 var bool bslBroken = false
@@ -229,49 +230,59 @@ if not na(ph)
     lastHighBar := bar_index - swingLen
     bslConsumed := false
     bslBroken := false
-    if not na(bslLine)
-        line.delete(bslLine)
-        bslLine := na
-    if not na(bslLabel)
-        label.delete(bslLabel)
-        bslLabel := na
     if showLiquidity
-        bslLine := line.new(lastHighBar, lastHigh, bar_index + 80, lastHigh, color=color.new(color.red, 25), style=line.style_dashed, width=1)
-        bslLabel := label.new(lastHighBar, lastHigh, "BSL", style=label.style_label_down, color=color.new(color.red, 68), textcolor=color.white, size=size.tiny)
+        newBslLine = line.new(lastHighBar, lastHigh, bar_index + 80, lastHigh, color=color.new(color.red, 25), style=line.style_dashed, width=1)
+        newBslLabel = label.new(lastHighBar, lastHigh, "BSL " + f_price(lastHigh), style=label.style_label_down, color=color.new(color.red, 68), textcolor=color.white, size=size.tiny)
+        bslLines.unshift(newBslLine)
+        bslLabels.unshift(newBslLabel)
+        if bslLines.size() > liquidityHistory
+            oldBslLine = bslLines.pop()
+            line.delete(oldBslLine)
+        if bslLabels.size() > liquidityHistory
+            oldBslLabel = bslLabels.pop()
+            label.delete(oldBslLabel)
 
 if not na(pl)
     lastLow := pl
     lastLowBar := bar_index - swingLen
     sslConsumed := false
     sslBroken := false
-    if not na(sslLine)
-        line.delete(sslLine)
-        sslLine := na
-    if not na(sslLabel)
-        label.delete(sslLabel)
-        sslLabel := na
     if showLiquidity
-        sslLine := line.new(lastLowBar, lastLow, bar_index + 80, lastLow, color=color.new(color.green, 25), style=line.style_dashed, width=1)
-        sslLabel := label.new(lastLowBar, lastLow, "SSL", style=label.style_label_up, color=color.new(color.green, 68), textcolor=color.white, size=size.tiny)
+        newSslLine = line.new(lastLowBar, lastLow, bar_index + 80, lastLow, color=color.new(color.green, 25), style=line.style_dashed, width=1)
+        newSslLabel = label.new(lastLowBar, lastLow, "SSL " + f_price(lastLow), style=label.style_label_up, color=color.new(color.green, 68), textcolor=color.white, size=size.tiny)
+        sslLines.unshift(newSslLine)
+        sslLabels.unshift(newSslLabel)
+        if sslLines.size() > liquidityHistory
+            oldSslLine = sslLines.pop()
+            line.delete(oldSslLine)
+        if sslLabels.size() > liquidityHistory
+            oldSslLabel = sslLabels.pop()
+            label.delete(oldSslLabel)
 
 if showLiquidity
-    if not na(bslLine)
-        line.set_x2(bslLine, bar_index + 80)
-    if not na(sslLine)
-        line.set_x2(sslLine, bar_index + 80)
+    if bslLines.size() > 0
+        for i = 0 to bslLines.size() - 1
+            line.set_x2(bslLines.get(i), bar_index + 80)
+    if sslLines.size() > 0
+        for i = 0 to sslLines.size() - 1
+            line.set_x2(sslLines.get(i), bar_index + 80)
 else
-    if not na(bslLine)
-        line.delete(bslLine)
-        bslLine := na
-    if not na(sslLine)
-        line.delete(sslLine)
-        sslLine := na
-    if not na(bslLabel)
-        label.delete(bslLabel)
-        bslLabel := na
-    if not na(sslLabel)
-        label.delete(sslLabel)
-        sslLabel := na
+    if bslLines.size() > 0
+        for i = bslLines.size() - 1 to 0
+            oldBslLine = bslLines.pop()
+            line.delete(oldBslLine)
+    if sslLines.size() > 0
+        for i = sslLines.size() - 1 to 0
+            oldSslLine = sslLines.pop()
+            line.delete(oldSslLine)
+    if bslLabels.size() > 0
+        for i = bslLabels.size() - 1 to 0
+            oldBslLabel = bslLabels.pop()
+            label.delete(oldBslLabel)
+    if sslLabels.size() > 0
+        for i = sslLabels.size() - 1 to 0
+            oldSslLabel = sslLabels.pop()
+            label.delete(oldSslLabel)
 
 newBslSweep = not bslConsumed and not na(lastHigh) and high > lastHigh and close < lastHigh and barstate.isconfirmed
 newSslSweep = not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow and barstate.isconfirmed
@@ -595,8 +606,15 @@ bearTransition = not coreBull and not coreBear and structureBear and (htfBearCon
 mappingDir = coreBull ? 1 : coreBear ? -1 : 0
 marketState = coreBull ? (bullPullback ? "BULLISH PULLBACK" : "UPTREND CONFIRMED") : coreBear ? (bearPullback ? "BEARISH PULLBACK" : "DOWNTREND CONFIRMED") : bullTransition ? "BULLISH TRANSITION" : bearTransition ? "BEARISH TRANSITION" : "RANGE / TRANSITION"
 marketColor = mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : bullTransition ? color.aqua : bearTransition ? color.orange : color.yellow
-alignmentPercent = int(math.round(math.max(bullAlignment, bearAlignment) * 20.0))
-alignmentSide = bullAlignment > bearAlignment ? "BULL" : bearAlignment > bullAlignment ? "BEAR" : "BALANCED"
+bullAlignmentRaw = bullAlignment * 20
+bearAlignmentRaw = bearAlignment * 20
+bothSidesConflict = recentBuySweep and recentSellSweep
+bullPenalty = (bothSidesConflict ? 15 : 0) + (inPremium ? 10 : 0) + (nearBearPoi ? 10 : 0)
+bearPenalty = (bothSidesConflict ? 15 : 0) + (inDiscount ? 10 : 0) + (nearBullPoi ? 10 : 0)
+bullAlignmentAdjusted = int(math.max(0, bullAlignmentRaw - bullPenalty))
+bearAlignmentAdjusted = int(math.max(0, bearAlignmentRaw - bearPenalty))
+alignmentPercent = int(math.min(100, math.max(bullAlignmentAdjusted, bearAlignmentAdjusted)))
+alignmentSide = bullAlignmentAdjusted > bearAlignmentAdjusted ? "BULL" : bearAlignmentAdjusted > bullAlignmentAdjusted ? "BEAR" : "BALANCED"
 
 // ============================================================================
 // COMPACT ENTRY MAP — CHART ONLY, ONE LIVE SETUP
