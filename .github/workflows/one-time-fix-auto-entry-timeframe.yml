@@ -1,0 +1,65 @@
+name: One-time fix Auto entry timeframe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-fix-auto-entry-timeframe.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Restrict Auto entry profile to supported timeframes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('AMY_ICT_NextGen.pine')
+          text = path.read_text(encoding='utf-8')
+
+          old_profile = '''isM5Auto = timeframe.isminutes and timeframe.multiplier <= 5
+          isM15Auto = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
+          profileM5 = entryProfile == "M5" or entryProfile == "Auto" and isM5Auto
+          profileM15 = entryProfile == "M15" or entryProfile == "Auto" and isM15Auto
+          profileH1 = entryProfile == "H1" or entryProfile == "Auto" and not isM5Auto and not isM15Auto'''
+
+          new_profile = '''isM5Auto = timeframe.isminutes and timeframe.multiplier <= 5
+          isM15Auto = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
+          isH1Auto = timeframe.isminutes and timeframe.multiplier > 30 and timeframe.multiplier <= 60
+          profileM5 = entryProfile == "M5" or entryProfile == "Auto" and isM5Auto
+          profileM15 = entryProfile == "M15" or entryProfile == "Auto" and isM15Auto
+          profileH1 = entryProfile == "H1" or entryProfile == "Auto" and isH1Auto
+          profileSupported = profileM5 or profileM15 or profileH1'''
+
+          if old_profile not in text:
+              raise SystemExit('Auto profile marker not found')
+          text = text.replace(old_profile, new_profile, 1)
+
+          old_setups = '''newLongSetup = showEntryMap and not setupLive and profileBullTrigger and longFilter and not na(lastLow)
+          newShortSetup = showEntryMap and not setupLive and profileBearTrigger and shortFilter and not na(lastHigh)'''
+
+          new_setups = '''newLongSetup = showEntryMap and profileSupported and not setupLive and profileBullTrigger and longFilter and not na(lastLow)
+          newShortSetup = showEntryMap and profileSupported and not setupLive and profileBearTrigger and shortFilter and not na(lastHigh)'''
+
+          if old_setups not in text:
+              raise SystemExit('Entry setup marker not found')
+          text = text.replace(old_setups, new_setups, 1)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/one-time-fix-auto-entry-timeframe.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AMY_ICT_NextGen.pine .github/workflows/one-time-fix-auto-entry-timeframe.yml
+          git commit -m "Restrict Auto entry mapping to M5 M15 and H1"
+          git push origin HEAD:main
