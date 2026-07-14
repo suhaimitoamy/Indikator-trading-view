@@ -50,6 +50,7 @@ ema3Len = input.int(90, "EMA 3 Length", minval=1, group=grpEma)
 
 grpStruct = "4. Structure"
 swingLen = input.int(4, "Swing Length", minval=1, maxval=20, group=grpStruct)
+marketStateSlowLen = input.int(6, "Market State Slow Swing", minval=3, maxval=20, group=grpStruct)
 
 grpSR = "5. Support Resistance"
 showSRBoxes = input.bool(true, "Show Support / Resistance", group=grpSR)
@@ -348,6 +349,8 @@ plot(pdEq, "PD EQ", color=color.new(color.gray, 82), linewidth=1)
 // ============================================================================
 ph = ta.pivothigh(high, swingLen, swingLen)
 pl = ta.pivotlow(low, swingLen, swingLen)
+marketStatePhSlow = ta.pivothigh(high, marketStateSlowLen, marketStateSlowLen)
+marketStatePlSlow = ta.pivotlow(low, marketStateSlowLen, marketStateSlowLen)
 
 var float lastHigh = na
 var float lastLow = na
@@ -362,11 +365,25 @@ var bool sslConsumed = false
 var bool bslBroken = false
 var bool sslBroken = false
 var string trend = "NEUTRAL"
+
+// Independent Market State swing memory. These variables do not feed Liquidity Draw.
+var float marketFastHigh = na
+var float marketPrevFastHigh = na
+var float marketFastLow = na
+var float marketPrevFastLow = na
+var float marketSlowHigh = na
+var float marketPrevSlowHigh = na
+var float marketSlowLow = na
+var float marketPrevSlowLow = na
+var int marketLastPivotType = 0
 var array<line> structureLines = array.new<line>()
 var array<label> structureLabels = array.new<label>()
 var array<label> sweepLabels = array.new<label>()
 
 if not na(ph)
+    marketPrevFastHigh := marketFastHigh
+    marketFastHigh := ph
+    marketLastPivotType := 1
     lastHigh := ph
     lastHighBar := bar_index - swingLen
     bslConsumed := false
@@ -384,6 +401,9 @@ if not na(ph)
             label.delete(oldBslLabel)
 
 if not na(pl)
+    marketPrevFastLow := marketFastLow
+    marketFastLow := pl
+    marketLastPivotType := -1
     lastLow := pl
     lastLowBar := bar_index - swingLen
     sslConsumed := false
@@ -399,6 +419,14 @@ if not na(pl)
         if sslLabels.size() > liquidityHistory
             oldSslLabel = sslLabels.pop()
             label.delete(oldSslLabel)
+
+if not na(marketStatePhSlow)
+    marketPrevSlowHigh := marketSlowHigh
+    marketSlowHigh := marketStatePhSlow
+
+if not na(marketStatePlSlow)
+    marketPrevSlowLow := marketSlowLow
+    marketSlowLow := marketStatePlSlow
 
 if showLiquidity
     if bslLines.size() > 0
@@ -798,8 +826,30 @@ bullTransition = not coreBull and not coreBear and structureBull and (htfBullCon
 bearTransition = not coreBull and not coreBear and structureBear and (htfBearConfirmed or emaBear)
 
 mappingDir = coreBull ? 1 : coreBear ? -1 : 0
-marketState = coreBull ? (bullPullback ? "BULLISH PULLBACK" : "UPTREND CONFIRMED") : coreBear ? (bearPullback ? "BEARISH PULLBACK" : "DOWNTREND CONFIRMED") : bullTransition ? "BULLISH TRANSITION" : bearTransition ? "BEARISH TRANSITION" : "RANGE / TRANSITION"
-marketColor = mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : bullTransition ? color.aqua : bearTransition ? color.orange : color.yellow
+
+// Market State v2: current local structure only. HTF/EMA alignment remains available
+// as context and for the existing Entry Map, Liquidity Draw, and Direction Forecast.
+marketStateTolerance = atr * 0.05
+marketFastBull = not na(marketPrevFastHigh) and not na(marketPrevFastLow) and marketFastHigh > marketPrevFastHigh + marketStateTolerance and marketFastLow > marketPrevFastLow + marketStateTolerance
+marketFastBear = not na(marketPrevFastHigh) and not na(marketPrevFastLow) and marketFastHigh < marketPrevFastHigh - marketStateTolerance and marketFastLow < marketPrevFastLow - marketStateTolerance
+marketSlowBull = not na(marketPrevSlowHigh) and not na(marketPrevSlowLow) and marketSlowHigh > marketPrevSlowHigh + marketStateTolerance and marketSlowLow > marketPrevSlowLow + marketStateTolerance
+marketSlowBear = not na(marketPrevSlowHigh) and not na(marketPrevSlowLow) and marketSlowHigh < marketPrevSlowHigh - marketStateTolerance and marketSlowLow < marketPrevSlowLow - marketStateTolerance
+
+marketBullIntact = na(marketFastLow) or close > marketFastLow
+marketBearIntact = na(marketFastHigh) or close < marketFastHigh
+marketBullConfirmed = marketFastBull and marketSlowBull and structureBull and marketBullIntact
+marketBearConfirmed = marketFastBear and marketSlowBear and structureBear and marketBearIntact
+
+marketBullVotes = (marketFastBull ? 1 : 0) + (marketSlowBull ? 1 : 0) + (structureBull ? 1 : 0)
+marketBearVotes = (marketFastBear ? 1 : 0) + (marketSlowBear ? 1 : 0) + (structureBear ? 1 : 0)
+marketBullTransition = not marketBullConfirmed and not marketBearConfirmed and marketBullVotes >= 2 and marketBullVotes > marketBearVotes and marketBullIntact
+marketBearTransition = not marketBullConfirmed and not marketBearConfirmed and marketBearVotes >= 2 and marketBearVotes > marketBullVotes and marketBearIntact
+
+marketBullPullback = marketBullConfirmed and marketLastPivotType == 1 and close < ema1
+marketBearPullback = marketBearConfirmed and marketLastPivotType == -1 and close > ema1
+marketStateDir = marketBullConfirmed ? 1 : marketBearConfirmed ? -1 : 0
+marketState = marketBullConfirmed ? (marketBullPullback ? "BULLISH PULLBACK" : "UPTREND CONFIRMED") : marketBearConfirmed ? (marketBearPullback ? "BEARISH PULLBACK" : "DOWNTREND CONFIRMED") : marketBullTransition ? "BULLISH TRANSITION" : marketBearTransition ? "BEARISH TRANSITION" : "RANGE / TRANSITION"
+marketColor = marketStateDir == 1 ? color.lime : marketStateDir == -1 ? color.red : marketBullTransition ? color.aqua : marketBearTransition ? color.orange : color.yellow
 // Liquidity draw is calculated from the nearest valid liquidity on both sides.
 // Candidate BSL: active swing high, Asia High, unswept PDH, or unswept PWH.
 // Candidate SSL: active swing low, Asia Low, unswept PDL, or unswept PWL.
