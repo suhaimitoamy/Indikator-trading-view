@@ -37,7 +37,7 @@ htf = input.timeframe("240", "HTF Bias", group=grpCtx)
 htfEmaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
 pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpCtx)
 atrLen = input.int(14, "ATR Length", minval=1, group=grpCtx)
-liquidityDirectionThreshold = input.int(90, "BSL / SSL Direction Threshold", minval=50, maxval=99, group=grpCtx)
+liquidityDirectionThreshold = input.int(99, "BSL / SSL Direction Threshold", minval=50, maxval=99, group=grpCtx)
 
 grpEma = "3. EMA"
 showEma = input.bool(true, "Show EMA", group=grpEma)
