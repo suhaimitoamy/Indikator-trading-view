@@ -1,0 +1,261 @@
+//@version=5
+indicator("AMY Predictive QRR July 2026 [No Repaint]", overlay=true, max_boxes_count=200, max_lines_count=300, max_labels_count=300, max_bars_back=3000)
+
+profile = input.string("1:2", "RR Profile", options=["1:1", "1:2", "1:3"])
+pipSize = input.float(0.10, "XAUUSD Pip Size", minval=0.01, step=0.01)
+maxSlPips = input.float(150.0, "Maximum SL", minval=1.0)
+showZones = input.bool(true, "Show Pending Zones")
+showTargets = input.bool(true, "Show TP / SL")
+showStats = input.bool(true, "Show Statistics")
+
+pivotLen = 5
+maxZones = 8
+rr = profile == "1:1" ? 1.0 : profile == "1:2" ? 2.0 : 3.0
+atr3 = ta.atr(3)
+atr28 = ta.atr(28)
+atr = profile == "1:3" ? atr28 : atr3
+zoneWidth = profile == "1:2" ? 0.40 : 0.10
+approach = 0.10
+mergeAtr = profile == "1:3" ? 1.00 : 1.50
+invalidAtr = profile == "1:1" ? 0.35 : profile == "1:2" ? 0.50 : 0.20
+slBuffer = profile == "1:1" ? 1.50 : profile == "1:2" ? 0.35 : 3.00
+maxSlDistance = maxSlPips * pipSize
+emaFast = ta.ema(close, 21)
+emaSlow = ta.ema(close, 55)
+bull = emaFast >= emaSlow
+bear = emaFast <= emaSlow
+strong = math.abs(close - open) >= atr * 0.08
+
+h1High = request.security(syminfo.tickerid, "60", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+h1Low = request.security(syminfo.tickerid, "60", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+pdh = request.security(syminfo.tickerid, "D", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, "D", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+newH1 = nz(ta.change(time("60"))) != 0
+newDay = nz(ta.change(time("D"))) != 0
+pivotHigh = ta.pivothigh(high, pivotLen, pivotLen)
+pivotLow = ta.pivotlow(low, pivotLen, pivotLen)
+
+var dirs = array.new_int()
+var tops = array.new_float()
+var bots = array.new_float()
+var mids = array.new_float()
+var states = array.new_int()
+var born = array.new_int()
+var boxes = array.new_box()
+var labels = array.new_label()
+
+f_count(int dir) =>
+    int n = 0
+    if array.size(dirs) > 0
+        for i = 0 to array.size(dirs) - 1
+            if array.get(dirs, i) == dir
+                n += 1
+    n
+
+f_remove(int dir) =>
+    int idx = -1
+    int oldest = 1000000000
+    if array.size(dirs) > 0
+        for i = 0 to array.size(dirs) - 1
+            if array.get(dirs, i) == dir and array.get(born, i) < oldest
+                oldest := array.get(born, i)
+                idx := i
+    if idx >= 0
+        box bx = array.remove(boxes, idx)
+        label lb = array.remove(labels, idx)
+        if not na(bx)
+            box.delete(bx)
+        if not na(lb)
+            label.delete(lb)
+        array.remove(dirs, idx)
+        array.remove(tops, idx)
+        array.remove(bots, idx)
+        array.remove(mids, idx)
+        array.remove(states, idx)
+        array.remove(born, idx)
+
+f_add(int dir, float level) =>
+    if not na(level) and not na(atr)
+        bool nearby = false
+        if array.size(dirs) > 0
+            for i = 0 to array.size(dirs) - 1
+                if array.get(dirs, i) == dir and array.get(states, i) == 0 and math.abs(array.get(mids, i) - level) <= atr * mergeAtr
+                    nearby := true
+        if not nearby
+            if f_count(dir) >= maxZones
+                f_remove(dir)
+            float half = atr * zoneWidth * 0.5
+            float top = level + half
+            float bot = level - half
+            color clr = dir == 1 ? color.rgb(21, 132, 86) : color.rgb(169, 44, 67)
+            string text = dir == 1 ? "pending buy" : "pending sell"
+            box bx = na
+            label lb = na
+            if showZones
+                bx := box.new(bar_index, top, bar_index + 18, bot, bgcolor=color.new(clr, 82), border_color=color.new(clr, 40))
+                lb := label.new(bar_index + 18, level, text, style=label.style_label_left, color=color.new(clr, 25), textcolor=color.white, size=size.tiny)
+            array.push(dirs, dir)
+            array.push(tops, top)
+            array.push(bots, bot)
+            array.push(mids, level)
+            array.push(states, 0)
+            array.push(born, bar_index)
+            array.push(boxes, bx)
+            array.push(labels, lb)
+
+f_hide(int idx, int state) =>
+    array.set(states, idx, state)
+    box bx = array.get(boxes, idx)
+    label lb = array.get(labels, idx)
+    if not na(bx)
+        box.set_bgcolor(bx, color.new(color.gray, 100))
+        box.set_border_color(bx, color.new(color.gray, 100))
+    if not na(lb)
+        label.set_color(lb, color.new(color.gray, 100))
+        label.set_textcolor(lb, color.new(color.white, 100))
+
+if barstate.isconfirmed
+    if not na(pivotHigh)
+        f_add(-1, pivotHigh)
+    if not na(pivotLow)
+        f_add(1, pivotLow)
+    if newH1
+        f_add(-1, h1High)
+        f_add(1, h1Low)
+    if newDay
+        f_add(-1, pdh)
+        f_add(1, pdl)
+
+var bool buyActive = false
+var bool sellActive = false
+var int buyBar = na
+var int sellBar = na
+var float buySL = na
+var float sellSL = na
+var float buyTP = na
+var float sellTP = na
+var line buySlLine = na
+var line buyTpLine = na
+var line sellSlLine = na
+var line sellTpLine = na
+var int wins = 0
+var int losses = 0
+var int skipped = 0
+bool buySignal = false
+bool sellSignal = false
+int buyIdx = -1
+int sellIdx = -1
+float buyDistance = 1e20
+float sellDistance = 1e20
+
+if barstate.isconfirmed and array.size(dirs) > 0
+    for i = 0 to array.size(dirs) - 1
+        if array.get(states, i) == 0
+            int dir = array.get(dirs, i)
+            float top = array.get(tops, i)
+            float bot = array.get(bots, i)
+            float mid = array.get(mids, i)
+            bool invalid = dir == 1 ? close < bot - atr * invalidAtr : close > top + atr * invalidAtr
+            if invalid
+                f_hide(i, 2)
+            else
+                float distance = math.abs(close - mid)
+                bool buyNear = dir == 1 and not buyActive and low <= top + atr * approach and close >= bot and bull and strong
+                bool sellNear = dir == -1 and not sellActive and high >= bot - atr * approach and close <= top and bear and strong
+                if buyNear and distance < buyDistance
+                    buyDistance := distance
+                    buyIdx := i
+                if sellNear and distance < sellDistance
+                    sellDistance := distance
+                    sellIdx := i
+
+if barstate.isconfirmed and buyIdx >= 0 and not buyActive
+    float entry = close
+    float sl = math.min(array.get(bots, buyIdx) - atr * slBuffer, entry - atr * 0.25)
+    float risk = entry - sl
+    if risk > maxSlDistance
+        skipped += 1
+        f_hide(buyIdx, 3)
+    else if risk > syminfo.mintick
+        array.set(states, buyIdx, 1)
+        buyActive := true
+        buySignal := true
+        buyBar := bar_index
+        buySL := sl
+        buyTP := entry + risk * rr
+        label.new(bar_index, low, "BUY", style=label.style_label_up, color=color.rgb(22, 152, 92), textcolor=color.white)
+        if not na(buySlLine)
+            line.delete(buySlLine)
+        if not na(buyTpLine)
+            line.delete(buyTpLine)
+        if showTargets
+            buySlLine := line.new(bar_index, buySL, bar_index + 35, buySL, color=color.red)
+            buyTpLine := line.new(bar_index, buyTP, bar_index + 35, buyTP, color=color.aqua, style=line.style_dashed)
+
+if barstate.isconfirmed and sellIdx >= 0 and not sellActive
+    float entry = close
+    float sl = math.max(array.get(tops, sellIdx) + atr * slBuffer, entry + atr * 0.25)
+    float risk = sl - entry
+    if risk > maxSlDistance
+        skipped += 1
+        f_hide(sellIdx, 3)
+    else if risk > syminfo.mintick
+        array.set(states, sellIdx, 1)
+        sellActive := true
+        sellSignal := true
+        sellBar := bar_index
+        sellSL := sl
+        sellTP := entry - risk * rr
+        label.new(bar_index, high, "SELL", style=label.style_label_down, color=color.rgb(190, 45, 70), textcolor=color.white)
+        if not na(sellSlLine)
+            line.delete(sellSlLine)
+        if not na(sellTpLine)
+            line.delete(sellTpLine)
+        if showTargets
+            sellSlLine := line.new(bar_index, sellSL, bar_index + 35, sellSL, color=color.red)
+            sellTpLine := line.new(bar_index, sellTP, bar_index + 35, sellTP, color=color.aqua, style=line.style_dashed)
+
+if barstate.isconfirmed and buyActive and bar_index > buyBar
+    if low <= buySL
+        losses += 1
+        buyActive := false
+        label.new(bar_index, buySL, "SL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+    else if high >= buyTP
+        wins += 1
+        buyActive := false
+        label.new(bar_index, buyTP, "TP " + profile, style=label.style_label_down, color=color.aqua, textcolor=color.white, size=size.tiny)
+
+if barstate.isconfirmed and sellActive and bar_index > sellBar
+    if high >= sellSL
+        losses += 1
+        sellActive := false
+        label.new(bar_index, sellSL, "SL", style=label.style_label_up, color=color.red, textcolor=color.white, size=size.tiny)
+    else if low <= sellTP
+        wins += 1
+        sellActive := false
+        label.new(bar_index, sellTP, "TP " + profile, style=label.style_label_up, color=color.aqua, textcolor=color.white, size=size.tiny)
+
+if showTargets
+    if buyActive
+        line.set_x2(buySlLine, bar_index + 35)
+        line.set_x2(buyTpLine, bar_index + 35)
+    if sellActive
+        line.set_x2(sellSlLine, bar_index + 35)
+        line.set_x2(sellTpLine, bar_index + 35)
+
+var table stats = table.new(position.top_right, 2, 4)
+if barstate.islast
+    if showStats
+        table.cell(stats, 0, 0, "PROFILE")
+        table.cell(stats, 1, 0, profile)
+        table.cell(stats, 0, 1, "TP")
+        table.cell(stats, 1, 1, str.tostring(wins))
+        table.cell(stats, 0, 2, "SL")
+        table.cell(stats, 1, 2, str.tostring(losses))
+        table.cell(stats, 0, 3, "SKIP")
+        table.cell(stats, 1, 3, str.tostring(skipped))
+    else
+        table.clear(stats, 0, 0, 1, 3)
+
+alertcondition(buySignal, "AMY QRR BUY", "AMY QRR BUY {{ticker}} {{interval}}")
+alertcondition(sellSignal, "AMY QRR SELL", "AMY QRR SELL {{ticker}} {{interval}}")
