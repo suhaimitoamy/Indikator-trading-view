@@ -1,0 +1,486 @@
+//@version=5
+indicator("AMY Predictive QRR [No Repaint]", overlay=true, max_boxes_count=200, max_lines_count=500, max_labels_count=500, max_bars_back=3000)
+
+// =============================================================================
+// INPUTS
+// =============================================================================
+grpEngine = "1. Predictive Engine"
+pivotLen = input.int(5, "Confirmed Swing Length", minval=2, maxval=30, group=grpEngine)
+atrLen = input.int(14, "ATR Length", minval=1, group=grpEngine)
+zoneWidthAtr = input.float(0.20, "Pending Zone Width (ATR)", minval=0.05, maxval=1.50, step=0.05, group=grpEngine)
+approachAtr = input.float(0.35, "Signal Distance Before Zone (ATR)", minval=0.05, maxval=2.00, step=0.05, group=grpEngine)
+mergeDistanceAtr = input.float(0.45, "Merge Nearby Zones (ATR)", minval=0.05, maxval=3.00, step=0.05, group=grpEngine)
+invalidationAtr = input.float(0.45, "Zone Invalidation Buffer (ATR)", minval=0.05, maxval=3.00, step=0.05, group=grpEngine)
+projectionBars = input.int(18, "Projection Bars", minval=3, maxval=150, group=grpEngine)
+maxZonesEachSide = input.int(8, "Visible Zones Each Side", minval=1, maxval=20, group=grpEngine)
+
+useHtf = input.bool(true, "Use Completed HTF High / Low", group=grpEngine)
+htf = input.timeframe("60", "Higher Timeframe", group=grpEngine)
+
+usePrevDay = input.bool(true, "Use Previous Day High / Low", group=grpEngine)
+
+showPendingBoxes = input.bool(true, "Show Pending Zone Boxes", group=grpEngine)
+showPendingLabels = input.bool(true, "Show Pending Labels", group=grpEngine)
+showInvalidZones = input.bool(false, "Show Invalidated Zones", group=grpEngine)
+
+grpRisk = "2. Automatic TP / SL"
+slBufferAtr = input.float(0.35, "SL Buffer Behind Zone (ATR)", minval=0.05, maxval=3.00, step=0.05, group=grpRisk)
+tp1RR = input.float(1.0, "TP1 Risk Reward", minval=0.25, maxval=10.0, step=0.25, group=grpRisk)
+tp2RR = input.float(1.5, "TP2 Risk Reward", minval=0.50, maxval=15.0, step=0.25, group=grpRisk)
+tp3RR = input.float(2.0, "TP3 Risk Reward", minval=0.75, maxval=20.0, step=0.25, group=grpRisk)
+targetProjectionBars = input.int(35, "TP / SL Projection Bars", minval=5, maxval=200, group=grpRisk)
+showTargets = input.bool(true, "Show TP1 / TP2 / TP3 / SL", group=grpRisk)
+
+grpFilter = "3. Signal Filters"
+useTrendFilter = input.bool(true, "Use EMA Trend Filter", group=grpFilter)
+emaFastLen = input.int(21, "Fast EMA", minval=1, group=grpFilter)
+emaSlowLen = input.int(55, "Slow EMA", minval=2, group=grpFilter)
+useDisplacementFilter = input.bool(true, "Require Minimum Candle Strength", group=grpFilter)
+minBodyAtr = input.float(0.08, "Minimum Body (ATR)", minval=0.0, maxval=2.0, step=0.01, group=grpFilter)
+
+grpDisplay = "4. Display"
+showEma = input.bool(false, "Show EMA Filter", group=grpDisplay)
+showStats = input.bool(true, "Show TP / SL Counter", group=grpDisplay)
+showSourceText = input.bool(false, "Show Zone Source", group=grpDisplay)
+
+// =============================================================================
+// CORE VALUES
+// =============================================================================
+atr = ta.atr(atrLen)
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+
+bullTrend = emaFast >= emaSlow
+bearTrend = emaFast <= emaSlow
+bodyStrong = math.abs(close - open) >= atr * minBodyAtr
+
+plot(showEma ? emaFast : na, "EMA Fast", color=color.new(color.aqua, 0), linewidth=1)
+plot(showEma ? emaSlow : na, "EMA Slow", color=color.new(color.fuchsia, 0), linewidth=1)
+
+// Only completed higher-timeframe candles are used.
+htfHigh = request.security(syminfo.tickerid, htf, high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+htfLow = request.security(syminfo.tickerid, htf, low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+newHtfBar = nz(ta.change(time(htf))) != 0
+
+prevDayHigh = request.security(syminfo.tickerid, "D", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+prevDayLow = request.security(syminfo.tickerid, "D", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+newDay = nz(ta.change(time("D"))) != 0
+
+confirmedPivotHigh = ta.pivothigh(high, pivotLen, pivotLen)
+confirmedPivotLow = ta.pivotlow(low, pivotLen, pivotLen)
+
+// =============================================================================
+// PENDING ZONE STORAGE
+// direction: 1 = BUY, -1 = SELL
+// state: 0 = pending, 1 = triggered, 2 = invalidated
+// =============================================================================
+var zoneDirections = array.new_int()
+var zoneTops = array.new_float()
+var zoneBottoms = array.new_float()
+var zoneMids = array.new_float()
+var zoneStates = array.new_int()
+var zoneCreatedBars = array.new_int()
+var zoneBoxes = array.new_box()
+var zoneLabels = array.new_label()
+var zoneSources = array.new_string()
+
+f_zoneCount(int direction) =>
+    int count = 0
+    int size = array.size(zoneDirections)
+    if size > 0
+        for i = 0 to size - 1
+            if array.get(zoneDirections, i) == direction
+                count += 1
+    count
+
+f_removeOldestDirection(int direction) =>
+    int removeIndex = -1
+    int oldestBar = 1000000000
+    int size = array.size(zoneDirections)
+    if size > 0
+        for i = 0 to size - 1
+            if array.get(zoneDirections, i) == direction
+                int createdBar = array.get(zoneCreatedBars, i)
+                if createdBar < oldestBar
+                    oldestBar := createdBar
+                    removeIndex := i
+    if removeIndex >= 0
+        box oldBox = array.remove(zoneBoxes, removeIndex)
+        label oldLabel = array.remove(zoneLabels, removeIndex)
+        if not na(oldBox)
+            box.delete(oldBox)
+        if not na(oldLabel)
+            label.delete(oldLabel)
+        array.remove(zoneDirections, removeIndex)
+        array.remove(zoneTops, removeIndex)
+        array.remove(zoneBottoms, removeIndex)
+        array.remove(zoneMids, removeIndex)
+        array.remove(zoneStates, removeIndex)
+        array.remove(zoneCreatedBars, removeIndex)
+        array.remove(zoneSources, removeIndex)
+
+f_hasNearbyZone(int direction, float level, float distance) =>
+    bool nearby = false
+    int size = array.size(zoneDirections)
+    if size > 0
+        for i = 0 to size - 1
+            if array.get(zoneDirections, i) == direction and array.get(zoneStates, i) == 0
+                if math.abs(array.get(zoneMids, i) - level) <= distance
+                    nearby := true
+    nearby
+
+f_addZone(int direction, float level, float atrValue, string source) =>
+    if not na(level) and not na(atrValue) and atrValue > 0
+        float mergeDistance = atrValue * mergeDistanceAtr
+        if not f_hasNearbyZone(direction, level, mergeDistance)
+            if f_zoneCount(direction) >= maxZonesEachSide
+                f_removeOldestDirection(direction)
+
+            float halfWidth = atrValue * zoneWidthAtr * 0.5
+            float zoneTop = level + halfWidth
+            float zoneBottom = level - halfWidth
+            color baseColor = direction == 1 ? color.rgb(21, 132, 86) : color.rgb(169, 44, 67)
+            string sideText = direction == 1 ? "pending buy" : "pending sell"
+            string finalText = showSourceText ? sideText + " · " + source : sideText
+
+            box newBox = na
+            label newLabel = na
+
+            if showPendingBoxes
+                newBox := box.new(left=bar_index, top=zoneTop, right=bar_index + projectionBars, bottom=zoneBottom, xloc=xloc.bar_index, bgcolor=color.new(baseColor, 82), border_color=color.new(baseColor, 40), border_width=1)
+
+            if showPendingLabels
+                newLabel := label.new(x=bar_index + projectionBars, y=level, text=finalText, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(baseColor, 25), textcolor=color.white, size=size.tiny)
+
+            array.push(zoneDirections, direction)
+            array.push(zoneTops, zoneTop)
+            array.push(zoneBottoms, zoneBottom)
+            array.push(zoneMids, level)
+            array.push(zoneStates, 0)
+            array.push(zoneCreatedBars, bar_index)
+            array.push(zoneBoxes, newBox)
+            array.push(zoneLabels, newLabel)
+            array.push(zoneSources, source)
+
+// =============================================================================
+// CREATE FIXED, CONFIRMED PENDING ZONES
+// =============================================================================
+if barstate.isconfirmed
+    if not na(confirmedPivotHigh)
+        f_addZone(-1, confirmedPivotHigh, atr, "SWING")
+
+    if not na(confirmedPivotLow)
+        f_addZone(1, confirmedPivotLow, atr, "SWING")
+
+    if useHtf and newHtfBar
+        f_addZone(-1, htfHigh, atr, "HTF HIGH")
+        f_addZone(1, htfLow, atr, "HTF LOW")
+
+    if usePrevDay and newDay
+        f_addZone(-1, prevDayHigh, atr, "PDH")
+        f_addZone(1, prevDayLow, atr, "PDL")
+
+// =============================================================================
+// TRADE STATE
+// =============================================================================
+var bool buyTradeActive = false
+var bool sellTradeActive = false
+var int buyTradeStartBar = na
+var int sellTradeStartBar = na
+var int buyStage = 0
+var int sellStage = 0
+
+var float buyEntry = na
+var float buySL = na
+var float buyTP1 = na
+var float buyTP2 = na
+var float buyTP3 = na
+
+var float sellEntry = na
+var float sellSL = na
+var float sellTP1 = na
+var float sellTP2 = na
+var float sellTP3 = na
+
+var int tpCount = 0
+var int slCount = 0
+
+var line buyEntryLine = na
+var line buySLLine = na
+var line buyTP1Line = na
+var line buyTP2Line = na
+var line buyTP3Line = na
+
+var line sellEntryLine = na
+var line sellSLLine = na
+var line sellTP1Line = na
+var line sellTP2Line = na
+var line sellTP3Line = na
+
+bool buySignal = false
+bool sellSignal = false
+int buyZoneIndex = -1
+int sellZoneIndex = -1
+float buyZoneDistance = 1000000000000.0
+float sellZoneDistance = 1000000000000.0
+
+// =============================================================================
+// FIND THE NEAREST ACTIVE PENDING ZONE
+// =============================================================================
+if barstate.isconfirmed and array.size(zoneDirections) > 0
+    float approachDistance = atr * approachAtr
+    float invalidDistance = atr * invalidationAtr
+
+    for i = 0 to array.size(zoneDirections) - 1
+        int direction = array.get(zoneDirections, i)
+        int state = array.get(zoneStates, i)
+        float zoneTop = array.get(zoneTops, i)
+        float zoneBottom = array.get(zoneBottoms, i)
+        float zoneMid = array.get(zoneMids, i)
+        box currentBox = array.get(zoneBoxes, i)
+        label currentLabel = array.get(zoneLabels, i)
+
+        if state == 0
+            bool invalidBuy = direction == 1 and close < zoneBottom - invalidDistance
+            bool invalidSell = direction == -1 and close > zoneTop + invalidDistance
+
+            if invalidBuy or invalidSell
+                array.set(zoneStates, i, 2)
+                if not na(currentBox)
+                    box.set_bgcolor(currentBox, showInvalidZones ? color.new(color.gray, 90) : color.new(color.gray, 100))
+                    box.set_border_color(currentBox, showInvalidZones ? color.new(color.gray, 75) : color.new(color.gray, 100))
+                if not na(currentLabel)
+                    label.set_color(currentLabel, showInvalidZones ? color.new(color.gray, 65) : color.new(color.gray, 100))
+                    label.set_textcolor(currentLabel, showInvalidZones ? color.new(color.white, 20) : color.new(color.white, 100))
+                    if showInvalidZones
+                        label.set_text(currentLabel, direction == 1 ? "invalid buy" : "invalid sell")
+            else
+                bool buyApproach = direction == 1 and not buyTradeActive and low <= zoneTop + approachDistance and close >= zoneBottom
+                bool sellApproach = direction == -1 and not sellTradeActive and high >= zoneBottom - approachDistance and close <= zoneTop
+
+                bool trendAllowsBuy = not useTrendFilter or bullTrend
+                bool trendAllowsSell = not useTrendFilter or bearTrend
+                bool strengthAllows = not useDisplacementFilter or bodyStrong
+
+                float distanceToZone = math.abs(close - zoneMid)
+
+                if buyApproach and trendAllowsBuy and strengthAllows and distanceToZone < buyZoneDistance
+                    buyZoneDistance := distanceToZone
+                    buyZoneIndex := i
+
+                if sellApproach and trendAllowsSell and strengthAllows and distanceToZone < sellZoneDistance
+                    sellZoneDistance := distanceToZone
+                    sellZoneIndex := i
+
+// =============================================================================
+// LOCK BUY SIGNAL AFTER BAR CLOSE
+// =============================================================================
+if barstate.isconfirmed and buyZoneIndex >= 0 and not buyTradeActive
+    float selectedTop = array.get(zoneTops, buyZoneIndex)
+    float selectedBottom = array.get(zoneBottoms, buyZoneIndex)
+    box selectedBox = array.get(zoneBoxes, buyZoneIndex)
+    label selectedLabel = array.get(zoneLabels, buyZoneIndex)
+
+    array.set(zoneStates, buyZoneIndex, 1)
+    buySignal := true
+    buyTradeActive := true
+    buyTradeStartBar := bar_index
+    buyStage := 0
+
+    buyEntry := close
+    buySL := math.min(selectedBottom - atr * slBufferAtr, buyEntry - atr * 0.25)
+    float buyRisk = math.max(syminfo.mintick, buyEntry - buySL)
+    buyTP1 := buyEntry + buyRisk * tp1RR
+    buyTP2 := buyEntry + buyRisk * tp2RR
+    buyTP3 := buyEntry + buyRisk * tp3RR
+
+    if not na(selectedBox)
+        box.set_bgcolor(selectedBox, color.new(color.lime, 82))
+        box.set_border_color(selectedBox, color.new(color.lime, 15))
+        box.set_right(selectedBox, bar_index)
+
+    if not na(selectedLabel)
+        label.set_xy(selectedLabel, bar_index, low)
+        label.set_text(selectedLabel, "BUY")
+        label.set_style(selectedLabel, label.style_label_up)
+        label.set_color(selectedLabel, color.rgb(22, 152, 92))
+        label.set_textcolor(selectedLabel, color.white)
+        label.set_size(selectedLabel, size.small)
+    else
+        label.new(bar_index, low, "BUY", style=label.style_label_up, color=color.rgb(22, 152, 92), textcolor=color.white, size=size.small)
+
+    if not na(buyEntryLine)
+        line.delete(buyEntryLine)
+    if not na(buySLLine)
+        line.delete(buySLLine)
+    if not na(buyTP1Line)
+        line.delete(buyTP1Line)
+    if not na(buyTP2Line)
+        line.delete(buyTP2Line)
+    if not na(buyTP3Line)
+        line.delete(buyTP3Line)
+
+    if showTargets
+        buyEntryLine := line.new(bar_index, buyEntry, bar_index + targetProjectionBars, buyEntry, xloc=xloc.bar_index, color=color.new(color.white, 45), style=line.style_dotted, width=1)
+        buySLLine := line.new(bar_index, buySL, bar_index + targetProjectionBars, buySL, xloc=xloc.bar_index, color=color.new(color.red, 0), style=line.style_solid, width=1)
+        buyTP1Line := line.new(bar_index, buyTP1, bar_index + targetProjectionBars, buyTP1, xloc=xloc.bar_index, color=color.new(color.aqua, 5), style=line.style_dashed, width=1)
+        buyTP2Line := line.new(bar_index, buyTP2, bar_index + targetProjectionBars, buyTP2, xloc=xloc.bar_index, color=color.new(color.blue, 5), style=line.style_dashed, width=1)
+        buyTP3Line := line.new(bar_index, buyTP3, bar_index + targetProjectionBars, buyTP3, xloc=xloc.bar_index, color=color.new(color.fuchsia, 5), style=line.style_dashed, width=1)
+        label.new(bar_index + targetProjectionBars, buySL, "SL", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.red, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, buyTP1, "TP1", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.aqua, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, buyTP2, "TP2", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.blue, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, buyTP3, "TP3", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.fuchsia, 25), textcolor=color.white, size=size.tiny)
+
+// =============================================================================
+// LOCK SELL SIGNAL AFTER BAR CLOSE
+// =============================================================================
+if barstate.isconfirmed and sellZoneIndex >= 0 and not sellTradeActive
+    float selectedTop = array.get(zoneTops, sellZoneIndex)
+    float selectedBottom = array.get(zoneBottoms, sellZoneIndex)
+    box selectedBox = array.get(zoneBoxes, sellZoneIndex)
+    label selectedLabel = array.get(zoneLabels, sellZoneIndex)
+
+    array.set(zoneStates, sellZoneIndex, 1)
+    sellSignal := true
+    sellTradeActive := true
+    sellTradeStartBar := bar_index
+    sellStage := 0
+
+    sellEntry := close
+    sellSL := math.max(selectedTop + atr * slBufferAtr, sellEntry + atr * 0.25)
+    float sellRisk = math.max(syminfo.mintick, sellSL - sellEntry)
+    sellTP1 := sellEntry - sellRisk * tp1RR
+    sellTP2 := sellEntry - sellRisk * tp2RR
+    sellTP3 := sellEntry - sellRisk * tp3RR
+
+    if not na(selectedBox)
+        box.set_bgcolor(selectedBox, color.new(color.red, 82))
+        box.set_border_color(selectedBox, color.new(color.red, 15))
+        box.set_right(selectedBox, bar_index)
+
+    if not na(selectedLabel)
+        label.set_xy(selectedLabel, bar_index, high)
+        label.set_text(selectedLabel, "SELL")
+        label.set_style(selectedLabel, label.style_label_down)
+        label.set_color(selectedLabel, color.rgb(190, 45, 70))
+        label.set_textcolor(selectedLabel, color.white)
+        label.set_size(selectedLabel, size.small)
+    else
+        label.new(bar_index, high, "SELL", style=label.style_label_down, color=color.rgb(190, 45, 70), textcolor=color.white, size=size.small)
+
+    if not na(sellEntryLine)
+        line.delete(sellEntryLine)
+    if not na(sellSLLine)
+        line.delete(sellSLLine)
+    if not na(sellTP1Line)
+        line.delete(sellTP1Line)
+    if not na(sellTP2Line)
+        line.delete(sellTP2Line)
+    if not na(sellTP3Line)
+        line.delete(sellTP3Line)
+
+    if showTargets
+        sellEntryLine := line.new(bar_index, sellEntry, bar_index + targetProjectionBars, sellEntry, xloc=xloc.bar_index, color=color.new(color.white, 45), style=line.style_dotted, width=1)
+        sellSLLine := line.new(bar_index, sellSL, bar_index + targetProjectionBars, sellSL, xloc=xloc.bar_index, color=color.new(color.red, 0), style=line.style_solid, width=1)
+        sellTP1Line := line.new(bar_index, sellTP1, bar_index + targetProjectionBars, sellTP1, xloc=xloc.bar_index, color=color.new(color.aqua, 5), style=line.style_dashed, width=1)
+        sellTP2Line := line.new(bar_index, sellTP2, bar_index + targetProjectionBars, sellTP2, xloc=xloc.bar_index, color=color.new(color.blue, 5), style=line.style_dashed, width=1)
+        sellTP3Line := line.new(bar_index, sellTP3, bar_index + targetProjectionBars, sellTP3, xloc=xloc.bar_index, color=color.new(color.fuchsia, 5), style=line.style_dashed, width=1)
+        label.new(bar_index + targetProjectionBars, sellSL, "SL", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.red, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, sellTP1, "TP1", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.aqua, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, sellTP2, "TP2", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.blue, 25), textcolor=color.white, size=size.tiny)
+        label.new(bar_index + targetProjectionBars, sellTP3, "TP3", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(color.fuchsia, 25), textcolor=color.white, size=size.tiny)
+
+// =============================================================================
+// TP / SL RESULT ENGINE
+// The signal candle is never used to score its own result.
+// =============================================================================
+if barstate.isconfirmed and buyTradeActive and bar_index > buyTradeStartBar
+    bool buyStopped = low <= buySL
+
+    if buyStage == 0 and buyStopped
+        slCount += 1
+        buyTradeActive := false
+        label.new(bar_index, buySL, "SL", style=label.style_label_down, color=color.rgb(188, 40, 61), textcolor=color.white, size=size.tiny)
+    else
+        if buyStage < 1 and high >= buyTP1
+            tpCount += 1
+            buyStage := 1
+            label.new(bar_index, buyTP1, "TP1", style=label.style_label_down, color=color.rgb(26, 151, 180), textcolor=color.white, size=size.tiny)
+        if buyStage < 2 and high >= buyTP2
+            buyStage := 2
+            label.new(bar_index, buyTP2, "TP2", style=label.style_label_down, color=color.rgb(48, 105, 194), textcolor=color.white, size=size.tiny)
+        if buyStage < 3 and high >= buyTP3
+            buyStage := 3
+            buyTradeActive := false
+            label.new(bar_index, buyTP3, "TP3", style=label.style_label_down, color=color.rgb(181, 56, 204), textcolor=color.white, size=size.tiny)
+        else if buyStage > 0 and buyStopped
+            buyTradeActive := false
+
+if barstate.isconfirmed and sellTradeActive and bar_index > sellTradeStartBar
+    bool sellStopped = high >= sellSL
+
+    if sellStage == 0 and sellStopped
+        slCount += 1
+        sellTradeActive := false
+        label.new(bar_index, sellSL, "SL", style=label.style_label_up, color=color.rgb(188, 40, 61), textcolor=color.white, size=size.tiny)
+    else
+        if sellStage < 1 and low <= sellTP1
+            tpCount += 1
+            sellStage := 1
+            label.new(bar_index, sellTP1, "TP1", style=label.style_label_up, color=color.rgb(26, 151, 180), textcolor=color.white, size=size.tiny)
+        if sellStage < 2 and low <= sellTP2
+            sellStage := 2
+            label.new(bar_index, sellTP2, "TP2", style=label.style_label_up, color=color.rgb(48, 105, 194), textcolor=color.white, size=size.tiny)
+        if sellStage < 3 and low <= sellTP3
+            sellStage := 3
+            sellTradeActive := false
+            label.new(bar_index, sellTP3, "TP3", style=label.style_label_up, color=color.rgb(181, 56, 204), textcolor=color.white, size=size.tiny)
+        else if sellStage > 0 and sellStopped
+            sellTradeActive := false
+
+// Keep active target projections visible in front of price.
+if showTargets
+    if buyTradeActive
+        if not na(buyEntryLine)
+            line.set_x2(buyEntryLine, bar_index + targetProjectionBars)
+        if not na(buySLLine)
+            line.set_x2(buySLLine, bar_index + targetProjectionBars)
+        if not na(buyTP1Line)
+            line.set_x2(buyTP1Line, bar_index + targetProjectionBars)
+        if not na(buyTP2Line)
+            line.set_x2(buyTP2Line, bar_index + targetProjectionBars)
+        if not na(buyTP3Line)
+            line.set_x2(buyTP3Line, bar_index + targetProjectionBars)
+
+    if sellTradeActive
+        if not na(sellEntryLine)
+            line.set_x2(sellEntryLine, bar_index + targetProjectionBars)
+        if not na(sellSLLine)
+            line.set_x2(sellSLLine, bar_index + targetProjectionBars)
+        if not na(sellTP1Line)
+            line.set_x2(sellTP1Line, bar_index + targetProjectionBars)
+        if not na(sellTP2Line)
+            line.set_x2(sellTP2Line, bar_index + targetProjectionBars)
+        if not na(sellTP3Line)
+            line.set_x2(sellTP3Line, bar_index + targetProjectionBars)
+
+// =============================================================================
+// COUNTER
+// =============================================================================
+var table resultTable = table.new(position.top_right, 2, 2, border_width=0)
+
+if barstate.islast
+    if showStats
+        table.cell(resultTable, 0, 0, "TP :", text_color=color.rgb(213, 64, 239), text_size=size.large, bgcolor=color.new(color.black, 100), text_halign=text.align_right)
+        table.cell(resultTable, 1, 0, str.tostring(tpCount), text_color=color.rgb(62, 169, 255), text_size=size.large, bgcolor=color.new(color.black, 100), text_halign=text.align_left)
+        table.cell(resultTable, 0, 1, "SL :", text_color=color.rgb(213, 64, 239), text_size=size.large, bgcolor=color.new(color.black, 100), text_halign=text.align_right)
+        table.cell(resultTable, 1, 1, str.tostring(slCount), text_color=color.rgb(62, 169, 255), text_size=size.large, bgcolor=color.new(color.black, 100), text_halign=text.align_left)
+    else
+        table.clear(resultTable, 0, 0, 1, 1)
+
+// =============================================================================
+// ALERTS
+// =============================================================================
+alertcondition(buySignal, "AMY Predictive BUY", "AMY Predictive BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellSignal, "AMY Predictive SELL", "AMY Predictive SELL on {{ticker}} {{interval}} at {{close}}")
+alertcondition(buySignal or sellSignal, "AMY Predictive BUY / SELL", "AMY Predictive signal on {{ticker}} {{interval}} at {{close}}")
