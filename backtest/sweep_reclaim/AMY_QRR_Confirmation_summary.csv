@@ -1,4 +1,0 @@
-rr,wins,losses,timeouts,closed,setups,skipped,wr,net_r,final_balance,month_end_max_dd_pct,positive_months,code_changes,july2026_source_mask,july2026_confirmation_bars,july2026_atr_len,july2026_pivot_len,july2026_zone_width_atr,july2026_sweep_atr,july2026_reclaim_atr,july2026_sl_buffer_atr,july2026_min_body_atr,july2026_min_close_location,july2026_zone_expiry_bars
-1.0,1396,1353,4,2749,5421,30,50.78210258275737,43.0,2679.6994475441643,53.34437182441479,33,21,5,1,21,5,0.3,0.0,0.0,0.2,0.05,0.6,24
-2.0,986,1893,8,2879,5669,44,34.24800277874262,79.0,3297.7879446838924,42.29478757398651,26,28,5,1,7,7,0.4,0.2,0.0,0.25,0.05,0.55,24
-3.0,643,1817,22,2460,4760,27,26.13821138211382,112.0,4212.249281072264,38.35463103055176,25,29,5,1,14,7,0.4,0.05,0.1,0.1,0.15,0.55,144
