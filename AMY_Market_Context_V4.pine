@@ -1418,6 +1418,16 @@ amyDashV2_swingLen = input.int(3, "M15 Protected Swing Length", minval=2, maxval
 amyDashV2_sweepFreshBars = input.int(16, "Sweep Fresh Bars", minval=3, maxval=30, group=amyDashV2_group)
 amyDashV2_nearInvalidAtr = input.float(0.35, "Near Invalid ATR", minval=0.05, maxval=2.0, step=0.05, group=amyDashV2_group)
 amyDashV2_dispMult = input.float(1.20, "Displacement Body Mult", minval=0.80, maxval=3.0, step=0.05, group=amyDashV2_group)
+// EXPERIMENT HONESTY FILTERS: raw zones remain contextual, but only stronger formations are retained.
+// These constants are intentionally locked until the 2020-2025 regression test is rerun.
+amyExpV5_fvgBodyMult = 1.20
+amyExpV5_fvgMinGapAtr = 0.15
+amyExpV5_fvgMaxGapAtr = 0.75
+amyExpV5_obBodyMult = 2.00
+amyExpV5_obMinWidthAtr = 0.30
+amyExpV5_obMaxWidthAtr = 1.50
+amyExpV5_dolMaxDistanceAtr = 1.00
+amyExpV5_retestRequired = true
 amyDashV2_minSweepTicks = input.int(1, "False Sweep Filter Ticks", minval=0, maxval=20, group=amyDashV2_group)
 amyDashV2_poiMinAgeBars = input.int(1, "POI Min Age (M15 Bars)", minval=0, maxval=8, group=amyDashV2_group, tooltip="POI tetap terlihat sejak terbentuk, tetapi baru boleh memberi skor setelah bertahan sejumlah closed M15 bar ini.")
 
@@ -1483,6 +1493,12 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks, _po
     var int _bearFvgCreatedBar = na
     var int _bullObCreatedBar = na
     var int _bearObCreatedBar = na
+
+    // Acceptance requires persistence. One close outside is not enough.
+    var int _bullFvgOutsideCloses = 0
+    var int _bearFvgOutsideCloses = 0
+    var int _bullObOutsideCloses = 0
+    var int _bearObOutsideCloses = 0
 
     // Closed M15 snapshot
     _o = open[1]
@@ -1634,30 +1650,48 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks, _po
 
     if _canStartNewDol
         if _sslSweepNow and not _bslSweepNow and not na(_bsl)
+            // Every sweep remains observable, but a DOL target is created only after the honesty filter passes.
             _lastSweepDir := 1
             _lastSweepBar := _bi
             _sweptPrice := _ssl
             _sweepExtreme := _l
+            _dolDistanceCandidate = math.abs(_bsl - _c)
+            _dolQuality = _biasDir == 1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr
 
-            // FIX DOL: lock direction, target, start bar, and structural extreme.
-            _dolDirLocked := 1
-            _dolTargetLocked := _bsl
-            _dolStartBar := _bi
-            _sweepExtremeLocked := _l
-            _dolState := 1
+            if _dolQuality
+                _dolDirLocked := 1
+                _dolTargetLocked := _bsl
+                _dolStartBar := _bi
+                _sweepExtremeLocked := _l
+                _dolState := 1
+            else
+                _dolState := 0
+                _dolDirLocked := 0
+                _dolStartBar := na
+                _dolTargetLocked := na
+                _sweepExtremeLocked := na
 
         else if _bslSweepNow and not _sslSweepNow and not na(_ssl)
+            // Every sweep remains observable, but a DOL target is created only after the honesty filter passes.
             _lastSweepDir := -1
             _lastSweepBar := _bi
             _sweptPrice := _bsl
             _sweepExtreme := _h
+            _dolDistanceCandidate = math.abs(_ssl - _c)
+            _dolQuality = _biasDir == -1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr
 
-            // FIX DOL: lock direction, target, start bar, and structural extreme.
-            _dolDirLocked := -1
-            _dolTargetLocked := _ssl
-            _dolStartBar := _bi
-            _sweepExtremeLocked := _h
-            _dolState := 1
+            if _dolQuality
+                _dolDirLocked := -1
+                _dolTargetLocked := _ssl
+                _dolStartBar := _bi
+                _sweepExtremeLocked := _h
+                _dolState := 1
+            else
+                _dolState := 0
+                _dolDirLocked := 0
+                _dolStartBar := na
+                _dolTargetLocked := na
+                _sweepExtremeLocked := na
 
     _sweepFresh = not na(_lastSweepBar) and _bi - _lastSweepBar < _freshBars
     _sweepOld = not na(_lastSweepBar) and _bi - _lastSweepBar >= _freshBars
@@ -1677,21 +1711,29 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks, _po
     _dolDistance = na(_dolTarget) ? na : math.abs(_dolTarget - _c)
     _dolAlign = _dolState != 1 or _dolDir == 0 or _biasDir == 0 ? 0 : _dolDir == _biasDir ? 1 : -1
 
-    // FVG creation
-    _bullFvgNew = not na(high[3]) and low[1] > high[3]
-    _bearFvgNew = not na(low[3]) and high[1] < low[3]
+    // FVG creation — retain only displacement-backed gaps with realistic ATR width.
+    _bullFvgRaw = not na(high[3]) and low[1] > high[3]
+    _bearFvgRaw = not na(low[3]) and high[1] < low[3]
+    _bullFvgGap = _bullFvgRaw ? low[1] - high[3] : na
+    _bearFvgGap = _bearFvgRaw ? low[3] - high[1] : na
+    _bullFvgGapAtr = not na(_bullFvgGap) and not na(_atr) ? _bullFvgGap / math.max(_atr, syminfo.mintick) : na
+    _bearFvgGapAtr = not na(_bearFvgGap) and not na(_atr) ? _bearFvgGap / math.max(_atr, syminfo.mintick) : na
+    _bullFvgNew = _bullFvgRaw and _c > _o and _body >= _meanBody * amyExpV5_fvgBodyMult and _bullFvgGapAtr >= amyExpV5_fvgMinGapAtr and _bullFvgGapAtr <= amyExpV5_fvgMaxGapAtr
+    _bearFvgNew = _bearFvgRaw and _c < _o and _body >= _meanBody * amyExpV5_fvgBodyMult and _bearFvgGapAtr >= amyExpV5_fvgMinGapAtr and _bearFvgGapAtr <= amyExpV5_fvgMaxGapAtr
 
     if _bullFvgNew
         _bullFvgTop := low[1]
         _bullFvgBtm := high[3]
         _bullFvgStatus := 1
         _bullFvgCreatedBar := _bi
+        _bullFvgOutsideCloses := 0
 
     if _bearFvgNew
         _bearFvgTop := low[3]
         _bearFvgBtm := high[1]
         _bearFvgStatus := 1
         _bearFvgCreatedBar := _bi
+        _bearFvgOutsideCloses := 0
 
     // FIX POI: one-bar gate prevents the formation candle from touching itself.
     _bullFvgCanTransition = _bullFvgStatus > 0 and _bullFvgStatus < 4 and not na(_bullFvgCreatedBar) and _bi > _bullFvgCreatedBar
@@ -1712,46 +1754,62 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks, _po
     _bullFvgMitigated = (_bullFvgStatus == 1 or _bullFvgStatus == 2) and _bullFvgIntersects and not na(_bullFvgMid) and _l <= _bullFvgMid
     _bearFvgMitigated = (_bearFvgStatus == 1 or _bearFvgStatus == 2) and _bearFvgIntersects and not na(_bearFvgMid) and _h >= _bearFvgMid
 
-    // FIX POI: monotonic FVG state machine; first touch may go directly Fresh -> Mitigated.
+    // HONESTY FIX: one close outside is only a warning. Acceptance requires two consecutive closed M15 candles.
     if _bullFvgCanTransition and not na(_bullFvgLow)
         if _c < _bullFvgLow
-            _bullFvgStatus := 4
-        else if _bullFvgStatus == 1
-            if _bullFvgMitigated
+            _bullFvgOutsideCloses += 1
+            if _bullFvgOutsideCloses >= 2
+                _bullFvgStatus := 4
+        else
+            _bullFvgOutsideCloses := 0
+            if _bullFvgStatus == 1
+                if _bullFvgMitigated
+                    _bullFvgStatus := 3
+                else if _bullFvgTouched
+                    _bullFvgStatus := 2
+            else if _bullFvgStatus == 2 and _bullFvgMitigated
                 _bullFvgStatus := 3
-            else if _bullFvgTouched
-                _bullFvgStatus := 2
-        else if _bullFvgStatus == 2 and _bullFvgMitigated
-            _bullFvgStatus := 3
 
     if _bearFvgCanTransition and not na(_bearFvgHigh)
         if _c > _bearFvgHigh
-            _bearFvgStatus := 4
-        else if _bearFvgStatus == 1
-            if _bearFvgMitigated
+            _bearFvgOutsideCloses += 1
+            if _bearFvgOutsideCloses >= 2
+                _bearFvgStatus := 4
+        else
+            _bearFvgOutsideCloses := 0
+            if _bearFvgStatus == 1
+                if _bearFvgMitigated
+                    _bearFvgStatus := 3
+                else if _bearFvgTouched
+                    _bearFvgStatus := 2
+            else if _bearFvgStatus == 2 and _bearFvgMitigated
                 _bearFvgStatus := 3
-            else if _bearFvgTouched
-                _bearFvgStatus := 2
-        else if _bearFvgStatus == 2 and _bearFvgMitigated
-            _bearFvgStatus := 3
 
-    // OB creation retains the original candle-selection logic.
-    _bullDisp = _c > _o and _body > _meanBody * _dispMult and _c > high[2]
-    _bearDisp = _c < _o and _body > _meanBody * _dispMult and _c < low[2]
+    // OB creation — require a genuine opposite candle, stronger displacement, and controlled ATR width.
+    _bullObTopCandidate = open[2]
+    _bullObBtmCandidate = low[2]
+    _bearObTopCandidate = high[2]
+    _bearObBtmCandidate = open[2]
+    _bullObWidthAtr = not na(_atr) ? math.abs(_bullObTopCandidate - _bullObBtmCandidate) / math.max(_atr, syminfo.mintick) : na
+    _bearObWidthAtr = not na(_atr) ? math.abs(_bearObTopCandidate - _bearObBtmCandidate) / math.max(_atr, syminfo.mintick) : na
+    _bullDisp = _c > _o and _body > _meanBody * math.max(_dispMult, amyExpV5_obBodyMult) and _c > high[2]
+    _bearDisp = _c < _o and _body > _meanBody * math.max(_dispMult, amyExpV5_obBodyMult) and _c < low[2]
+    _bullObNew = _bullDisp and close[2] < open[2] and _bullObWidthAtr >= amyExpV5_obMinWidthAtr and _bullObWidthAtr <= amyExpV5_obMaxWidthAtr
+    _bearObNew = _bearDisp and close[2] > open[2] and _bearObWidthAtr >= amyExpV5_obMinWidthAtr and _bearObWidthAtr <= amyExpV5_obMaxWidthAtr
 
-    if _bullDisp
-        _bullObTop := close[2] < open[2] ? open[2] : open[1]
-        _bullObBtm := close[2] < open[2] ? low[2] : low[1]
+    if _bullObNew
+        _bullObTop := _bullObTopCandidate
+        _bullObBtm := _bullObBtmCandidate
         _bullObStatus := 1
-        // Created bar is the confirming displacement bar, regardless of [2] or [1] source candle.
         _bullObCreatedBar := _bi
+        _bullObOutsideCloses := 0
 
-    if _bearDisp
-        _bearObTop := close[2] > open[2] ? high[2] : high[1]
-        _bearObBtm := close[2] > open[2] ? open[2] : open[1]
+    if _bearObNew
+        _bearObTop := _bearObTopCandidate
+        _bearObBtm := _bearObBtmCandidate
         _bearObStatus := 1
-        // Created bar is the confirming displacement bar, regardless of [2] or [1] source candle.
         _bearObCreatedBar := _bi
+        _bearObOutsideCloses := 0
 
     // FIX POI: one-bar gate for OB transitions.
     _bullObCanTransition = _bullObStatus > 0 and _bullObStatus < 4 and not na(_bullObCreatedBar) and _bi > _bullObCreatedBar
@@ -1772,28 +1830,36 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks, _po
     _bullObMitigated = (_bullObStatus == 1 or _bullObStatus == 2) and _bullObIntersects and not na(_bullObMid) and _l <= _bullObMid
     _bearObMitigated = (_bearObStatus == 1 or _bearObStatus == 2) and _bearObIntersects and not na(_bearObMid) and _h >= _bearObMid
 
-    // FIX POI: monotonic OB state machine; first touch may go directly Fresh -> Mitigated.
+    // HONESTY FIX: one close outside is only a warning. Acceptance requires two consecutive closed M15 candles.
     if _bullObCanTransition and not na(_bullObLowRaw)
         if _c < _bullObLowRaw
-            _bullObStatus := 4
-        else if _bullObStatus == 1
-            if _bullObMitigated
+            _bullObOutsideCloses += 1
+            if _bullObOutsideCloses >= 2
+                _bullObStatus := 4
+        else
+            _bullObOutsideCloses := 0
+            if _bullObStatus == 1
+                if _bullObMitigated
+                    _bullObStatus := 3
+                else if _bullObTouched
+                    _bullObStatus := 2
+            else if _bullObStatus == 2 and _bullObMitigated
                 _bullObStatus := 3
-            else if _bullObTouched
-                _bullObStatus := 2
-        else if _bullObStatus == 2 and _bullObMitigated
-            _bullObStatus := 3
 
     if _bearObCanTransition and not na(_bearObHighRaw)
         if _c > _bearObHighRaw
-            _bearObStatus := 4
-        else if _bearObStatus == 1
-            if _bearObMitigated
+            _bearObOutsideCloses += 1
+            if _bearObOutsideCloses >= 2
+                _bearObStatus := 4
+        else
+            _bearObOutsideCloses := 0
+            if _bearObStatus == 1
+                if _bearObMitigated
+                    _bearObStatus := 3
+                else if _bearObTouched
+                    _bearObStatus := 2
+            else if _bearObStatus == 2 and _bearObMitigated
                 _bearObStatus := 3
-            else if _bearObTouched
-                _bearObStatus := 2
-        else if _bearObStatus == 2 and _bearObMitigated
-            _bearObStatus := 3
 
     // Dealing range
     _rh = not na(_rangeHigh) and not na(_rangeLow) ? math.max(_rangeHigh, _rangeLow) : na
@@ -1891,11 +1957,11 @@ amyDashV2_sweepText = amyDashV2_sweepDir == 1 ? "SSL Swept" : amyDashV2_sweepDir
 amyDashV2_sweepStatusText = amyDashV2_sweepStatus == 1 ? "Fresh" : amyDashV2_sweepStatus == 2 ? "Old" : amyDashV2_sweepStatus == 3 ? "Invalid" : amyDashV2_sweepStatus == 4 ? "Expired" : amyDashV2_sweepStatus == 5 ? "Abandoned" : "None"
 
 amyDashV2_dolText = amyDashV2_dolDir == 1 ? "Draw to BSL" : amyDashV2_dolDir == -1 ? "Draw to SSL" : "Neutral"
-amyDashV2_dolStatusText = amyDashV2_dolStatus == 1 ? "Active" : amyDashV2_dolStatus == 2 ? "Reached" : amyDashV2_dolStatus == 3 ? "Invalid" : amyDashV2_dolStatus == 4 ? "Expired" : amyDashV2_dolStatus == 5 ? "Abandoned" : "Neutral"
+amyDashV2_dolStatusText = amyDashV2_dolStatus == 1 ? "Qualified Active" : amyDashV2_dolStatus == 2 ? "Reached" : amyDashV2_dolStatus == 3 ? "Invalid" : amyDashV2_dolStatus == 4 ? "Expired" : amyDashV2_dolStatus == 5 ? "Abandoned" : "No Qualified DOL"
 amyDashV2_dolAlignText = amyDashV2_dolAlign == 1 ? "With Bias" : amyDashV2_dolAlign == -1 ? "Against Bias" : "Neutral"
 
 amyDashV2_poiTypeText = amyDashV2_poiType == 1 ? "Bull OB" : amyDashV2_poiType == 2 ? "Bull FVG" : amyDashV2_poiType == -1 ? "Bear OB" : amyDashV2_poiType == -2 ? "Bear FVG" : "None"
-amyDashV2_poiStatusText = amyDashV2_poiStatus == 1 ? "Fresh" : amyDashV2_poiStatus == 2 ? "Active" : amyDashV2_poiStatus == 3 ? "Mitigated" : amyDashV2_poiStatus == 4 ? "Failed" : "None"
+amyDashV2_poiStatusText = amyDashV2_poiStatus == 1 ? "Fresh • OBS" : amyDashV2_poiStatus == 2 ? "Touched • OBS" : amyDashV2_poiStatus == 3 ? "Mitigated • OBS" : amyDashV2_poiStatus == 4 ? "Accepted • 2x M15 Close" : "None"
 amyDashV2_poiAlignText = amyDashV2_poiAlign == 1 ? "With Bias" : amyDashV2_poiAlign == -1 ? "Against Bias" : "Neutral"
 amyDashV2_poiLocationText = amyDashV2_poiLocation == 1 ? "Premium" : amyDashV2_poiLocation == -1 ? "Discount" : "EQ Zone"
 amyDashV2_poiPriorityText = amyDashV2_poiPriority == 2 ? "Main" : amyDashV2_poiPriority == 1 ? "Secondary" : "Ignore"
@@ -1908,7 +1974,7 @@ amyDashV2_invalidText = amyDashV2_invalidStatus == 2 ? "Invalid" : amyDashV2_inv
 amyDashV2_reason = ""
 amyDashV2_reason := amyDashV2_join(amyDashV2_reason, amyDashV2_mssText)
 amyDashV2_reason := amyDashV2_join(amyDashV2_reason, amyDashV2_sweepStatus == 1 ? amyDashV2_sweepText + " Fresh" : "")
-amyDashV2_reason := amyDashV2_join(amyDashV2_reason, amyDashV2_dolStatus == 1 ? amyDashV2_dolText + " raw " + amyDashV2_price(amyDashV2_dolTarget) : "")
+amyDashV2_reason := amyDashV2_join(amyDashV2_reason, amyDashV2_dolStatus == 1 ? amyDashV2_dolText + " qualified " + amyDashV2_price(amyDashV2_dolTarget) : "")
 amyDashV2_reason := amyDashV2_join(amyDashV2_reason, amyDashV2_poiPriority == 2 ? amyDashV2_poiTypeText + " Main" : "")
 amyDashV2_reason := amyDashV2_reason == "" ? "Belum ada alasan kuat" : amyDashV2_reason
 
@@ -1937,7 +2003,7 @@ if amyDashV2_show and barstate.islast
     table.set_position(amyDashV2_table, amyDashV2_pos(amyDashV2_posInput))
     table.clear(amyDashV2_table, 0, 0, 1, 15)
 
-    table.cell(amyDashV2_table, 0, 0, "AMY MARKET CONTEXT V4", text_color=color.white, bgcolor=amyDashV2_headBg, text_size=size.tiny)
+    table.cell(amyDashV2_table, 0, 0, "AMY CONTEXT EXPERIMENT", text_color=color.white, bgcolor=amyDashV2_headBg, text_size=size.tiny)
     table.cell(amyDashV2_table, 1, 0, "M15 CLOSED", text_color=color.white, bgcolor=amyDashV2_headBg, text_size=size.tiny)
 
     table.cell(amyDashV2_table, 0, 1, "RAW STRUCTURE", text_color=color.white, bgcolor=amyDashV2_keyBg, text_size=size.tiny)
@@ -1988,7 +2054,7 @@ if amyDashV2_show and barstate.islast
 if not amyDashV2_show and barstate.islast
     table.clear(amyDashV2_table, 0, 0, 1, 15)
 
-//==================== AMY ASSISTANT V4 — VALIDATED CLAIMS + OBSERVATION ====================//
+//==================== AMY ASSISTANT V4 — EXPERIMENTAL DEPENDENCY REVALIDATION ====================//
 amyEntryV2_group = "AMY Assistant V4"
 amyEntryV2_show = input.bool(true, "Show Entry Assistant", group=amyEntryV2_group)
 amyEntryV2_showChartNotes = input.bool(true, "Show Chart Narration", group=amyEntryV2_group)
@@ -2242,8 +2308,8 @@ if amyEntryV2_dolActiveEvent
 else if amyDashV2_dolStatus != 1
     amyEntryV3_targetQualityLocked := false
 
-amyEntryV3_validatedTarget = amyDashV2_dolStatus == 1 and amyEntryV3_targetQualityLocked
-amyEntryV3_validatedTargetEvent = amyEntryV2_dolActiveEvent and amyEntryV3_targetQualityAtStart
+amyEntryV3_validatedTarget = not amyExpV5_retestRequired and amyDashV2_dolStatus == 1 and amyEntryV3_targetQualityLocked
+amyEntryV3_validatedTargetEvent = not amyExpV5_retestRequired and amyEntryV2_dolActiveEvent and amyEntryV3_targetQualityAtStart
 
 // =====================================================================
 // MARKET CONTEXT V4 — LOCKED VALIDATION FOR THE REMAINING CONTEXT
@@ -2395,7 +2461,7 @@ amyContextV4_poiOutside = amyContextV4_poiFresh and (low > amyDashV2_poiHigh or 
 amyContextV4_poiDir = amyContextV4_poiOutside ? (close > amyDashV2_poiHigh ? -1 : 1) : 0
 amyContextV4_poiCandidate = amyContextV4_poiDir == -1 ? amyDashV2_poiHigh : amyContextV4_poiDir == 1 ? amyDashV2_poiLow : na
 amyContextV4_poiDistAtr = amyContextV4_poiDir != 0 and not na(amyEntryV2_atr14) ? math.abs(amyContextV4_poiCandidate - close) / amyEntryV2_atr14 : na
-amyContextV4_poiEvent = amyContextV4_poiEventRaw and amyContextV4_poiOutside and not na(amyContextV4_poiDistAtr) and amyContextV4_poiDistAtr <= amyContextV4_poiRevisitMaxAtr
+amyContextV4_poiEvent = not amyExpV5_retestRequired and amyContextV4_poiEventRaw and amyContextV4_poiOutside and not na(amyContextV4_poiDistAtr) and amyContextV4_poiDistAtr <= amyContextV4_poiRevisitMaxAtr
 var int amyContextV4_poiState = 0
 var int amyContextV4_poiStartBar = na
 var int amyContextV4_poiLockedDir = 0
@@ -2416,7 +2482,7 @@ else if amyContextV4_poiState == 1
 amyContextV4_poiActive = amyContextV4_poiState == 1
 
 // --- Validated Asia entry: close entry, nearest Asia TP, fixed 0.20 reward:risk ---
-amyContextV4_asiaEntryEvent = amyContextV4_midnightEvent and amyContextV4_asiaDir != 0 and not na(amyContextV4_asiaDistAtr) and
+amyContextV4_asiaEntryEvent = not amyExpV5_retestRequired and amyContextV4_midnightEvent and amyContextV4_asiaDir != 0 and not na(amyContextV4_asiaDistAtr) and
  amyContextV4_asiaDistAtr >= amyContextV4_asiaEntryMinAtr and amyContextV4_asiaDistAtr <= amyContextV4_asiaEntryMaxAtr
 var int amyContextV4_asiaEntryState = 0  // 1 active, 2 TP, 3 SL, 4 timeout
 var int amyContextV4_asiaEntryStartBar = na
@@ -2778,7 +2844,7 @@ if amyDashV2_show and barstate.islast
     _protectedRole = amyDashV2_biasDir == 1 ? "P-LOW" : amyDashV2_biasDir == -1 ? "P-HIGH" : "REFERENCE"
     _protectedValidation = not amyContextV4_isM5 ? "M5 VALIDATION ONLY" : amyContextV4_protectedActive ? (_protectedRole + " VALID 1H " + (amyDashV2_biasDir == 1 ? "93.47%" : "91.86%")) : "REFERENCE ONLY"
     table.cell(amyDashV2_table, 1, 3, "H " + amyDashV2_price(amyDashV2_protectedHigh) + " | L " + amyDashV2_price(amyDashV2_protectedLow) + " | " + _protectedValidation, text_color=color.white, bgcolor=amyContextV4_protectedActive ? amyDashV2_buyBg : amyDashV2_cellBg, text_size=size.tiny)
-    _dashDolState = amyDashV2_dolStatus == 1 ? (amyEntryV3_validatedTarget ? "VALIDATED TARGET" : "OBSERVATION ONLY") : amyDashV2_dolStatusText
+    _dashDolState = amyDashV2_dolStatus == 1 ? (amyExpV5_retestRequired ? "QUALIFIED • RETEST REQUIRED" : amyEntryV3_validatedTarget ? "VALIDATED TARGET" : "OBSERVATION ONLY") : amyDashV2_dolStatusText
     _dashDolBg = amyEntryV3_validatedTarget ? (amyDashV2_dolDir == 1 ? amyDashV2_buyBg : amyDashV2_sellBg) : amyDashV2_dolStatus == 1 ? amyDashV2_neutralBg : amyDashV2_dolBg
     table.cell(amyDashV2_table, 1, 7, amyDashV2_dolText + " @ " + amyDashV2_price(amyDashV2_dolTarget) + " | " + _dashDolState, text_color=color.white, bgcolor=_dashDolBg, text_size=size.tiny)
     table.cell(amyDashV2_table, 1, 8, "Dist " + amyDashV2_price(amyDashV2_dolDistance) + " | Score " + str.tostring(amyEntryV2_dolDirectionScore) + " | " + amyDashV2_dolAlignText, text_color=color.white, bgcolor=amyDashV2_cellBg, text_size=size.tiny)
