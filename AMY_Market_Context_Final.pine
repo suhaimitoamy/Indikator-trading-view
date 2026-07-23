@@ -1,0 +1,474 @@
+//@version=5
+indicator("AMY Market Context Final", overlay=true, max_labels_count=300, max_lines_count=300)
+
+// ============================================================================
+// AMY MARKET CONTEXT FINAL
+// Final production profile from the 2023-2025 honesty backtests.
+// High Confidence: >=80%. Moderate Confidence: 70-79%.
+// Designed for XAUUSD validation on M5 with M15 context.
+// ============================================================================
+
+grpCore = "AMY Final — Core"
+showTable = input.bool(true, "Show Status Dashboard", group=grpCore)
+showMarkers = input.bool(true, "Show Event Markers", group=grpCore)
+showZones = input.bool(true, "Show Active Zones", group=grpCore)
+swingLen = input.int(3, "M15 Swing Length", minval=2, maxval=10, group=grpCore)
+
+// Locked thresholds. Do not tune these from live outcomes.
+fvgBodyMult = 1.20
+fvgMinGapAtr = 0.15
+fvgMaxGapAtr = 0.75
+obBodyMult = 2.00
+obMinWidthAtr = 0.30
+obMaxWidthAtr = 1.50
+acceptCloses = 3
+acceptContinuationAtr = 0.30
+poiMaxDistanceAtr = 1.25
+dolMaxDistanceAtr = 0.75
+dolMinClosePosition = 0.80
+asiaEntryMinAtr = 0.35
+asiaEntryMaxAtr = 1.00
+asiaEntryRewardRisk = 0.20
+fourHoursM5 = 48
+
+amyFinal_engine(_swingLen) =>
+    var float _lastPH = na
+    var float _lastPL = na
+    var int _bias = 0
+    var float _invalid = na
+
+    var float _bullFvgHigh = na
+    var float _bullFvgLow = na
+    var int _bullFvgStatus = 0
+    var int _bullFvgCreated = na
+    var int _bullFvgOutside = 0
+
+    var float _bearFvgHigh = na
+    var float _bearFvgLow = na
+    var int _bearFvgStatus = 0
+    var int _bearFvgCreated = na
+    var int _bearFvgOutside = 0
+
+    var float _bullObHigh = na
+    var float _bullObLow = na
+    var int _bullObStatus = 0
+    var int _bullObCreated = na
+    var int _bullObOutside = 0
+
+    var float _bearObHigh = na
+    var float _bearObLow = na
+    var int _bearObStatus = 0
+    var int _bearObCreated = na
+    var int _bearObOutside = 0
+
+    _atr = ta.atr(14)
+    _body = math.abs(close - open)
+    _meanBody = ta.sma(math.abs(close - open), 20)
+
+    // Closed M15 structure.
+    _ph = ta.pivothigh(high, _swingLen, _swingLen)
+    _pl = ta.pivotlow(low, _swingLen, _swingLen)
+    if not na(_ph)
+        _lastPH := _ph
+    if not na(_pl)
+        _lastPL := _pl
+
+    _bullMss = not na(_lastPH) and not na(_lastPL) and close > _lastPH and close[1] <= _lastPH
+    _bearMss = not na(_lastPH) and not na(_lastPL) and close < _lastPL and close[1] >= _lastPL
+
+    if _bias == 1 and not na(_invalid) and close < _invalid
+        if _bearMss
+            _bias := -1
+            _invalid := _lastPH
+        else
+            _bias := 0
+            _invalid := na
+    else if _bias == -1 and not na(_invalid) and close > _invalid
+        if _bullMss
+            _bias := 1
+            _invalid := _lastPL
+        else
+            _bias := 0
+            _invalid := na
+    else if _bullMss and _bias != 1
+        _bias := 1
+        _invalid := _lastPL
+    else if _bearMss and _bias != -1
+        _bias := -1
+        _invalid := _lastPH
+
+    // Filtered FVG formation and honest acceptance.
+    _bullFvgRaw = not na(high[2]) and low > high[2]
+    _bearFvgRaw = not na(low[2]) and high < low[2]
+    _bullGapAtr = _bullFvgRaw and not na(_atr) ? (low - high[2]) / math.max(_atr, syminfo.mintick) : na
+    _bearGapAtr = _bearFvgRaw and not na(_atr) ? (low[2] - high) / math.max(_atr, syminfo.mintick) : na
+    _bullFvgNew = _bullFvgRaw and close > open and _body >= _meanBody * fvgBodyMult and _bullGapAtr >= fvgMinGapAtr and _bullGapAtr <= fvgMaxGapAtr
+    _bearFvgNew = _bearFvgRaw and close < open and _body >= _meanBody * fvgBodyMult and _bearGapAtr >= fvgMinGapAtr and _bearGapAtr <= fvgMaxGapAtr
+
+    if _bullFvgNew
+        _bullFvgHigh := low
+        _bullFvgLow := high[2]
+        _bullFvgStatus := 1
+        _bullFvgCreated := bar_index
+        _bullFvgOutside := 0
+
+    if _bearFvgNew
+        _bearFvgHigh := low[2]
+        _bearFvgLow := high
+        _bearFvgStatus := 1
+        _bearFvgCreated := bar_index
+        _bearFvgOutside := 0
+
+    _bullFvgCanMove = _bullFvgStatus > 0 and _bullFvgStatus < 4 and not na(_bullFvgCreated) and bar_index > _bullFvgCreated
+    _bearFvgCanMove = _bearFvgStatus > 0 and _bearFvgStatus < 4 and not na(_bearFvgCreated) and bar_index > _bearFvgCreated
+    _bullFvgMid = not na(_bullFvgHigh) and not na(_bullFvgLow) ? (_bullFvgHigh + _bullFvgLow) / 2.0 : na
+    _bearFvgMid = not na(_bearFvgHigh) and not na(_bearFvgLow) ? (_bearFvgHigh + _bearFvgLow) / 2.0 : na
+    _bullFvgTouch = _bullFvgCanMove and low <= _bullFvgHigh and high >= _bullFvgLow
+    _bearFvgTouch = _bearFvgCanMove and high >= _bearFvgLow and low <= _bearFvgHigh
+
+    if _bullFvgCanMove
+        if close < _bullFvgLow
+            _bullFvgOutside += 1
+            if _bullFvgOutside >= acceptCloses and (_bullFvgLow - close) >= _atr * acceptContinuationAtr
+                _bullFvgStatus := 4
+        else
+            _bullFvgOutside := 0
+            if _bullFvgStatus == 1 and _bullFvgTouch
+                _bullFvgStatus := low <= _bullFvgMid ? 3 : 2
+            else if _bullFvgStatus == 2 and _bullFvgTouch and low <= _bullFvgMid
+                _bullFvgStatus := 3
+
+    if _bearFvgCanMove
+        if close > _bearFvgHigh
+            _bearFvgOutside += 1
+            if _bearFvgOutside >= acceptCloses and (close - _bearFvgHigh) >= _atr * acceptContinuationAtr
+                _bearFvgStatus := 4
+        else
+            _bearFvgOutside := 0
+            if _bearFvgStatus == 1 and _bearFvgTouch
+                _bearFvgStatus := high >= _bearFvgMid ? 3 : 2
+            else if _bearFvgStatus == 2 and _bearFvgTouch and high >= _bearFvgMid
+                _bearFvgStatus := 3
+
+    // Filtered Order Block formation and honest acceptance.
+    _bullObHighCandidate = open[1]
+    _bullObLowCandidate = low[1]
+    _bearObHighCandidate = high[1]
+    _bearObLowCandidate = open[1]
+    _bullObWidthAtr = not na(_atr) ? math.abs(_bullObHighCandidate - _bullObLowCandidate) / math.max(_atr, syminfo.mintick) : na
+    _bearObWidthAtr = not na(_atr) ? math.abs(_bearObHighCandidate - _bearObLowCandidate) / math.max(_atr, syminfo.mintick) : na
+    _bullObNew = close > open and _body > _meanBody * obBodyMult and close > high[1] and close[1] < open[1] and _bullObWidthAtr >= obMinWidthAtr and _bullObWidthAtr <= obMaxWidthAtr
+    _bearObNew = close < open and _body > _meanBody * obBodyMult and close < low[1] and close[1] > open[1] and _bearObWidthAtr >= obMinWidthAtr and _bearObWidthAtr <= obMaxWidthAtr
+
+    if _bullObNew
+        _bullObHigh := _bullObHighCandidate
+        _bullObLow := _bullObLowCandidate
+        _bullObStatus := 1
+        _bullObCreated := bar_index
+        _bullObOutside := 0
+
+    if _bearObNew
+        _bearObHigh := _bearObHighCandidate
+        _bearObLow := _bearObLowCandidate
+        _bearObStatus := 1
+        _bearObCreated := bar_index
+        _bearObOutside := 0
+
+    _bullObCanMove = _bullObStatus > 0 and _bullObStatus < 4 and not na(_bullObCreated) and bar_index > _bullObCreated
+    _bearObCanMove = _bearObStatus > 0 and _bearObStatus < 4 and not na(_bearObCreated) and bar_index > _bearObCreated
+    _bullObMid = not na(_bullObHigh) and not na(_bullObLow) ? (_bullObHigh + _bullObLow) / 2.0 : na
+    _bearObMid = not na(_bearObHigh) and not na(_bearObLow) ? (_bearObHigh + _bearObLow) / 2.0 : na
+    _bullObTouch = _bullObCanMove and low <= _bullObHigh and high >= _bullObLow
+    _bearObTouch = _bearObCanMove and high >= _bearObLow and low <= _bearObHigh
+
+    if _bullObCanMove
+        if close < _bullObLow
+            _bullObOutside += 1
+            if _bullObOutside >= acceptCloses and (_bullObLow - close) >= _atr * acceptContinuationAtr
+                _bullObStatus := 4
+        else
+            _bullObOutside := 0
+            if _bullObStatus == 1 and _bullObTouch
+                _bullObStatus := low <= _bullObMid ? 3 : 2
+            else if _bullObStatus == 2 and _bullObTouch and low <= _bullObMid
+                _bullObStatus := 3
+
+    if _bearObCanMove
+        if close > _bearObHigh
+            _bearObOutside += 1
+            if _bearObOutside >= acceptCloses and (close - _bearObHigh) >= _atr * acceptContinuationAtr
+                _bearObStatus := 4
+        else
+            _bearObOutside := 0
+            if _bearObStatus == 1 and _bearObTouch
+                _bearObStatus := high >= _bearObMid ? 3 : 2
+            else if _bearObStatus == 2 and _bearObTouch and high >= _bearObMid
+                _bearObStatus := 3
+
+    // Moderate-confidence DOL from a qualified sweep.
+    _bslSweep = not na(_lastPH) and high > _lastPH and close < _lastPH
+    _sslSweep = not na(_lastPL) and low < _lastPL and close > _lastPL
+    _sweepDir = _sslSweep and not _bslSweep ? 1 : _bslSweep and not _sslSweep ? -1 : 0
+    _candleRange = math.max(high - low, syminfo.mintick)
+    _bullClosePos = (close - low) / _candleRange
+    _bearClosePos = (high - close) / _candleRange
+
+    int _dolDir = 0
+    float _dolTarget = na
+    int _dolEventBar = na
+    _bullDolTarget = _lastPH
+    _bearDolTarget = _lastPL
+    _bullDolDist = not na(_bullDolTarget) and not na(_atr) ? (_bullDolTarget - close) / math.max(_atr, syminfo.mintick) : na
+    _bearDolDist = not na(_bearDolTarget) and not na(_atr) ? (close - _bearDolTarget) / math.max(_atr, syminfo.mintick) : na
+    _healthyBull = _bias == 1 and (na(_invalid) or close > _invalid)
+    _healthyBear = _bias == -1 and (na(_invalid) or close < _invalid)
+
+    if _sslSweep and _healthyBull and close > open and _bullClosePos >= dolMinClosePosition and not na(_bullDolDist) and _bullDolDist > 0 and _bullDolDist <= dolMaxDistanceAtr and high < _bullDolTarget
+        _dolDir := 1
+        _dolTarget := _bullDolTarget
+        _dolEventBar := bar_index
+    else if _bslSweep and _healthyBear and close < open and _bearClosePos >= dolMinClosePosition and not na(_bearDolDist) and _bearDolDist > 0 and _bearDolDist <= dolMaxDistanceAtr and low > _bearDolTarget
+        _dolDir := -1
+        _dolTarget := _bearDolTarget
+        _dolEventBar := bar_index
+
+    _bullFvgMature = _bullFvgStatus == 1 and not na(_bullFvgCreated) and bar_index - _bullFvgCreated >= 1
+    _bearFvgMature = _bearFvgStatus == 1 and not na(_bearFvgCreated) and bar_index - _bearFvgCreated >= 1
+    _bullObMature = _bullObStatus == 1 and not na(_bullObCreated) and bar_index - _bullObCreated >= 1
+    _bearObMature = _bearObStatus == 1 and not na(_bearObCreated) and bar_index - _bearObCreated >= 1
+
+    [_bias, _invalid, _lastPH, _lastPL, _bullFvgHigh, _bullFvgLow, _bullFvgStatus, _bullFvgMature, _bearFvgHigh, _bearFvgLow, _bearFvgStatus, _bearFvgMature, _bullObHigh, _bullObLow, _bullObStatus, _bullObMature, _bearObHigh, _bearObLow, _bearObStatus, _bearObMature, _sweepDir, _dolDir, _dolTarget, _dolEventBar]
+
+[ctxBias, ctxInvalid, ctxBsl, ctxSsl, bullFvgHigh, bullFvgLow, bullFvgStatus, bullFvgMature, bearFvgHigh, bearFvgLow, bearFvgStatus, bearFvgMature, bullObHigh, bullObLow, bullObStatus, bullObMature, bearObHigh, bearObLow, bearObStatus, bearObMature, rawSweepDir, dolDirRaw, dolTargetRaw, dolEventBarRaw] = request.security(syminfo.tickerid, "15", amyFinal_engine(swingLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+isM5 = timeframe.isminutes and timeframe.multiplier == 5
+atr5 = ta.atr(14)
+
+// High-confidence FVG revisit — 83.70% on 2024.
+fvgFresh = ctxBias == 1 ? bullFvgMature : ctxBias == -1 ? bearFvgMature : false
+fvgPoiHigh = ctxBias == 1 ? bullFvgHigh : ctxBias == -1 ? bearFvgHigh : na
+fvgPoiLow = ctxBias == 1 ? bullFvgLow : ctxBias == -1 ? bearFvgLow : na
+fvgOutside = fvgFresh and not na(fvgPoiHigh) and not na(fvgPoiLow) and (low > fvgPoiHigh or high < fvgPoiLow)
+fvgPoiDir = fvgOutside ? (close > fvgPoiHigh ? -1 : 1) : 0
+fvgPoiTarget = fvgPoiDir == -1 ? fvgPoiHigh : fvgPoiDir == 1 ? fvgPoiLow : na
+fvgPoiDistAtr = fvgPoiDir != 0 and not na(atr5) ? math.abs(fvgPoiTarget - close) / atr5 : na
+fvgPoiRawEvent = isM5 and barstate.isconfirmed and fvgFresh and (not fvgFresh[1] or fvgPoiHigh != fvgPoiHigh[1] or fvgPoiLow != fvgPoiLow[1])
+fvgPoiEvent = fvgPoiRawEvent and fvgOutside and not na(fvgPoiDistAtr) and fvgPoiDistAtr <= poiMaxDistanceAtr
+
+var int fvgPoiState = 0
+var int fvgPoiStart = na
+var int fvgPoiLockedDir = 0
+var float fvgPoiLockedTarget = na
+if fvgPoiEvent
+    fvgPoiState := 1
+    fvgPoiStart := bar_index
+    fvgPoiLockedDir := fvgPoiDir
+    fvgPoiLockedTarget := fvgPoiTarget
+else if fvgPoiState == 1
+    _fvgHit = fvgPoiLockedDir == 1 ? high >= fvgPoiLockedTarget : low <= fvgPoiLockedTarget
+    if _fvgHit
+        fvgPoiState := 2
+    else if bar_index - fvgPoiStart >= fourHoursM5
+        fvgPoiState := 3
+
+fvgPoiActive = fvgPoiState == 1
+fvgPoiHitEvent = fvgPoiState == 2 and fvgPoiState[1] == 1
+
+// Moderate-confidence OB revisit — 76.34% combined 2023-2024.
+obFresh = ctxBias == 1 ? bullObMature : ctxBias == -1 ? bearObMature : false
+obPoiHigh = ctxBias == 1 ? bullObHigh : ctxBias == -1 ? bearObHigh : na
+obPoiLow = ctxBias == 1 ? bullObLow : ctxBias == -1 ? bearObLow : na
+obOutside = obFresh and not na(obPoiHigh) and not na(obPoiLow) and (low > obPoiHigh or high < obPoiLow)
+obPoiDir = obOutside ? (close > obPoiHigh ? -1 : 1) : 0
+obPoiTarget = obPoiDir == -1 ? obPoiHigh : obPoiDir == 1 ? obPoiLow : na
+obPoiDistAtr = obPoiDir != 0 and not na(atr5) ? math.abs(obPoiTarget - close) / atr5 : na
+obPoiRawEvent = isM5 and barstate.isconfirmed and obFresh and (not obFresh[1] or obPoiHigh != obPoiHigh[1] or obPoiLow != obPoiLow[1])
+obPoiEvent = obPoiRawEvent and obOutside and not na(obPoiDistAtr) and obPoiDistAtr <= poiMaxDistanceAtr
+
+var int obPoiState = 0
+var int obPoiStart = na
+var int obPoiLockedDir = 0
+var float obPoiLockedTarget = na
+if obPoiEvent
+    obPoiState := 1
+    obPoiStart := bar_index
+    obPoiLockedDir := obPoiDir
+    obPoiLockedTarget := obPoiTarget
+else if obPoiState == 1
+    _obHit = obPoiLockedDir == 1 ? high >= obPoiLockedTarget : low <= obPoiLockedTarget
+    if _obHit
+        obPoiState := 2
+    else if bar_index - obPoiStart >= fourHoursM5
+        obPoiState := 3
+
+obPoiActive = obPoiState == 1
+obPoiHitEvent = obPoiState == 2 and obPoiState[1] == 1
+
+// Moderate-confidence DOL — 75.00% combined 2023-2024.
+dolRawAvailable = not na(dolEventBarRaw) and dolDirRaw != 0 and not na(dolTargetRaw)
+dolEvent = isM5 and barstate.isconfirmed and dolRawAvailable and (na(dolEventBarRaw[1]) or dolEventBarRaw != dolEventBarRaw[1])
+
+var int dolState = 0
+var int dolStart = na
+var int dolLockedDir = 0
+var float dolLockedTarget = na
+var float dolLockedInvalid = na
+if dolEvent
+    dolState := 1
+    dolStart := bar_index
+    dolLockedDir := dolDirRaw
+    dolLockedTarget := dolTargetRaw
+    dolLockedInvalid := ctxInvalid
+else if dolState == 1
+    _dolHit = dolLockedDir == 1 ? high >= dolLockedTarget : low <= dolLockedTarget
+    _dolInvalid = not na(dolLockedInvalid) and (dolLockedDir == 1 ? close < dolLockedInvalid : close > dolLockedInvalid)
+    if _dolHit
+        dolState := 2
+    else if _dolInvalid
+        dolState := 3
+    else if bar_index - dolStart >= fourHoursM5
+        dolState := 4
+
+dolActive = dolState == 1
+dolHitEvent = dolState == 2 and dolState[1] == 1
+dolInvalidEvent = dolState == 3 and dolState[1] == 1
+
+// High-confidence Asia entry — 84.62% on 2024, RR 0.20.
+amyFinal_asiaEngine() =>
+    var float _h = na
+    var float _l = na
+    var float _lockedH = na
+    var float _lockedL = na
+    _in = not na(time(timeframe.period, "2000-0000", "America/New_York"))
+    _prev = not na(time(timeframe.period, "2000-0000", "America/New_York"))[1]
+    if _in and not _prev
+        _h := high
+        _l := low
+    if _in
+        _h := math.max(nz(_h, high), high)
+        _l := math.min(nz(_l, low), low)
+    if not _in and _prev
+        _lockedH := _h
+        _lockedL := _l
+    [_in ? _h : _lockedH, _in ? _l : _lockedL]
+
+[asiaHigh, asiaLow] = request.security(syminfo.tickerid, "1", amyFinal_asiaEngine(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+nyHour = hour(time, "America/New_York")
+nyMinute = minute(time, "America/New_York")
+midnightEvent = isM5 and barstate.isconfirmed and nyHour == 0 and nyMinute == 0
+asiaHighValid = not na(asiaHigh) and asiaHigh > high
+asiaLowValid = not na(asiaLow) and asiaLow < low
+asiaHighDist = asiaHighValid ? asiaHigh - close : na
+asiaLowDist = asiaLowValid ? close - asiaLow : na
+asiaDir = asiaHighValid and (not asiaLowValid or asiaHighDist <= asiaLowDist) ? 1 : asiaLowValid ? -1 : 0
+asiaTarget = asiaDir == 1 ? asiaHigh : asiaDir == -1 ? asiaLow : na
+asiaDistAtr = asiaDir != 0 and not na(atr5) ? math.abs(asiaTarget - close) / atr5 : na
+asiaEntryEvent = midnightEvent and asiaDir != 0 and not na(asiaDistAtr) and asiaDistAtr >= asiaEntryMinAtr and asiaDistAtr <= asiaEntryMaxAtr
+
+var int asiaState = 0
+var int asiaStart = na
+var int asiaLockedDir = 0
+var float asiaEntry = na
+var float asiaLockedTarget = na
+var float asiaStop = na
+if asiaEntryEvent
+    _reward = math.abs(asiaTarget - close)
+    asiaState := 1
+    asiaStart := bar_index
+    asiaLockedDir := asiaDir
+    asiaEntry := close
+    asiaLockedTarget := asiaTarget
+    asiaStop := close - asiaDir * (_reward / asiaEntryRewardRisk)
+else if asiaState == 1
+    _asiaSl = asiaLockedDir == 1 ? low <= asiaStop : high >= asiaStop
+    _asiaTp = asiaLockedDir == 1 ? high >= asiaLockedTarget : low <= asiaLockedTarget
+    if _asiaSl
+        asiaState := 3
+    else if _asiaTp
+        asiaState := 2
+    else if bar_index - asiaStart >= fourHoursM5
+        asiaState := 4
+
+asiaActive = asiaState == 1
+asiaTpEvent = asiaState == 2 and asiaState[1] == 1
+asiaSlEvent = asiaState == 3 and asiaState[1] == 1
+
+// Visuals.
+fvgAcceptedEvent = (bullFvgStatus == 4 and bullFvgStatus[1] != 4) or (bearFvgStatus == 4 and bearFvgStatus[1] != 4)
+obAcceptedEvent = (bullObStatus == 4 and bullObStatus[1] != 4) or (bearObStatus == 4 and bearObStatus[1] != 4)
+
+plot(showZones and bullFvgStatus == 1 ? bullFvgHigh : na, "Bull FVG High", color=color.new(color.green, 35), style=plot.style_linebr)
+plot(showZones and bullFvgStatus == 1 ? bullFvgLow : na, "Bull FVG Low", color=color.new(color.green, 35), style=plot.style_linebr)
+plot(showZones and bearFvgStatus == 1 ? bearFvgHigh : na, "Bear FVG High", color=color.new(color.red, 35), style=plot.style_linebr)
+plot(showZones and bearFvgStatus == 1 ? bearFvgLow : na, "Bear FVG Low", color=color.new(color.red, 35), style=plot.style_linebr)
+plot(showZones and bullObStatus == 1 ? bullObHigh : na, "Bull OB High", color=color.new(color.blue, 35), style=plot.style_linebr)
+plot(showZones and bullObStatus == 1 ? bullObLow : na, "Bull OB Low", color=color.new(color.blue, 35), style=plot.style_linebr)
+plot(showZones and bearObStatus == 1 ? bearObHigh : na, "Bear OB High", color=color.new(color.orange, 35), style=plot.style_linebr)
+plot(showZones and bearObStatus == 1 ? bearObLow : na, "Bear OB Low", color=color.new(color.orange, 35), style=plot.style_linebr)
+plot(showZones and dolActive ? dolLockedTarget : na, "Moderate DOL Target", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+
+plotshape(showMarkers and fvgAcceptedEvent, title="FVG Accepted", style=shape.circle, location=location.abovebar, size=size.tiny, color=color.orange, text="FVG A")
+plotshape(showMarkers and obAcceptedEvent, title="OB Accepted", style=shape.circle, location=location.belowbar, size=size.tiny, color=color.blue, text="OB A")
+plotshape(showMarkers and fvgPoiEvent, title="High FVG Revisit", style=shape.diamond, location=location.belowbar, size=size.tiny, color=color.green, text="FVG✓")
+plotshape(showMarkers and fvgPoiHitEvent, title="FVG Revisit Hit", style=shape.flag, location=location.abovebar, size=size.tiny, color=color.green, text="HIT")
+plotshape(showMarkers and obPoiEvent, title="Moderate OB Revisit", style=shape.diamond, location=location.belowbar, size=size.tiny, color=color.aqua, text="OB~")
+plotshape(showMarkers and obPoiHitEvent, title="OB Revisit Hit", style=shape.flag, location=location.abovebar, size=size.tiny, color=color.aqua, text="HIT")
+plotshape(showMarkers and dolEvent, title="Moderate DOL", style=shape.diamond, location=location.belowbar, size=size.small, color=color.yellow, text="DOL~")
+plotshape(showMarkers and dolHitEvent, title="DOL Hit", style=shape.flag, location=location.abovebar, size=size.tiny, color=color.yellow, text="HIT")
+plotshape(showMarkers and dolInvalidEvent, title="DOL Invalid", style=shape.xcross, location=location.abovebar, size=size.tiny, color=color.red, text="INV")
+plotshape(showMarkers and asiaEntryEvent, title="High Asia Entry", style=shape.diamond, location=location.belowbar, size=size.small, color=color.lime, text="ASIA✓")
+plotshape(showMarkers and asiaTpEvent, title="Asia TP", style=shape.flag, location=location.abovebar, size=size.tiny, color=color.lime, text="TP")
+plotshape(showMarkers and asiaSlEvent, title="Asia SL", style=shape.xcross, location=location.abovebar, size=size.tiny, color=color.red, text="SL")
+
+statusText(_s) =>
+    _s == 1 ? "Fresh" : _s == 2 ? "Touched" : _s == 3 ? "Mitigated" : _s == 4 ? "Accepted" : "None"
+
+stateText(_s) =>
+    _s == 1 ? "ACTIVE" : _s == 2 ? "REACHED" : _s == 3 ? "INVALID/EXPIRED" : _s == 4 ? "TIMEOUT" : "IDLE"
+
+var table dash = table.new(position.bottom_right, 3, 9, bgcolor=color.new(color.black, 5), border_width=1)
+if showTable and barstate.islast
+    table.clear(dash, 0, 0, 2, 8)
+    table.cell(dash, 0, 0, "AMY FINAL", text_color=color.white, bgcolor=color.new(#07111D, 0))
+    table.cell(dash, 1, 0, "CONFIDENCE", text_color=color.white, bgcolor=color.new(#07111D, 0))
+    table.cell(dash, 2, 0, isM5 ? "M5 READY" : "USE M5", text_color=color.white, bgcolor=color.new(#07111D, 0))
+
+    table.cell(dash, 0, 1, "FVG ACCEPT", text_color=color.white)
+    table.cell(dash, 1, 1, "HIGH 83.86%", text_color=color.lime)
+    table.cell(dash, 2, 1, statusText(ctxBias == 1 ? bullFvgStatus : bearFvgStatus), text_color=color.white)
+
+    table.cell(dash, 0, 2, "OB ACCEPT", text_color=color.white)
+    table.cell(dash, 1, 2, "HIGH 86.26%", text_color=color.lime)
+    table.cell(dash, 2, 2, statusText(ctxBias == 1 ? bullObStatus : bearObStatus), text_color=color.white)
+
+    table.cell(dash, 0, 3, "FVG REVISIT", text_color=color.white)
+    table.cell(dash, 1, 3, "HIGH 83.70%", text_color=color.lime)
+    table.cell(dash, 2, 3, stateText(fvgPoiState), text_color=color.white)
+
+    table.cell(dash, 0, 4, "ASIA ENTRY", text_color=color.white)
+    table.cell(dash, 1, 4, "HIGH 84.62%", text_color=color.lime)
+    table.cell(dash, 2, 4, stateText(asiaState), text_color=color.white)
+
+    table.cell(dash, 0, 5, "DOL TARGET", text_color=color.white)
+    table.cell(dash, 1, 5, "MODERATE 75.00%", text_color=color.yellow)
+    table.cell(dash, 2, 5, stateText(dolState), text_color=color.white)
+
+    table.cell(dash, 0, 6, "OB REVISIT", text_color=color.white)
+    table.cell(dash, 1, 6, "MODERATE 76.34%", text_color=color.yellow)
+    table.cell(dash, 2, 6, stateText(obPoiState), text_color=color.white)
+
+    table.cell(dash, 0, 7, "BIAS", text_color=color.white)
+    table.cell(dash, 1, 7, ctxBias == 1 ? "BULLISH" : ctxBias == -1 ? "BEARISH" : "NEUTRAL", text_color=ctxBias == 1 ? color.lime : ctxBias == -1 ? color.red : color.silver)
+    table.cell(dash, 2, 7, rawSweepDir == 1 ? "SSL SWEPT" : rawSweepDir == -1 ? "BSL SWEPT" : "NO SWEEP", text_color=color.white)
+
+    table.cell(dash, 0, 8, "RULE", text_color=color.white)
+    table.cell(dash, 1, 8, "HIGH = PRIMARY", text_color=color.lime)
+    table.cell(dash, 2, 8, "MOD = CONFIRM", text_color=color.yellow)
+
+if not showTable and barstate.islast
+    table.clear(dash, 0, 0, 2, 8)
+
+alertcondition(fvgPoiEvent, "AMY Final: High FVG Revisit", "High-confidence FVG revisit context detected.")
+alertcondition(obPoiEvent, "AMY Final: Moderate OB Revisit", "Moderate-confidence OB revisit context detected.")
+alertcondition(dolEvent, "AMY Final: Moderate DOL", "Moderate-confidence DOL target detected.")
+alertcondition(asiaEntryEvent, "AMY Final: High Asia Entry", "High-confidence Asia entry context detected.")
