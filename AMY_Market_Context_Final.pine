@@ -448,17 +448,17 @@ bearFvgNewVisual = bearFvgVisible and (not bearFvgVisible[1] or bearFvgHigh != b
 bullObNewVisual = bullObVisible and (not bullObVisible[1] or bullObHigh != bullObHigh[1] or bullObLow != bullObLow[1])
 bearObNewVisual = bearObVisible and (not bearObVisible[1] or bearObHigh != bearObHigh[1] or bearObLow != bearObLow[1])
 
-bullFvgBox := amyUpdateZone(bullFvgBox, showZones and bullFvgVisible, bullFvgNewVisual, bullFvgHigh, bullFvgLow, "BULL FVG\n" + statusText(bullFvgStatus), color.new(color.lime, 86), color.new(color.lime, 10), color.white)
-bearFvgBox := amyUpdateZone(bearFvgBox, showZones and bearFvgVisible, bearFvgNewVisual, bearFvgHigh, bearFvgLow, "BEAR FVG\n" + statusText(bearFvgStatus), color.new(color.red, 86), color.new(color.red, 10), color.white)
-bullObBox := amyUpdateZone(bullObBox, showZones and bullObVisible, bullObNewVisual, bullObHigh, bullObLow, "BULL OB\n" + statusText(bullObStatus), color.new(color.blue, 86), color.new(color.blue, 10), color.white)
-bearObBox := amyUpdateZone(bearObBox, showZones and bearObVisible, bearObNewVisual, bearObHigh, bearObLow, "BEAR OB\n" + statusText(bearObStatus), color.new(color.orange, 86), color.new(color.orange, 10), color.white)
+bullFvgBox := amyUpdateZone(bullFvgBox, showZones and bullFvgVisible, bullFvgNewVisual, bullFvgHigh, bullFvgLow, "BULL FVG\n" + statusText(bullFvgStatus), color.new(color.lime, 55), color.new(color.lime, 10), color.white)
+bearFvgBox := amyUpdateZone(bearFvgBox, showZones and bearFvgVisible, bearFvgNewVisual, bearFvgHigh, bearFvgLow, "BEAR FVG\n" + statusText(bearFvgStatus), color.new(color.red, 55), color.new(color.red, 10), color.white)
+bullObBox := amyUpdateZone(bullObBox, showZones and bullObVisible, bullObNewVisual, bullObHigh, bullObLow, "BULL OB\n" + statusText(bullObStatus), color.new(color.blue, 55), color.new(color.blue, 10), color.white)
+bearObBox := amyUpdateZone(bearObBox, showZones and bearObVisible, bearObNewVisual, bearObHigh, bearObLow, "BEAR OB\n" + statusText(bearObStatus), color.new(color.orange, 55), color.new(color.orange, 10), color.white)
 
 _visualAtr = math.max(nz(atr5, syminfo.mintick * 100.0), syminfo.mintick * 10.0)
 _dolPad = _visualAtr * 0.08
 _asiaPad = _visualAtr * 0.10
 
-dolTargetBox := amyUpdateZone(dolTargetBox, showZones and dolActive, dolEvent, dolLockedTarget + _dolPad, dolLockedTarget - _dolPad, "DOL TARGET\nMODERATE 75%", color.new(color.yellow, 78), color.new(color.yellow, 0), color.black)
-asiaEntryBox := amyUpdateZone(asiaEntryBox, showZones and asiaActive, asiaEntryEvent, asiaEntry + _asiaPad, asiaEntry - _asiaPad, "ASIA ENTRY\nHIGH 84.62%", color.new(color.lime, 78), color.new(color.lime, 0), color.black)
+dolTargetBox := amyUpdateZone(dolTargetBox, showZones and dolActive, dolEvent, dolLockedTarget + _dolPad, dolLockedTarget - _dolPad, "DOL TARGET\nMODERATE 75%", color.new(color.yellow, 45), color.new(color.yellow, 0), color.black)
+asiaEntryBox := amyUpdateZone(asiaEntryBox, showZones and asiaActive, asiaEntryEvent, asiaEntry + _asiaPad, asiaEntry - _asiaPad, "ASIA ENTRY\nHIGH 84.62%", color.new(color.lime, 45), color.new(color.lime, 0), color.black)
 
 // Latest event markers are rendered as compact boxes on the chart.
 var box fvgAcceptMark = na
@@ -559,7 +559,7 @@ amyDashRow(_table, _row, _tf, _fast, _slow, _price, _buy, _sell) =>
     table.cell(_table, 4, _row, amyTrendText(_fast, _slow), text_color=_trendColor, bgcolor=_bodyBg, text_size=size.tiny)
     table.cell(_table, 5, _row, amySignalText(_buy, _sell), text_color=_signalColor, bgcolor=_bodyBg, text_size=size.tiny)
 
-var table dash = table.new(position.top_right, 6, 6, bgcolor=color.new(#111823, 4), frame_color=color.new(color.gray, 65), frame_width=1, border_color=color.new(color.gray, 72), border_width=1)
+var table dash = table.new(position.bottom_center, 6, 6, bgcolor=color.new(#111823, 4), frame_color=color.new(color.gray, 65), frame_width=1, border_color=color.new(color.gray, 72), border_width=1)
 if showTable and barstate.islast
     table.clear(dash, 0, 0, 5, 5)
     _headBg = color.new(#17202D, 0)
