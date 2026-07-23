@@ -9,7 +9,7 @@ indicator("AMY Market Context Final", overlay=true, max_labels_count=300, max_li
 // ============================================================================
 
 grpCore = "AMY Final — Core"
-showTable = input.bool(true, "Show Status Dashboard", group=grpCore)
+showTable = input.bool(true, "Show Compact MTF Dashboard", group=grpCore)
 showMarkers = input.bool(true, "Show Event Markers", group=grpCore)
 showZones = input.bool(true, "Show Active Zones", group=grpCore)
 swingLen = input.int(3, "M15 Swing Length", minval=2, maxval=10, group=grpCore)
@@ -420,53 +420,64 @@ plotshape(showMarkers and asiaEntryEvent, title="High Asia Entry", style=shape.d
 plotshape(showMarkers and asiaTpEvent, title="Asia TP", style=shape.flag, location=location.abovebar, size=size.tiny, color=color.lime, text="TP")
 plotshape(showMarkers and asiaSlEvent, title="Asia SL", style=shape.xcross, location=location.abovebar, size=size.tiny, color=color.red, text="SL")
 
-statusText(_s) =>
-    _s == 1 ? "Fresh" : _s == 2 ? "Touched" : _s == 3 ? "Mitigated" : _s == 4 ? "Accepted" : "None"
+// Compact multi-timeframe dashboard, styled for mobile charts.
+amyMtfPack() =>
+    _fast = ta.ema(close, 5)
+    _slow = ta.ema(close, 15)
+    _buy = ta.crossover(_fast, _slow)
+    _sell = ta.crossunder(_fast, _slow)
+    [_fast, _slow, close, _buy, _sell]
 
-stateText(_s) =>
-    _s == 1 ? "ACTIVE" : _s == 2 ? "REACHED" : _s == 3 ? "INVALID/EXPIRED" : _s == 4 ? "TIMEOUT" : "IDLE"
+[fast5m, slow5m, price5m, buy5m, sell5m] = request.security(syminfo.tickerid, "5", amyMtfPack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[fast15m, slow15m, price15m, buy15m, sell15m] = request.security(syminfo.tickerid, "15", amyMtfPack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[fast1h, slow1h, price1h, buy1h, sell1h] = request.security(syminfo.tickerid, "60", amyMtfPack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[fast4h, slow4h, price4h, buy4h, sell4h] = request.security(syminfo.tickerid, "240", amyMtfPack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[fast1d, slow1d, price1d, buy1d, sell1d] = request.security(syminfo.tickerid, "D", amyMtfPack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
-var table dash = table.new(position.bottom_right, 3, 9, bgcolor=color.new(color.black, 5), border_width=1)
+amyPriceText(_value) =>
+    na(_value) ? "-" : str.tostring(_value, format.mintick)
+
+amyTrendText(_fast, _slow) =>
+    na(_fast) or na(_slow) ? "-" : _fast > _slow ? "▲ Bullish" : _fast < _slow ? "▼ Bearish" : "• Neutral"
+
+amyTrendColor(_fast, _slow) =>
+    na(_fast) or na(_slow) ? color.silver : _fast > _slow ? color.lime : _fast < _slow ? color.red : color.silver
+
+amySignalText(_buy, _sell) =>
+    _buy ? "BUY" : _sell ? "SELL" : "-"
+
+amySignalColor(_buy, _sell) =>
+    _buy ? color.lime : _sell ? color.red : color.silver
+
+amyDashRow(_table, _row, _tf, _fast, _slow, _price, _buy, _sell) =>
+    _bodyBg = color.new(#111823, 4)
+    _trendColor = amyTrendColor(_fast, _slow)
+    _signalColor = amySignalColor(_buy, _sell)
+    table.cell(_table, 0, _row, _tf, text_color=color.white, bgcolor=_bodyBg, text_size=size.tiny)
+    table.cell(_table, 1, _row, amyPriceText(_fast), text_color=_trendColor, bgcolor=_bodyBg, text_size=size.tiny)
+    table.cell(_table, 2, _row, amyPriceText(_slow), text_color=_trendColor, bgcolor=_bodyBg, text_size=size.tiny)
+    table.cell(_table, 3, _row, amyPriceText(_price), text_color=color.white, bgcolor=_bodyBg, text_size=size.tiny)
+    table.cell(_table, 4, _row, amyTrendText(_fast, _slow), text_color=_trendColor, bgcolor=_bodyBg, text_size=size.tiny)
+    table.cell(_table, 5, _row, amySignalText(_buy, _sell), text_color=_signalColor, bgcolor=_bodyBg, text_size=size.tiny)
+
+var table dash = table.new(position.top_right, 6, 6, bgcolor=color.new(#111823, 4), frame_color=color.new(color.gray, 65), frame_width=1, border_color=color.new(color.gray, 72), border_width=1)
 if showTable and barstate.islast
-    table.clear(dash, 0, 0, 2, 8)
-    table.cell(dash, 0, 0, "AMY FINAL", text_color=color.white, bgcolor=color.new(#07111D, 0))
-    table.cell(dash, 1, 0, "CONFIDENCE", text_color=color.white, bgcolor=color.new(#07111D, 0))
-    table.cell(dash, 2, 0, isM5 ? "M5 READY" : "USE M5", text_color=color.white, bgcolor=color.new(#07111D, 0))
-
-    table.cell(dash, 0, 1, "FVG ACCEPT", text_color=color.white)
-    table.cell(dash, 1, 1, "HIGH 83.86%", text_color=color.lime)
-    table.cell(dash, 2, 1, statusText(ctxBias == 1 ? bullFvgStatus : bearFvgStatus), text_color=color.white)
-
-    table.cell(dash, 0, 2, "OB ACCEPT", text_color=color.white)
-    table.cell(dash, 1, 2, "HIGH 86.26%", text_color=color.lime)
-    table.cell(dash, 2, 2, statusText(ctxBias == 1 ? bullObStatus : bearObStatus), text_color=color.white)
-
-    table.cell(dash, 0, 3, "FVG REVISIT", text_color=color.white)
-    table.cell(dash, 1, 3, "HIGH 83.70%", text_color=color.lime)
-    table.cell(dash, 2, 3, stateText(fvgPoiState), text_color=color.white)
-
-    table.cell(dash, 0, 4, "ASIA ENTRY", text_color=color.white)
-    table.cell(dash, 1, 4, "HIGH 84.62%", text_color=color.lime)
-    table.cell(dash, 2, 4, stateText(asiaState), text_color=color.white)
-
-    table.cell(dash, 0, 5, "DOL TARGET", text_color=color.white)
-    table.cell(dash, 1, 5, "MODERATE 75.00%", text_color=color.yellow)
-    table.cell(dash, 2, 5, stateText(dolState), text_color=color.white)
-
-    table.cell(dash, 0, 6, "OB REVISIT", text_color=color.white)
-    table.cell(dash, 1, 6, "MODERATE 76.34%", text_color=color.yellow)
-    table.cell(dash, 2, 6, stateText(obPoiState), text_color=color.white)
-
-    table.cell(dash, 0, 7, "BIAS", text_color=color.white)
-    table.cell(dash, 1, 7, ctxBias == 1 ? "BULLISH" : ctxBias == -1 ? "BEARISH" : "NEUTRAL", text_color=ctxBias == 1 ? color.lime : ctxBias == -1 ? color.red : color.silver)
-    table.cell(dash, 2, 7, rawSweepDir == 1 ? "SSL SWEPT" : rawSweepDir == -1 ? "BSL SWEPT" : "NO SWEEP", text_color=color.white)
-
-    table.cell(dash, 0, 8, "RULE", text_color=color.white)
-    table.cell(dash, 1, 8, "HIGH = PRIMARY", text_color=color.lime)
-    table.cell(dash, 2, 8, "MOD = CONFIRM", text_color=color.yellow)
+    table.clear(dash, 0, 0, 5, 5)
+    _headBg = color.new(#17202D, 0)
+    table.cell(dash, 0, 0, "TIMEFRAME", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    table.cell(dash, 1, 0, "FAST 5", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    table.cell(dash, 2, 0, "SLOW 15", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    table.cell(dash, 3, 0, "PRICE", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    table.cell(dash, 4, 0, "TREND", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    table.cell(dash, 5, 0, "SIGNAL", text_color=color.white, bgcolor=_headBg, text_size=size.tiny)
+    amyDashRow(dash, 1, "5min", fast5m, slow5m, price5m, buy5m, sell5m)
+    amyDashRow(dash, 2, "15min", fast15m, slow15m, price15m, buy15m, sell15m)
+    amyDashRow(dash, 3, "1hr", fast1h, slow1h, price1h, buy1h, sell1h)
+    amyDashRow(dash, 4, "4hr", fast4h, slow4h, price4h, buy4h, sell4h)
+    amyDashRow(dash, 5, "Daily", fast1d, slow1d, price1d, buy1d, sell1d)
 
 if not showTable and barstate.islast
-    table.clear(dash, 0, 0, 2, 8)
+    table.clear(dash, 0, 0, 5, 5)
 
 alertcondition(fvgPoiEvent, "AMY Final: High FVG Revisit", "High-confidence FVG revisit context detected.")
 alertcondition(obPoiEvent, "AMY Final: Moderate OB Revisit", "Moderate-confidence OB revisit context detected.")
