@@ -1,0 +1,216 @@
+name: Apply AMY V6 experiment patch
+
+on:
+  push:
+    branches:
+      - backtest/amy-market-context-v4
+    paths:
+      - AMY_V6_PATCH_TRIGGER.txt
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: backtest/amy-market-context-v4
+          fetch-depth: 0
+
+      - name: Patch experiment indicator
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('AMY_Market_Context_V4.pine')
+          s = path.read_text(encoding='utf-8')
+          marker = '//==================== AMY EXPERIMENT V6 — HONEST REMAINING CLAIMS ====================//'
+          if marker in s:
+              print('V6 patch already present')
+              raise SystemExit(0)
+
+          def rep(old, new, count=1):
+              global s
+              if old not in s:
+                  raise RuntimeError('Missing patch anchor: ' + old[:120])
+              s = s.replace(old, new, count)
+
+          rep(
+              'amyExpV5_dolMaxDistanceAtr = 1.00\namyExpV5_retestRequired = true',
+              'amyExpV5_dolMaxDistanceAtr = 0.75\namyExpV6_dolMinClosePos = 0.80\namyExpV6_acceptCloses = 3\namyExpV6_acceptContinuationAtr = 0.30\namyExpV6_enableValidatedDol = false\namyExpV6_enableFvgRevisit = true\namyExpV6_enableAsiaEntry = true'
+          )
+          rep('amyContextV4_poiRevisitMaxAtr = 1.50', 'amyContextV4_poiRevisitMaxAtr = 1.25')
+          rep('amyContextV4_asiaEntryMaxAtr = 1.50', 'amyContextV4_asiaEntryMaxAtr = 1.00')
+
+          rep(
+              '    _canStartNewDol = not _dolTerminalNow and _dolState != 1\n\n    if _canStartNewDol',
+              '    _canStartNewDol = not _dolTerminalNow and _dolState != 1\n    _dolCandleRange = math.max(_h - _l, syminfo.mintick)\n    _bullDolClosePos = (_c - _l) / _dolCandleRange\n    _bearDolClosePos = (_h - _c) / _dolCandleRange\n\n    if _canStartNewDol'
+          )
+          rep(
+              '_dolQuality = _biasDir == 1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr',
+              '_dolQuality = _biasDir == 1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr and _c > _o and _bullDolClosePos >= amyExpV6_dolMinClosePos and _h < _bsl'
+          )
+          rep(
+              '_dolQuality = _biasDir == -1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr',
+              '_dolQuality = _biasDir == -1 and _invalidStatus == 0 and not na(_atr) and _dolDistanceCandidate <= _atr * amyExpV5_dolMaxDistanceAtr and _c < _o and _bearDolClosePos >= amyExpV6_dolMinClosePos and _l > _ssl'
+          )
+
+          rep(
+              'if _bullFvgOutsideCloses >= 2',
+              'if _bullFvgOutsideCloses >= amyExpV6_acceptCloses and (_bullFvgLow - _c) >= _atr * amyExpV6_acceptContinuationAtr'
+          )
+          rep(
+              'if _bearFvgOutsideCloses >= 2',
+              'if _bearFvgOutsideCloses >= amyExpV6_acceptCloses and (_c - _bearFvgHigh) >= _atr * amyExpV6_acceptContinuationAtr'
+          )
+          rep(
+              'if _bullObOutsideCloses >= 2',
+              'if _bullObOutsideCloses >= amyExpV6_acceptCloses and (_bullObLowRaw - _c) >= _atr * amyExpV6_acceptContinuationAtr'
+          )
+          rep(
+              'if _bearObOutsideCloses >= 2',
+              'if _bearObOutsideCloses >= amyExpV6_acceptCloses and (_c - _bearObHighRaw) >= _atr * amyExpV6_acceptContinuationAtr'
+          )
+
+          rep(
+              'amyDashV2_poiStatusText = amyDashV2_poiStatus == 1 ? "Fresh" : amyDashV2_poiStatus == 2 ? "Active" : amyDashV2_poiStatus == 3 ? "Mitigated" : amyDashV2_poiStatus == 4 ? "Failed" : "None"',
+              'amyDashV2_poiStatusText = amyDashV2_poiStatus == 1 ? "Fresh" : amyDashV2_poiStatus == 2 ? "Active" : amyDashV2_poiStatus == 3 ? "Mitigated" : amyDashV2_poiStatus == 4 ? "Accepted" : "None"'
+          )
+
+          insert = r'''
+
+//==================== AMY EXPERIMENT V6 — HONEST REMAINING CLAIMS ====================//
+// Independent fresh-FVG engine. It uses the just-closed M15 candle and does not
+// alter the original protected-structure engine or its validated statistics.
+amyExpV6_fvgEngine() =>
+    var float _bullHigh = na
+    var float _bullLow = na
+    var int _bullCreated = na
+    var bool _bullFresh = false
+    var float _bearHigh = na
+    var float _bearLow = na
+    var int _bearCreated = na
+    var bool _bearFresh = false
+
+    _atr = ta.atr(14)
+    _body = math.abs(close - open)
+    _meanBody = ta.sma(math.abs(close - open), 20)
+
+    _bullRaw = not na(high[2]) and low > high[2]
+    _bearRaw = not na(low[2]) and high < low[2]
+    _bullGapAtr = _bullRaw and not na(_atr) ? (low - high[2]) / math.max(_atr, syminfo.mintick) : na
+    _bearGapAtr = _bearRaw and not na(_atr) ? (low[2] - high) / math.max(_atr, syminfo.mintick) : na
+    _bullNew = _bullRaw and close > open and _body >= _meanBody * amyExpV5_fvgBodyMult and _bullGapAtr >= amyExpV5_fvgMinGapAtr and _bullGapAtr <= amyExpV5_fvgMaxGapAtr
+    _bearNew = _bearRaw and close < open and _body >= _meanBody * amyExpV5_fvgBodyMult and _bearGapAtr >= amyExpV5_fvgMinGapAtr and _bearGapAtr <= amyExpV5_fvgMaxGapAtr
+
+    if _bullNew
+        _bullHigh := low
+        _bullLow := high[2]
+        _bullCreated := bar_index
+        _bullFresh := true
+
+    if _bearNew
+        _bearHigh := low[2]
+        _bearLow := high
+        _bearCreated := bar_index
+        _bearFresh := true
+
+    if _bullFresh and not na(_bullCreated) and bar_index > _bullCreated and low <= _bullHigh and high >= _bullLow
+        _bullFresh := false
+
+    if _bearFresh and not na(_bearCreated) and bar_index > _bearCreated and high >= _bearLow and low <= _bearHigh
+        _bearFresh := false
+
+    _bullMature = _bullFresh and not na(_bullCreated) and bar_index - _bullCreated >= 1
+    _bearMature = _bearFresh and not na(_bearCreated) and bar_index - _bearCreated >= 1
+    [_bullHigh, _bullLow, _bullMature, _bearHigh, _bearLow, _bearMature]
+
+[amyExpV6_bullFvgHigh, amyExpV6_bullFvgLow, amyExpV6_bullFvgFresh, amyExpV6_bearFvgHigh, amyExpV6_bearFvgLow, amyExpV6_bearFvgFresh] = request.security(syminfo.tickerid, "15", amyExpV6_fvgEngine(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+'''
+          anchor = '\namyDashV2_biasText ='
+          if anchor not in s:
+              raise RuntimeError('Missing V6 insertion anchor')
+          s = s.replace(anchor, insert + anchor, 1)
+
+          rep(
+              'amyEntryV3_validatedTarget = not amyExpV5_retestRequired and amyDashV2_dolStatus == 1 and amyEntryV3_targetQualityLocked',
+              'amyEntryV3_validatedTarget = amyExpV6_enableValidatedDol and amyDashV2_dolStatus == 1 and amyEntryV3_targetQualityLocked'
+          )
+          rep(
+              'amyEntryV3_validatedTargetEvent = not amyExpV5_retestRequired and amyEntryV2_dolActiveEvent and amyEntryV3_targetQualityAtStart',
+              'amyEntryV3_validatedTargetEvent = amyExpV6_enableValidatedDol and amyEntryV2_dolActiveEvent and amyEntryV3_targetQualityAtStart'
+          )
+
+          pattern = re.compile(
+              r'// --- Mature Fresh POI revisit: OB and FVG measured separately ---.*?amyContextV4_poiActive = amyContextV4_poiState == 1',
+              re.S
+          )
+          replacement = r'''// --- V6 Fresh FVG revisit: no delayed OB claim ---
+amyContextV4_poiFresh = amyDashV2_biasDir == 1 ? amyExpV6_bullFvgFresh : amyDashV2_biasDir == -1 ? amyExpV6_bearFvgFresh : false
+amyContextV4_poiHighV6 = amyDashV2_biasDir == 1 ? amyExpV6_bullFvgHigh : amyDashV2_biasDir == -1 ? amyExpV6_bearFvgHigh : na
+amyContextV4_poiLowV6 = amyDashV2_biasDir == 1 ? amyExpV6_bullFvgLow : amyDashV2_biasDir == -1 ? amyExpV6_bearFvgLow : na
+amyContextV4_poiTypeV6 = amyDashV2_biasDir == 1 ? 2 : amyDashV2_biasDir == -1 ? -2 : 0
+amyContextV4_poiEventRaw = amyContextV4_isM5 and barstate.isconfirmed and amyContextV4_poiFresh and
+ (not amyContextV4_poiFresh[1] or amyContextV4_poiHighV6 != amyContextV4_poiHighV6[1] or amyContextV4_poiLowV6 != amyContextV4_poiLowV6[1])
+amyContextV4_poiOutside = amyContextV4_poiFresh and not na(amyContextV4_poiHighV6) and not na(amyContextV4_poiLowV6) and (low > amyContextV4_poiHighV6 or high < amyContextV4_poiLowV6)
+amyContextV4_poiDir = amyContextV4_poiOutside ? (close > amyContextV4_poiHighV6 ? -1 : 1) : 0
+amyContextV4_poiCandidate = amyContextV4_poiDir == -1 ? amyContextV4_poiHighV6 : amyContextV4_poiDir == 1 ? amyContextV4_poiLowV6 : na
+amyContextV4_poiDistAtr = amyContextV4_poiDir != 0 and not na(amyEntryV2_atr14) ? math.abs(amyContextV4_poiCandidate - close) / amyEntryV2_atr14 : na
+amyContextV4_poiEvent = amyExpV6_enableFvgRevisit and amyContextV4_poiEventRaw and amyContextV4_poiOutside and not na(amyContextV4_poiDistAtr) and amyContextV4_poiDistAtr <= amyContextV4_poiRevisitMaxAtr
+var int amyContextV4_poiState = 0
+var int amyContextV4_poiStartBar = na
+var int amyContextV4_poiLockedDir = 0
+var int amyContextV4_poiLockedType = 0
+var float amyContextV4_poiLockedTarget = na
+if amyContextV4_poiEvent
+    amyContextV4_poiState := 1
+    amyContextV4_poiStartBar := bar_index
+    amyContextV4_poiLockedDir := amyContextV4_poiDir
+    amyContextV4_poiLockedType := amyContextV4_poiTypeV6
+    amyContextV4_poiLockedTarget := amyContextV4_poiCandidate
+else if amyContextV4_poiState == 1
+    _poiHit = amyContextV4_poiLockedDir == 1 ? high >= amyContextV4_poiLockedTarget : low <= amyContextV4_poiLockedTarget
+    if _poiHit
+        amyContextV4_poiState := 2
+    else if bar_index - amyContextV4_poiStartBar >= amyContextV4_fourHoursBars
+        amyContextV4_poiState := 3
+amyContextV4_poiActive = amyContextV4_poiState == 1'''
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise RuntimeError('POI block replacement failed')
+
+          rep(
+              'amyContextV4_asiaEntryEvent = not amyExpV5_retestRequired and amyContextV4_midnightEvent',
+              'amyContextV4_asiaEntryEvent = amyExpV6_enableAsiaEntry and amyContextV4_midnightEvent'
+          )
+          rep(
+              'WR 84.70% | Reward:Risk 0.20 | gross, biaya belum dihitung',
+              'WR 84.62% (2024) | Reward:Risk 0.20 | gross, biaya belum dihitung'
+          )
+          rep(
+              '_poiClaimAccuracy = math.abs(amyContextV4_poiLockedType) == 1 ? "83.91%" : "82.37%"',
+              '_poiClaimAccuracy = "83.70% (2024)"'
+          )
+
+          if 'amyExpV5_retestRequired' in s:
+              raise RuntimeError('Old global retest flag still referenced')
+
+          path.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet -- AMY_Market_Context_V4.pine; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "amy-fx-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add AMY_Market_Context_V4.pine
+          git commit -m "Apply V6 honesty fixes and 2024 filters"
+          git push origin HEAD:backtest/amy-market-context-v4
