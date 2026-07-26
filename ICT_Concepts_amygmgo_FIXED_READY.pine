@@ -88,13 +88,13 @@ if not na(msPL)
     msLastLow := msPL
     msLastLowBar := bar_index - msLen
 
-msBullBreak = showMS and not na(msLastHigh) and close > msLastHigh and close[1] <= msLastHigh
-msBearBreak = showMS and not na(msLastLow) and close < msLastLow and close[1] >= msLastLow
+msBullBreak = barstate.isconfirmed and not na(msLastHigh) and close > msLastHigh and close[1] <= msLastHigh
+msBearBreak = barstate.isconfirmed and not na(msLastLow) and close < msLastLow and close[1] >= msLastLow
 
 if msBullBreak
     _isMss = msDir != 1
     msDir := 1
-    if (_isMss and iMSS) or (not _isMss and iBOS)
+    if showMS and ((_isMss and iMSS) or (not _isMss and iBOS))
         _txt = _isMss ? "MSS" : "BOS"
         _col = _isMss ? cMSSbl : cBOSbl
         array.unshift(msLines, line.new(msLastHighBar, msLastHigh, bar_index, msLastHigh, color=_col, width=1))
@@ -103,7 +103,7 @@ if msBullBreak
 if msBearBreak
     _isMss = msDir != -1
     msDir := -1
-    if (_isMss and iMSS) or (not _isMss and iBOS)
+    if showMS and ((_isMss and iMSS) or (not _isMss and iBOS))
         _txt = _isMss ? "MSS" : "BOS"
         _col = _isMss ? cMSSbr : cBOSbr
         array.unshift(msLines, line.new(msLastLowBar, msLastLow, bar_index, msLastLow, color=_col, width=1))
@@ -224,9 +224,9 @@ amyPivotV2_extendBars = input.int(40, "Right Bars", minval=5, maxval=300, group=
 amyPivotV2_lineWidth = input.int(1, "Line Width", minval=1, maxval=4, group=amyPivotV2_group)
 amyPivotV2_nearAtrMult = input.float(2.0, "Show Level If Near ATR", minval=0.5, step=0.5, group=amyPivotV2_group)
 
-amyPivotV2_rawHigh = request.security(syminfo.tickerid, amyPivotV2_tf, high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyPivotV2_rawLow = request.security(syminfo.tickerid, amyPivotV2_tf, low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyPivotV2_rawClose = request.security(syminfo.tickerid, amyPivotV2_tf, close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+amyPivotV2_rawHigh = request.security(syminfo.tickerid, amyPivotV2_tf, high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyPivotV2_rawLow = request.security(syminfo.tickerid, amyPivotV2_tf, low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyPivotV2_rawClose = request.security(syminfo.tickerid, amyPivotV2_tf, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyPivotV2_newTfBar = ta.change(time(amyPivotV2_tf)) != 0
 
@@ -235,9 +235,9 @@ var float amyPivotV2_prevLow = na
 var float amyPivotV2_prevClose = na
 
 if amyPivotV2_newTfBar or na(amyPivotV2_prevHigh)
-    amyPivotV2_prevHigh := amyPivotV2_rawHigh[1]
-    amyPivotV2_prevLow := amyPivotV2_rawLow[1]
-    amyPivotV2_prevClose := amyPivotV2_rawClose[1]
+    amyPivotV2_prevHigh := amyPivotV2_rawHigh
+    amyPivotV2_prevLow := amyPivotV2_rawLow
+    amyPivotV2_prevClose := amyPivotV2_rawClose
 
 amyPivotV2_atr = ta.atr(14)
 amyPivotV2_range = amyPivotV2_prevHigh - amyPivotV2_prevLow
@@ -365,16 +365,16 @@ if amyKeyV2_newDayChart or na(amyKeyV2_moFallback)
 
 amyKeyV2_midnightOpen = na(amyKeyV2_moFixed) ? amyKeyV2_moFallback : amyKeyV2_moFixed
 
-amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 amyKeyV2_newExchangeDay = ta.change(time("D")) != 0
 
 var float amyKeyV2_pdh = na
 var float amyKeyV2_pdl = na
 
 if amyKeyV2_newExchangeDay or na(amyKeyV2_pdh)
-    amyKeyV2_pdh := amyKeyV2_rawDailyHigh[1]
-    amyKeyV2_pdl := amyKeyV2_rawDailyLow[1]
+    amyKeyV2_pdh := amyKeyV2_rawDailyHigh
+    amyKeyV2_pdl := amyKeyV2_rawDailyLow
 
 amyKeyV2_ph = ta.pivothigh(high, amyKeyV2_swingLen, amyKeyV2_swingLen)
 amyKeyV2_pl = ta.pivotlow(low, amyKeyV2_swingLen, amyKeyV2_swingLen)
@@ -518,11 +518,11 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks) =>
     var float _bearObBtm = na
     var int _bearObStatus = 0
 
-    _o = open
-    _h = high
-    _l = low
-    _c = close
-    _pc = close[1]
+    _o = open[1]
+    _h = high[1]
+    _l = low[1]
+    _c = close[1]
+    _pc = close[2]
     _bi = bar_index[1]
     _atr = ta.atr(14)[1]
     _body = math.abs(close[1] - open[1])
@@ -779,7 +779,7 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks) =>
 
     [_o, _h, _l, _c, _lastPH, _lastPL, _biasDir, _mssDir, _bullMss, _bearMss, _lockedInvalid, _invalidStatus, _rh, _rl, _eq, _eqLow, _eqHigh, _priceZone, _locStatus, _bsl, _ssl, _lastSweepDir, _sweepStatus, _sweptPrice, _sweepExtreme, _dolDir, _dolTarget, _dolStatus, _dolDistance, _dolAlign, _poiType, _poiHigh, _poiLow, _poiMid, _poiDist, _poiStatus, _poiAlign, _poiLoc, _poiPriority]
 
-[amyDashV2_o15, amyDashV2_h15, amyDashV2_l15, amyDashV2_c15, amyDashV2_protectedHigh, amyDashV2_protectedLow, amyDashV2_biasDir, amyDashV2_mssDir, amyDashV2_bullMssNow, amyDashV2_bearMssNow, amyDashV2_invalidLevel, amyDashV2_invalidStatus, amyDashV2_rangeHigh, amyDashV2_rangeLow, amyDashV2_eq, amyDashV2_eqLow, amyDashV2_eqHigh, amyDashV2_priceZone, amyDashV2_locationStatus, amyDashV2_bsl, amyDashV2_ssl, amyDashV2_sweepDir, amyDashV2_sweepStatus, amyDashV2_sweptPrice, amyDashV2_sweepExtreme, amyDashV2_dolDir, amyDashV2_dolTarget, amyDashV2_dolStatus, amyDashV2_dolDistance, amyDashV2_dolAlign, amyDashV2_poiType, amyDashV2_poiHigh, amyDashV2_poiLow, amyDashV2_poiMid, amyDashV2_poiDistance, amyDashV2_poiStatus, amyDashV2_poiAlign, amyDashV2_poiLocation, amyDashV2_poiPriority] = request.security(syminfo.tickerid, "15", amyDashV2_engine(amyDashV2_swingLen, amyDashV2_sweepFreshBars, amyDashV2_nearInvalidAtr, amyDashV2_dispMult, amyDashV2_minSweepTicks), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[amyDashV2_o15, amyDashV2_h15, amyDashV2_l15, amyDashV2_c15, amyDashV2_protectedHigh, amyDashV2_protectedLow, amyDashV2_biasDir, amyDashV2_mssDir, amyDashV2_bullMssNow, amyDashV2_bearMssNow, amyDashV2_invalidLevel, amyDashV2_invalidStatus, amyDashV2_rangeHigh, amyDashV2_rangeLow, amyDashV2_eq, amyDashV2_eqLow, amyDashV2_eqHigh, amyDashV2_priceZone, amyDashV2_locationStatus, amyDashV2_bsl, amyDashV2_ssl, amyDashV2_sweepDir, amyDashV2_sweepStatus, amyDashV2_sweptPrice, amyDashV2_sweepExtreme, amyDashV2_dolDir, amyDashV2_dolTarget, amyDashV2_dolStatus, amyDashV2_dolDistance, amyDashV2_dolAlign, amyDashV2_poiType, amyDashV2_poiHigh, amyDashV2_poiLow, amyDashV2_poiMid, amyDashV2_poiDistance, amyDashV2_poiStatus, amyDashV2_poiAlign, amyDashV2_poiLocation, amyDashV2_poiPriority] = request.security(syminfo.tickerid, "15", amyDashV2_engine(amyDashV2_swingLen, amyDashV2_sweepFreshBars, amyDashV2_nearInvalidAtr, amyDashV2_dispMult, amyDashV2_minSweepTicks), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyDashV2_biasText = amyDashV2_biasDir == 1 ? "BUY CTX" : amyDashV2_biasDir == -1 ? "SELL CTX" : "NO CLEAR BIAS"
 amyDashV2_arahText = amyDashV2_biasDir == 1 ? "NAIK" : amyDashV2_biasDir == -1 ? "TURUN" : "BELUM JELAS"
@@ -889,31 +889,31 @@ amyEntryV2_dirName(_dir) =>
 amyEntryV2_ltfEngine(_swingLen, _dispMult, _rejectWickMult) =>
     var float _lastHigh = na
     var float _lastLow = na
-    _ph = ta.pivothigh(high, _swingLen, _swingLen)
-    _pl = ta.pivotlow(low, _swingLen, _swingLen)
+    _ph = ta.pivothigh(high, _swingLen, _swingLen)[1]
+    _pl = ta.pivotlow(low, _swingLen, _swingLen)[1]
     if not na(_ph)
         _lastHigh := _ph
     if not na(_pl)
         _lastLow := _pl
-    _body = math.abs(close - open)
-    _meanBody = ta.sma(math.abs(close - open), 20)
+    _body = math.abs(close[1] - open[1])
+    _meanBody = ta.sma(math.abs(close - open), 20)[1]
     _safeBody = math.max(_body, syminfo.mintick)
-    _upperWick = high - math.max(open, close)
-    _lowerWick = math.min(open, close) - low
-    _sslSweep = not na(_lastLow) and low < _lastLow and close > _lastLow
-    _bslSweep = not na(_lastHigh) and high > _lastHigh and close < _lastHigh
+    _upperWick = high[1] - math.max(open[1], close[1])
+    _lowerWick = math.min(open[1], close[1]) - low[1]
+    _sslSweep = not na(_lastLow) and low[1] < _lastLow and close[1] > _lastLow
+    _bslSweep = not na(_lastHigh) and high[1] > _lastHigh and close[1] < _lastHigh
     _sweepDir = _sslSweep and not _bslSweep ? 1 : _bslSweep and not _sslSweep ? -1 : 0
     _sweptPrice = _sweepDir == 1 ? _lastLow : _sweepDir == -1 ? _lastHigh : na
-    _sweepExtreme = _sweepDir == 1 ? low : _sweepDir == -1 ? high : na
-    _bullBreak = not na(_lastHigh) and close > _lastHigh
-    _bearBreak = not na(_lastLow) and close < _lastLow
-    _bullDisp = close > open and _body > _meanBody * _dispMult and close > high[1]
-    _bearDisp = close < open and _body > _meanBody * _dispMult and close < low[1]
-    _bullReject = close > open and _lowerWick >= _safeBody * _rejectWickMult
-    _bearReject = close < open and _upperWick >= _safeBody * _rejectWickMult
-    [_lastHigh, _lastLow, _sweepDir, _sweptPrice, _sweepExtreme, _bullBreak, _bearBreak, _bullDisp, _bearDisp, _bullReject, _bearReject, close]
+    _sweepExtreme = _sweepDir == 1 ? low[1] : _sweepDir == -1 ? high[1] : na
+    _bullBreak = not na(_lastHigh) and close[1] > _lastHigh and close[2] <= _lastHigh
+    _bearBreak = not na(_lastLow) and close[1] < _lastLow and close[2] >= _lastLow
+    _bullDisp = close[1] > open[1] and _body > _meanBody * _dispMult and close[1] > high[2]
+    _bearDisp = close[1] < open[1] and _body > _meanBody * _dispMult and close[1] < low[2]
+    _bullReject = close[1] > open[1] and _lowerWick >= _safeBody * _rejectWickMult
+    _bearReject = close[1] < open[1] and _upperWick >= _safeBody * _rejectWickMult
+    [_lastHigh, _lastLow, _sweepDir, _sweptPrice, _sweepExtreme, _bullBreak, _bearBreak, _bullDisp, _bearDisp, _bullReject, _bearReject, close[1]]
 
-[amyEntryV2_ltfHigh, amyEntryV2_ltfLow, amyEntryV2_ltfSweepDir, amyEntryV2_ltfSweptPrice, amyEntryV2_ltfSweepExtreme, amyEntryV2_ltfBullBreak, amyEntryV2_ltfBearBreak, amyEntryV2_ltfBullDisp, amyEntryV2_ltfBearDisp, amyEntryV2_ltfBullReject, amyEntryV2_ltfBearReject, amyEntryV2_ltfClose] = request.security(syminfo.tickerid, amyEntryV2_triggerTf, amyEntryV2_ltfEngine(amyEntryV2_swingLen, amyEntryV2_dispMult, amyEntryV2_rejectWickMult), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[amyEntryV2_ltfHigh, amyEntryV2_ltfLow, amyEntryV2_ltfSweepDir, amyEntryV2_ltfSweptPrice, amyEntryV2_ltfSweepExtreme, amyEntryV2_ltfBullBreak, amyEntryV2_ltfBearBreak, amyEntryV2_ltfBullDisp, amyEntryV2_ltfBearDisp, amyEntryV2_ltfBullReject, amyEntryV2_ltfBearReject, amyEntryV2_ltfClose] = request.security(syminfo.tickerid, amyEntryV2_triggerTf, amyEntryV2_ltfEngine(amyEntryV2_swingLen, amyEntryV2_dispMult, amyEntryV2_rejectWickMult), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyEntryV2_biasActive = amyEntryV2_show and amyDashV2_biasDir != 0 and (amyDashV2_invalidStatus == 0 or amyDashV2_invalidStatus == 1)
 amyEntryV2_poiReady = amyDashV2_poiPriority >= 1 and amyDashV2_poiAlign == 1 and not na(amyDashV2_poiHigh) and not na(amyDashV2_poiLow)
@@ -1110,10 +1110,15 @@ amyEntryV2_strongBear = amyEntryV2_show and amyEntryV2_winDir == -1 and amyEntry
 amyEntryV2_readyBull = amyEntryV2_show and amyEntryV2_winDir == 1 and amyEntryV2_winScore >= 60 and amyEntryV2_winScore < 75 and amyDashV2_invalidStatus != 2
 amyEntryV2_readyBear = amyEntryV2_show and amyEntryV2_winDir == -1 and amyEntryV2_winScore >= 60 and amyEntryV2_winScore < 75 and amyDashV2_invalidStatus != 2
 
-plotshape(amyEntryV2_strongBull and barstate.isconfirmed, title="Strong Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#00c853, 0), size=size.small)
-plotshape(amyEntryV2_strongBear and barstate.isconfirmed, title="Strong Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#d50000, 0), size=size.small)
-plotshape(amyEntryV2_readyBull and barstate.isconfirmed, title="Ready Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#69f0ae, 0), size=size.tiny)
-plotshape(amyEntryV2_readyBear and barstate.isconfirmed, title="Ready Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#ff8a80, 0), size=size.tiny)
+amyEntryV2_strongBullEvent = barstate.isconfirmed and amyEntryV2_strongBull and not nz(amyEntryV2_strongBull[1], false)
+amyEntryV2_strongBearEvent = barstate.isconfirmed and amyEntryV2_strongBear and not nz(amyEntryV2_strongBear[1], false)
+amyEntryV2_readyBullEvent = barstate.isconfirmed and amyEntryV2_readyBull and not nz(amyEntryV2_readyBull[1], false)
+amyEntryV2_readyBearEvent = barstate.isconfirmed and amyEntryV2_readyBear and not nz(amyEntryV2_readyBear[1], false)
+
+plotshape(amyEntryV2_strongBullEvent, title="Strong Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#00c853, 0), size=size.small)
+plotshape(amyEntryV2_strongBearEvent, title="Strong Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#d50000, 0), size=size.small)
+plotshape(amyEntryV2_readyBullEvent, title="Ready Buy", style=shape.triangleup, location=location.belowbar, color=color.new(#69f0ae, 0), size=size.tiny)
+plotshape(amyEntryV2_readyBearEvent, title="Ready Sell", style=shape.triangledown, location=location.abovebar, color=color.new(#ff8a80, 0), size=size.tiny)
 
 var label amyEntryV2_liveLabel = na
 amyEntryV2_labelY = amyEntryV2_liveDir == 1 ? low - ta.atr(14) * amyEntryV2_noteOffsetAtr : high + ta.atr(14) * amyEntryV2_noteOffsetAtr

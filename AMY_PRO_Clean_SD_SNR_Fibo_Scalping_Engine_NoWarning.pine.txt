@@ -64,8 +64,8 @@ amy_bearReject = close < open and amy_upperWick >= amy_bodySafe * amy_rejectRati
 amy_tol = amy_atr * amy_tolAtr
 amy_lowestAfterPivotHigh = ta.lowest(low, amy_swingLen)
 amy_highestAfterPivotLow = ta.highest(high, amy_swingLen)
-amy_htfClose = request.security(syminfo.tickerid, amy_htfTf, close, barmerge.gaps_off, barmerge.lookahead_off)
-amy_htfEma = request.security(syminfo.tickerid, amy_htfTf, ta.ema(close, amy_htfEmaLen), barmerge.gaps_off, barmerge.lookahead_off)
+amy_htfClose = request.security(syminfo.tickerid, amy_htfTf, close[1], barmerge.gaps_off, barmerge.lookahead_on)
+amy_htfEma = request.security(syminfo.tickerid, amy_htfTf, ta.ema(close, amy_htfEmaLen)[1], barmerge.gaps_off, barmerge.lookahead_on)
 amy_htfBull = amy_htfClose >= amy_htfEma
 amy_htfBear = amy_htfClose < amy_htfEma
 
@@ -104,6 +104,8 @@ var box amy_entryZoneBox = na
 var int amy_legId = na
 var bool amy_buyZoneTouched = false
 var bool amy_sellZoneTouched = false
+var bool amy_signalIssued = false
+var bool amy_missedIssued = false
 
 //==================== HELPERS ====================//
 amy_panelPosition(_pos) =>
@@ -292,7 +294,7 @@ if array.size(amy_sdBoxes) > 0
         _top = array.get(amy_sdTops, i)
         _btm = array.get(amy_sdBtms, i)
         box.set_right(_bx, bar_index + amy_extendBars)
-        _invalid = amy_keepFreshZones and ((_dir == 1 and close < _btm) or (_dir == -1 and close > _top))
+        _invalid = barstate.isconfirmed and amy_keepFreshZones and ((_dir == 1 and close < _btm) or (_dir == -1 and close > _top))
         if _invalid
             box.delete(array.remove(amy_sdBoxes, i))
             label.delete(array.remove(amy_sdLabels, i))
@@ -314,13 +316,15 @@ amy_bearLeg = amy_fiboMode == "Manual Price" ? amy_manualBearLeg : amy_autoBearL
 amy_legHigh = amy_fiboMode == "Manual Price" and amy_manualReady ? amy_manualHigh : amy_autoLegReady ? math.max(amy_prevSwingPrice, amy_lastSwingPrice) : na
 amy_legLow = amy_fiboMode == "Manual Price" and amy_manualReady ? amy_manualLow : amy_autoLegReady ? math.min(amy_prevSwingPrice, amy_lastSwingPrice) : na
 amy_legRange = amy_legReady ? amy_legHigh - amy_legLow : na
-amy_fibAnchorIndex = amy_fiboMode == "Manual Price" ? bar_index - math.min(150, bar_index) : amy_lastSwingIndex
+amy_fibAnchorIndex = amy_fiboMode == "Manual Price" ? bar_index - math.min(150, bar_index) : amy_prevSwingIndex
 
 amy_currentLegId = amy_legReady ? (amy_fiboMode == "Manual Price" ? 999999 + (amy_bullLeg ? 1 : -1) : amy_lastSwingIndex * 10 + amy_lastSwingType) : na
-if amy_legReady and amy_currentLegId != amy_legId
+if amy_legReady and (na(amy_legId) or amy_currentLegId != amy_legId)
     amy_legId := amy_currentLegId
     amy_buyZoneTouched := false
     amy_sellZoneTouched := false
+    amy_signalIssued := false
+    amy_missedIssued := false
 
 amy_fibPrice(_ratio) =>
     amy_bullLeg ? amy_legHigh - amy_legRange * _ratio : amy_bearLeg ? amy_legLow + amy_legRange * _ratio : na
@@ -353,7 +357,7 @@ if array.size(amy_sdBoxes) > 0
         if _dir == -1 and (na(amy_bestSupplyDist) or _dist < amy_bestSupplyDist)
             amy_bestSupplyDist := _dist
             amy_displaySupplyIdx := i
-        _inside = close <= _top + amy_tol and close >= _btm - amy_tol
+        _inside = low <= _top + amy_tol and high >= _btm - amy_tol
         if _inside and _dir == 1 and na(amy_nearDemandTop)
             amy_nearDemandTop := _top
             amy_nearDemandBtm := _btm
@@ -468,12 +472,12 @@ amy_buyZoneLow = amy_bullLeg ? amy_legHigh - amy_legRange * amy_highRatio : na
 amy_sellZoneLow = amy_bearLeg ? amy_legLow + amy_legRange * amy_lowRatio : na
 amy_sellZoneHigh = amy_bearLeg ? amy_legLow + amy_legRange * amy_highRatio : na
 
-amy_inBuyFibo = amy_bullLeg and close >= amy_buyZoneLow - amy_tol and close <= amy_buyZoneHigh + amy_tol
-amy_inSellFibo = amy_bearLeg and close >= amy_sellZoneLow - amy_tol and close <= amy_sellZoneHigh + amy_tol
+amy_inBuyFibo = amy_bullLeg and low <= amy_buyZoneHigh + amy_tol and high >= amy_buyZoneLow - amy_tol
+amy_inSellFibo = amy_bearLeg and high >= amy_sellZoneLow - amy_tol and low <= amy_sellZoneHigh + amy_tol
 
-if amy_inBuyFibo
+if barstate.isconfirmed and amy_inBuyFibo
     amy_buyZoneTouched := true
-if amy_inSellFibo
+if barstate.isconfirmed and amy_inSellFibo
     amy_sellZoneTouched := true
 
 amy_buyLocation = amy_useFibo ? amy_inBuyFibo : (amy_nearDemand or amy_nearSupport)
@@ -486,13 +490,18 @@ amy_sellHtfOk = not amy_useHtfFilter or amy_htfBear
 amy_buyReady = amy_showEntry and amy_buyLocation and amy_buyConfluence and amy_bullReject and amy_buyHtfOk
 amy_sellReady = amy_showEntry and amy_sellLocation and amy_sellConfluence and amy_bearReject and amy_sellHtfOk
 
-amy_missedBuyRaw = amy_showEntry and amy_showMissed and amy_buyZoneTouched and amy_bullLeg and not amy_buyReady and close > amy_buyZoneHigh + amy_tol and close < amy_legHigh
-amy_missedSellRaw = amy_showEntry and amy_showMissed and amy_sellZoneTouched and amy_bearLeg and not amy_sellReady and close < amy_sellZoneLow - amy_tol and close > amy_legLow
+amy_missedBuyRaw = barstate.isconfirmed and amy_showEntry and amy_showMissed and amy_useFibo and amy_buyZoneTouched and amy_bullLeg and not amy_signalIssued and not amy_missedIssued and not amy_buyReady and close > amy_buyZoneHigh + amy_tol and close < amy_legHigh
+amy_missedSellRaw = barstate.isconfirmed and amy_showEntry and amy_showMissed and amy_useFibo and amy_sellZoneTouched and amy_bearLeg and not amy_signalIssued and not amy_missedIssued and not amy_sellReady and close < amy_sellZoneLow - amy_tol and close > amy_legLow
 
-amy_buySignal = amy_buyReady and not nz(amy_buyReady[1], false)
-amy_sellSignal = amy_sellReady and not nz(amy_sellReady[1], false)
-amy_missedBuy = amy_missedBuyRaw and not nz(amy_missedBuyRaw[1], false)
-amy_missedSell = amy_missedSellRaw and not nz(amy_missedSellRaw[1], false)
+amy_buySignal = barstate.isconfirmed and not amy_signalIssued and amy_buyReady
+amy_sellSignal = barstate.isconfirmed and not amy_signalIssued and amy_sellReady
+amy_missedBuy = amy_missedBuyRaw
+amy_missedSell = amy_missedSellRaw
+
+if amy_buySignal or amy_sellSignal
+    amy_signalIssued := true
+if amy_missedBuy or amy_missedSell
+    amy_missedIssued := true
 
 float amy_buySlBase = amy_buyZoneLow
 if not na(amy_nearDemandBtm)
@@ -515,23 +524,35 @@ amy_buyTP2 = amy_buyReady ? close + amy_buyRisk * amy_rr2 : na
 amy_sellTP1 = amy_sellReady ? close - amy_sellRisk * amy_rr1 : na
 amy_sellTP2 = amy_sellReady ? close - amy_sellRisk * amy_rr2 : na
 
-amy_locationScore = (amy_inBuyFibo or amy_inSellFibo) ? 25 : 0
-amy_sdScore = (amy_nearDemand or amy_nearSupply) ? 25 : 0
-amy_snrScore = (amy_nearSupport or amy_nearResistance) ? 20 : 0
-amy_rejectScore = (amy_bullReject or amy_bearReject) ? 20 : 0
-amy_htfScore = ((amy_bullLeg and amy_buyHtfOk) or (amy_bearLeg and amy_sellHtfOk)) ? 10 : 0
-amy_finalScore = amy_locationScore + amy_sdScore + amy_snrScore + amy_rejectScore + amy_htfScore
+amy_buyScore = (amy_buyLocation ? 25 : 0) + (amy_nearDemand ? 25 : 0) + (amy_nearSupport ? 20 : 0) + (amy_bullReject ? 20 : 0) + (amy_buyHtfOk ? 10 : 0)
+amy_sellScore = (amy_sellLocation ? 25 : 0) + (amy_nearSupply ? 25 : 0) + (amy_nearResistance ? 20 : 0) + (amy_bearReject ? 20 : 0) + (amy_sellHtfOk ? 10 : 0)
+amy_scoreDir = amy_buyReady ? 1 : amy_sellReady ? -1 : amy_bullLeg ? 1 : amy_bearLeg ? -1 : amy_buyScore >= amy_sellScore ? 1 : -1
+amy_finalScore = amy_scoreDir == 1 ? amy_buyScore : amy_sellScore
 amy_rating = amy_finalScore >= 80 ? "A" : amy_finalScore >= 60 ? "B" : amy_finalScore >= 40 ? "C" : "D"
 
 //==================== ENTRY ZONE BOX ====================//
 if barstate.islast
-    if not na(amy_entryZoneBox)
+    _zoneVisible = amy_showEntry and ((amy_bullLeg and not na(amy_buyZoneHigh) and not na(amy_buyZoneLow)) or (amy_bearLeg and not na(amy_sellZoneHigh) and not na(amy_sellZoneLow)))
+    if _zoneVisible
+        _zoneTop = amy_bullLeg ? amy_buyZoneHigh : amy_sellZoneHigh
+        _zoneBtm = amy_bullLeg ? amy_buyZoneLow : amy_sellZoneLow
+        _zoneFill = amy_bullLeg ? color.new(color.lime, 92) : color.new(color.red, 92)
+        _zoneBorder = amy_bullLeg ? color.new(color.lime, 55) : color.new(color.red, 55)
+        _zoneText = amy_bullLeg ? "BUY MATH ZONE" : "SELL MATH ZONE"
+        if na(amy_entryZoneBox)
+            amy_entryZoneBox := box.new(amy_fibAnchorIndex, _zoneTop, bar_index + amy_extendBars, _zoneBtm, xloc=xloc.bar_index, bgcolor=_zoneFill, border_color=_zoneBorder, text=_zoneText, text_color=_zoneBorder, text_size=size.tiny, text_halign=text.align_left)
+        else
+            box.set_left(amy_entryZoneBox, amy_fibAnchorIndex)
+            box.set_right(amy_entryZoneBox, bar_index + amy_extendBars)
+            box.set_top(amy_entryZoneBox, _zoneTop)
+            box.set_bottom(amy_entryZoneBox, _zoneBtm)
+            box.set_bgcolor(amy_entryZoneBox, _zoneFill)
+            box.set_border_color(amy_entryZoneBox, _zoneBorder)
+            box.set_text(amy_entryZoneBox, _zoneText)
+            box.set_text_color(amy_entryZoneBox, _zoneBorder)
+    else if not na(amy_entryZoneBox)
         box.delete(amy_entryZoneBox)
         amy_entryZoneBox := na
-    if amy_showEntry and amy_bullLeg and not na(amy_buyZoneHigh) and not na(amy_buyZoneLow)
-        amy_entryZoneBox := box.new(bar_index - 5, amy_buyZoneHigh, bar_index + amy_extendBars, amy_buyZoneLow, xloc=xloc.bar_index, bgcolor=color.new(color.lime, 92), border_color=color.new(color.lime, 55), text="BUY MATH ZONE", text_color=color.new(color.lime, 15), text_size=size.tiny, text_halign=text.align_left)
-    if amy_showEntry and amy_bearLeg and not na(amy_sellZoneHigh) and not na(amy_sellZoneLow)
-        amy_entryZoneBox := box.new(bar_index - 5, amy_sellZoneHigh, bar_index + amy_extendBars, amy_sellZoneLow, xloc=xloc.bar_index, bgcolor=color.new(color.red, 92), border_color=color.new(color.red, 55), text="SELL MATH ZONE", text_color=color.new(color.red, 15), text_size=size.tiny, text_halign=text.align_left)
 
 //==================== TRADE LINES ====================//
 if amy_showTradeLines and amy_buySignal and not na(amy_buySL) and not na(amy_buyTP1) and not na(amy_buyTP2)
@@ -591,7 +612,7 @@ if barstate.islast
         table.cell(amy_panel, 0, 7, "HTF", text_color=color.white, bgcolor=color.new(color.black, 70))
         table.cell(amy_panel, 1, 7, amy_htfText, text_color=color.white, bgcolor=color.new(color.black, 70))
         table.cell(amy_panel, 0, 8, "Score", text_color=color.white, bgcolor=color.new(color.black, 70))
-        table.cell(amy_panel, 1, 8, str.tostring(amy_finalScore) + " / " + amy_rating, text_color=color.white, bgcolor=color.new(color.black, 70))
+        table.cell(amy_panel, 1, 8, (amy_scoreDir == 1 ? "BUY " : "SELL ") + str.tostring(amy_finalScore) + " / " + amy_rating, text_color=color.white, bgcolor=color.new(color.black, 70))
     else
         table.clear(amy_panel, 0, 0, 1, 8)
 
