@@ -124,23 +124,25 @@ plot(showLevels ? activeResistance : na, "Resistance", color=color.new(color.red
 // ORDER FLOW PROXY
 //==============================================================================
 safeRange = math.max(high - low, syminfo.mintick)
-buyPressure = volume * (close - low) / safeRange
-sellPressure = volume * (high - close) / safeRange
+flowVolume = nz(volume, 0.0)
+buyPressure = flowVolume * (close - low) / safeRange
+sellPressure = flowVolume * (high - close) / safeRange
 delta = buyPressure - sellPressure
 deltaEma = ta.ema(delta, deltaEmaLen)
 volAvg = ta.sma(volume, volLen)
 volumeSpike = volume > volAvg * volSpikeMult
+hasVolumeData = not na(volume) and not na(volAvg) and volAvg > 0
 
-deltaBuyOk = not useDeltaFilter or (delta > 0 and deltaEma >= 0)
-deltaSellOk = not useDeltaFilter or (delta < 0 and deltaEma <= 0)
+deltaBuyOk = not useDeltaFilter or not hasVolumeData or (delta > 0 and deltaEma >= 0)
+deltaSellOk = not useDeltaFilter or not hasVolumeData or (delta < 0 and deltaEma <= 0)
 
 //==============================================================================
 // TRIGGER 1: BREAKOUT + RETEST
 //==============================================================================
 displacementOk = body >= atr * displacementAtr and bodyRatio >= bodyRatioMin
 
-breakUp = not na(activeResistance) and close > activeResistance + breakBuffer and close > open and displacementOk
-breakDown = not na(activeSupport) and close < activeSupport - breakBuffer and close < open and displacementOk
+breakUp = confirmed and not na(activeResistance) and close > activeResistance + breakBuffer and close[1] <= activeResistance + breakBuffer and close > open and displacementOk
+breakDown = confirmed and not na(activeSupport) and close < activeSupport - breakBuffer and close[1] >= activeSupport - breakBuffer and close < open and displacementOk
 
 var float brokenResistance = na
 var int brokenResistanceBar = na
@@ -154,6 +156,13 @@ if breakUp
 if breakDown
     brokenSupport := activeSupport
     brokenSupportBar := bar_index
+
+if not na(brokenResistanceBar) and bar_index - brokenResistanceBar > retestWindow
+    brokenResistance := na
+    brokenResistanceBar := na
+if not na(brokenSupportBar) and bar_index - brokenSupportBar > retestWindow
+    brokenSupport := na
+    brokenSupportBar := na
 
 buyRetest = useRetest and not na(brokenResistance) and not na(brokenResistanceBar) and bar_index > brokenResistanceBar and bar_index - brokenResistanceBar <= retestWindow and low <= brokenResistance + zonePad and close > brokenResistance and close > open
 sellRetest = useRetest and not na(brokenSupport) and not na(brokenSupportBar) and bar_index > brokenSupportBar and bar_index - brokenSupportBar <= retestWindow and high >= brokenSupport - zonePad and close < brokenSupport and close < open
@@ -195,25 +204,31 @@ var float bullFvgHigh = na
 var float bullFvgLow = na
 var float bearFvgHigh = na
 var float bearFvgLow = na
+var int bullFvgBar = na
+var int bearFvgBar = na
 
-if bullFvgCreated
+if confirmed and bullFvgCreated
     bullFvgHigh := low
     bullFvgLow := high[2]
+    bullFvgBar := bar_index
 
-if bearFvgCreated
+if confirmed and bearFvgCreated
     bearFvgHigh := low[2]
     bearFvgLow := high
+    bearFvgBar := bar_index
 
-if not na(bullFvgLow) and close < bullFvgLow
+if confirmed and not na(bullFvgLow) and close < bullFvgLow
     bullFvgHigh := na
     bullFvgLow := na
+    bullFvgBar := na
 
-if not na(bearFvgHigh) and close > bearFvgHigh
+if confirmed and not na(bearFvgHigh) and close > bearFvgHigh
     bearFvgHigh := na
     bearFvgLow := na
+    bearFvgBar := na
 
-inBullFvg = not na(bullFvgHigh) and low <= bullFvgHigh and high >= bullFvgLow
-inBearFvg = not na(bearFvgHigh) and high >= bearFvgLow and low <= bearFvgHigh
+inBullFvg = not na(bullFvgHigh) and not na(bullFvgBar) and bar_index > bullFvgBar and low <= bullFvgHigh and high >= bullFvgLow
+inBearFvg = not na(bearFvgHigh) and not na(bearFvgBar) and bar_index > bearFvgBar and high >= bearFvgLow and low <= bearFvgHigh
 
 bullFvgMid = not na(bullFvgHigh) and not na(bullFvgLow) ? (bullFvgHigh + bullFvgLow) / 2 : na
 bearFvgMid = not na(bearFvgHigh) and not na(bearFvgLow) ? (bearFvgHigh + bearFvgLow) / 2 : na
@@ -231,25 +246,31 @@ var float bullObHigh = na
 var float bullObLow = na
 var float bearObHigh = na
 var float bearObLow = na
+var int bullObBar = na
+var int bearObBar = na
 
 if breakUp and not na(bullObHighTmp)
     bullObHigh := bullObHighTmp
     bullObLow := bullObLowTmp
+    bullObBar := bar_index
 
 if breakDown and not na(bearObHighTmp)
     bearObHigh := bearObHighTmp
     bearObLow := bearObLowTmp
+    bearObBar := bar_index
 
-if not na(bullObLow) and close < bullObLow
+if confirmed and not na(bullObLow) and close < bullObLow
     bullObHigh := na
     bullObLow := na
+    bullObBar := na
 
-if not na(bearObHigh) and close > bearObHigh
+if confirmed and not na(bearObHigh) and close > bearObHigh
     bearObHigh := na
     bearObLow := na
+    bearObBar := na
 
-inBullOb = not na(bullObHigh) and low <= bullObHigh and high >= bullObLow
-inBearOb = not na(bearObHigh) and high >= bearObLow and low <= bearObHigh
+inBullOb = not na(bullObHigh) and not na(bullObBar) and bar_index > bullObBar and low <= bullObHigh and high >= bullObLow
+inBearOb = not na(bearObHigh) and not na(bearObBar) and bar_index > bearObBar and high >= bearObLow and low <= bearObHigh
 
 bullObMid = not na(bullObHigh) and not na(bullObLow) ? (bullObHigh + bullObLow) / 2 : na
 bearObMid = not na(bearObHigh) and not na(bearObLow) ? (bearObHigh + bearObLow) / 2 : na
@@ -384,6 +405,20 @@ if showTradeLevels and (buySignal or sellSignal)
     slLine := line.new(bar_index, slPrice, bar_index + 20, slPrice, color=color.new(color.red, 0), width=2)
     tp1Line := line.new(bar_index, tp1Price, bar_index + 20, tp1Price, color=color.new(color.green, 0), width=2)
     tp2Line := line.new(bar_index, tp2Price, bar_index + 20, tp2Price, color=color.new(color.green, 40), style=line.style_dotted, width=2)
+
+if not showTradeLevels and barstate.islast
+    if not na(entryLine)
+        line.delete(entryLine)
+        entryLine := na
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+    if not na(tp1Line)
+        line.delete(tp1Line)
+        tp1Line := na
+    if not na(tp2Line)
+        line.delete(tp2Line)
+        tp2Line := na
 
 // Hidden data-window values
 plot(buyVotes, title="Buy Trigger Votes", color=color.new(color.green, 100), display=display.data_window)

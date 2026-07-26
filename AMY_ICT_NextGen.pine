@@ -630,22 +630,22 @@ else if not na(supportBox)
 var array<amyFvg> bullFvgs = array.new<amyFvg>()
 var array<amyFvg> bearFvgs = array.new<amyFvg>()
 
-fvgBull = displacementBull[1] and low > high[2]
-fvgBear = displacementBear[1] and high < low[2]
+fvgBull = barstate.isconfirmed and displacementBull[1] and low > high[2]
+fvgBear = barstate.isconfirmed and displacementBear[1] and high < low[2]
 
-if showFvg and fvgBull
+if fvgBull
     fvgTop = low
     fvgBot = high[2]
-    newBullFvgBox = box.new(bar_index - 2, fvgTop, bar_index + fvgExtend, fvgBot, bgcolor=color.new(color.lime, 90), border_color=color.new(color.lime, 65), text="FVG", text_color=color.new(color.lime, 35), text_size=size.tiny, text_halign=text.align_right)
+    newBullFvgBox = box.new(bar_index - 2, fvgTop, bar_index + fvgExtend, fvgBot, bgcolor=color.new(color.lime, showFvg ? 90 : 100), border_color=color.new(color.lime, showFvg ? 65 : 100), text=showFvg ? "FVG" : "", text_color=color.new(color.lime, showFvg ? 35 : 100), text_size=size.tiny, text_halign=text.align_right)
     bullFvgs.unshift(amyFvg.new(fvgTop, fvgBot, 1, newBullFvgBox))
     if bullFvgs.size() > fvgVisible
         oldBullFvg = bullFvgs.pop()
         box.delete(oldBullFvg.bx)
 
-if showFvg and fvgBear
+if fvgBear
     fvgTop = low[2]
     fvgBot = high
-    newBearFvgBox = box.new(bar_index - 2, fvgTop, bar_index + fvgExtend, fvgBot, bgcolor=color.new(color.red, 90), border_color=color.new(color.red, 65), text="FVG", text_color=color.new(color.red, 35), text_size=size.tiny, text_halign=text.align_right)
+    newBearFvgBox = box.new(bar_index - 2, fvgTop, bar_index + fvgExtend, fvgBot, bgcolor=color.new(color.red, showFvg ? 90 : 100), border_color=color.new(color.red, showFvg ? 65 : 100), text=showFvg ? "FVG" : "", text_color=color.new(color.red, showFvg ? 35 : 100), text_size=size.tiny, text_halign=text.align_right)
     bearFvgs.unshift(amyFvg.new(fvgTop, fvgBot, -1, newBearFvgBox))
     if bearFvgs.size() > fvgVisible
         oldBearFvg = bearFvgs.pop()
@@ -655,9 +655,13 @@ if bullFvgs.size() > 0
     for i = bullFvgs.size() - 1 to 0
         item = bullFvgs.get(i)
         box.set_right(item.bx, bar_index + fvgExtend)
-        if low < item.top
+        box.set_bgcolor(item.bx, color.new(color.lime, showFvg ? 90 : 100))
+        box.set_border_color(item.bx, color.new(color.lime, showFvg ? 65 : 100))
+        box.set_text(item.bx, showFvg ? "FVG" : "")
+        box.set_text_color(item.bx, color.new(color.lime, showFvg ? 35 : 100))
+        if showFvg and low < item.top
             box.set_border_style(item.bx, line.style_dashed)
-        if low <= item.bot
+        if barstate.isconfirmed and low <= item.bot
             box.delete(item.bx)
             bullFvgs.remove(i)
 
@@ -665,21 +669,15 @@ if bearFvgs.size() > 0
     for i = bearFvgs.size() - 1 to 0
         item = bearFvgs.get(i)
         box.set_right(item.bx, bar_index + fvgExtend)
-        if high > item.bot
+        box.set_bgcolor(item.bx, color.new(color.red, showFvg ? 90 : 100))
+        box.set_border_color(item.bx, color.new(color.red, showFvg ? 65 : 100))
+        box.set_text(item.bx, showFvg ? "FVG" : "")
+        box.set_text_color(item.bx, color.new(color.red, showFvg ? 35 : 100))
+        if showFvg and high > item.bot
             box.set_border_style(item.bx, line.style_dashed)
-        if high >= item.top
+        if barstate.isconfirmed and high >= item.top
             box.delete(item.bx)
             bearFvgs.remove(i)
-
-if not showFvg
-    if bullFvgs.size() > 0
-        for i = bullFvgs.size() - 1 to 0
-            item = bullFvgs.pop()
-            box.delete(item.bx)
-    if bearFvgs.size() > 0
-        for i = bearFvgs.size() - 1 to 0
-            item = bearFvgs.pop()
-            box.delete(item.bx)
 
 // ============================================================================
 // ORDER BLOCK ENGINE — LAST OPPOSITE ORIGIN CANDLE BEFORE CONFIRMED BREAK
@@ -687,7 +685,7 @@ if not showFvg
 var array<amyOb> bullObs = array.new<amyOb>()
 var array<amyOb> bearObs = array.new<amyOb>()
 
-if showOb and rawBreakBull
+if rawBreakBull
     float bullObTop = na
     float bullObBot = na
     int bullObOffset = na
@@ -697,13 +695,13 @@ if showOb and rawBreakBull
             bullObBot := obUseBody ? math.min(open[i], close[i]) : low[i]
             bullObOffset := i
     if not na(bullObOffset)
-        newBullObBox = box.new(bar_index - bullObOffset, bullObTop, bar_index + obExtend, bullObBot, bgcolor=color.new(color.blue, 90), border_color=color.new(color.blue, 40), text="+OB", text_color=color.new(color.blue, 5), text_size=size.tiny, text_halign=text.align_right)
+        newBullObBox = box.new(bar_index - bullObOffset, bullObTop, bar_index + obExtend, bullObBot, bgcolor=color.new(color.blue, showOb ? 90 : 100), border_color=color.new(color.blue, showOb ? 40 : 100), text=showOb ? "+OB" : "", text_color=color.new(color.blue, showOb ? 5 : 100), text_size=size.tiny, text_halign=text.align_right)
         bullObs.unshift(amyOb.new(bullObTop, bullObBot, 1, newBullObBox))
         if bullObs.size() > obVisible
             oldBullOb = bullObs.pop()
             box.delete(oldBullOb.bx)
 
-if showOb and rawBreakBear
+if rawBreakBear
     float bearObTop = na
     float bearObBot = na
     int bearObOffset = na
@@ -713,7 +711,7 @@ if showOb and rawBreakBear
             bearObBot := obUseBody ? math.min(open[i], close[i]) : low[i]
             bearObOffset := i
     if not na(bearObOffset)
-        newBearObBox = box.new(bar_index - bearObOffset, bearObTop, bar_index + obExtend, bearObBot, bgcolor=color.new(color.red, 91), border_color=color.new(color.red, 40), text="-OB", text_color=color.new(color.red, 5), text_size=size.tiny, text_halign=text.align_right)
+        newBearObBox = box.new(bar_index - bearObOffset, bearObTop, bar_index + obExtend, bearObBot, bgcolor=color.new(color.red, showOb ? 91 : 100), border_color=color.new(color.red, showOb ? 40 : 100), text=showOb ? "-OB" : "", text_color=color.new(color.red, showOb ? 5 : 100), text_size=size.tiny, text_halign=text.align_right)
         bearObs.unshift(amyOb.new(bearObTop, bearObBot, -1, newBearObBox))
         if bearObs.size() > obVisible
             oldBearOb = bearObs.pop()
@@ -723,7 +721,11 @@ if bullObs.size() > 0
     for i = bullObs.size() - 1 to 0
         item = bullObs.get(i)
         box.set_right(item.bx, bar_index + obExtend)
-        if close < item.bot
+        box.set_bgcolor(item.bx, color.new(color.blue, showOb ? 90 : 100))
+        box.set_border_color(item.bx, color.new(color.blue, showOb ? 40 : 100))
+        box.set_text(item.bx, showOb ? "+OB" : "")
+        box.set_text_color(item.bx, color.new(color.blue, showOb ? 5 : 100))
+        if barstate.isconfirmed and close < item.bot
             box.delete(item.bx)
             bullObs.remove(i)
 
@@ -731,19 +733,13 @@ if bearObs.size() > 0
     for i = bearObs.size() - 1 to 0
         item = bearObs.get(i)
         box.set_right(item.bx, bar_index + obExtend)
-        if close > item.top
+        box.set_bgcolor(item.bx, color.new(color.red, showOb ? 91 : 100))
+        box.set_border_color(item.bx, color.new(color.red, showOb ? 40 : 100))
+        box.set_text(item.bx, showOb ? "-OB" : "")
+        box.set_text_color(item.bx, color.new(color.red, showOb ? 5 : 100))
+        if barstate.isconfirmed and close > item.top
             box.delete(item.bx)
             bearObs.remove(i)
-
-if not showOb
-    if bullObs.size() > 0
-        for i = bullObs.size() - 1 to 0
-            item = bullObs.pop()
-            box.delete(item.bx)
-    if bearObs.size() > 0
-        for i = bearObs.size() - 1 to 0
-            item = bearObs.pop()
-            box.delete(item.bx)
 
 // ============================================================================
 // POI PROXIMITY
@@ -1286,4 +1282,3 @@ if showDashboard and barstate.islast
     table.cell(dashboard, 0, 15, event2, text_color=color.white, text_size=size.tiny, text_halign=text.align_left, bgcolor=dashBg)
 else if barstate.islast
     table.clear(dashboard, 0, 0, 1, 15)
-

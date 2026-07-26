@@ -45,6 +45,10 @@ var line amy_slLine = na
 var line amy_tp1Line = na
 var line amy_tp2Line = na
 var label amy_signalLabel = na
+var int amy_activeLegIndex = na
+var bool amy_zoneTouched = false
+var bool amy_signalIssued = false
+var bool amy_missedIssued = false
 
 amy_addSwing(_idx, _price, _type, _atr) =>
     bool _accepted = false
@@ -135,7 +139,7 @@ if amy_sz >= 6
     amy_rulesOk := (amy_bullImpulse or amy_bearImpulse) and amy_ruleWave2 and amy_ruleWave3 and amy_ruleWave4
 
 //==================== DRAW WAVES ====================//
-if barstate.islast and amy_showWaves
+if barstate.islast and barstate.isconfirmed and amy_showWaves
     amy_clearDrawings()
     if amy_sz >= 2
         _start = math.max(0, amy_sz - 8)
@@ -186,22 +190,49 @@ if amy_sz >= 2
         amy_zoneHigh := _pB + _range * _rDeep
         amy_zoneName := "SELL WAVE RETRACE"
 
-amy_inBuyZone = amy_showEntry and amy_entryDir == 1 and not na(amy_zoneHigh) and close <= amy_zoneHigh + amy_tol and close >= amy_zoneLow - amy_tol
-amy_inSellZone = amy_showEntry and amy_entryDir == -1 and not na(amy_zoneLow) and close >= amy_zoneLow - amy_tol and close <= amy_zoneHigh + amy_tol
+amy_legIndex = amy_sz >= 1 ? array.get(amy_wIdx, amy_sz - 1) : na
+if not na(amy_legIndex) and (na(amy_activeLegIndex) or amy_legIndex != amy_activeLegIndex)
+    amy_activeLegIndex := amy_legIndex
+    amy_zoneTouched := false
+    amy_signalIssued := false
+    amy_missedIssued := false
+
+amy_inBuyZone = amy_showEntry and amy_entryDir == 1 and not na(amy_zoneHigh) and low <= amy_zoneHigh + amy_tol and high >= amy_zoneLow - amy_tol
+amy_inSellZone = amy_showEntry and amy_entryDir == -1 and not na(amy_zoneLow) and high >= amy_zoneLow - amy_tol and low <= amy_zoneHigh + amy_tol
 amy_buyReady = amy_inBuyZone and amy_bullReject
 amy_sellReady = amy_inSellZone and amy_bearReject
-amy_buySignal = amy_buyReady and not nz(amy_buyReady[1], false)
-amy_sellSignal = amy_sellReady and not nz(amy_sellReady[1], false)
-amy_missedBuy = amy_showEntry and amy_entryDir == 1 and not na(amy_zoneHigh) and close > amy_zoneHigh + amy_tol
-amy_missedSell = amy_showEntry and amy_entryDir == -1 and not na(amy_zoneLow) and close < amy_zoneLow - amy_tol
+amy_buySignal = barstate.isconfirmed and not amy_signalIssued and amy_buyReady
+amy_sellSignal = barstate.isconfirmed and not amy_signalIssued and amy_sellReady
 
-if amy_showEntry and not na(amy_zoneBox)
-    box.delete(amy_zoneBox)
-    amy_zoneBox := na
+if barstate.isconfirmed and (amy_inBuyZone or amy_inSellZone)
+    amy_zoneTouched := true
+
+amy_missedBuy = barstate.isconfirmed and amy_showEntry and amy_entryDir == 1 and amy_zoneTouched and not amy_signalIssued and not amy_missedIssued and not amy_inBuyZone and close > amy_zoneHigh + amy_tol
+amy_missedSell = barstate.isconfirmed and amy_showEntry and amy_entryDir == -1 and amy_zoneTouched and not amy_signalIssued and not amy_missedIssued and not amy_inSellZone and close < amy_zoneLow - amy_tol
+
+if amy_buySignal or amy_sellSignal
+    amy_signalIssued := true
+if amy_missedBuy or amy_missedSell
+    amy_missedIssued := true
+
 if amy_showEntry and not na(amy_zoneHigh) and not na(amy_zoneLow)
     _boxCol = amy_entryDir == 1 ? color.new(color.lime, 91) : color.new(color.red, 91)
     _borCol = amy_entryDir == 1 ? color.new(color.lime, 45) : color.new(color.red, 45)
-    amy_zoneBox := box.new(bar_index - 10, amy_zoneHigh, bar_index + amy_extendBars, amy_zoneLow, xloc=xloc.bar_index, bgcolor=_boxCol, border_color=_borCol, text=amy_zoneName, text_color=_borCol, text_size=size.tiny, text_halign=text.align_left)
+    _left = amy_sz >= 2 ? array.get(amy_wIdx, amy_sz - 2) : bar_index
+    if na(amy_zoneBox)
+        amy_zoneBox := box.new(_left, amy_zoneHigh, bar_index + amy_extendBars, amy_zoneLow, xloc=xloc.bar_index, bgcolor=_boxCol, border_color=_borCol, text=amy_zoneName, text_color=_borCol, text_size=size.tiny, text_halign=text.align_left)
+    else
+        box.set_left(amy_zoneBox, _left)
+        box.set_right(amy_zoneBox, bar_index + amy_extendBars)
+        box.set_top(amy_zoneBox, amy_zoneHigh)
+        box.set_bottom(amy_zoneBox, amy_zoneLow)
+        box.set_bgcolor(amy_zoneBox, _boxCol)
+        box.set_border_color(amy_zoneBox, _borCol)
+        box.set_text(amy_zoneBox, amy_zoneName)
+        box.set_text_color(amy_zoneBox, _borCol)
+else if not na(amy_zoneBox)
+    box.delete(amy_zoneBox)
+    amy_zoneBox := na
 
 amy_buySL = amy_buyReady ? amy_zoneLow - amy_atr * amy_slAtr : na
 amy_sellSL = amy_sellReady ? amy_zoneHigh + amy_atr * amy_slAtr : na
@@ -273,6 +304,8 @@ if barstate.islast and amy_showPanel
     table.cell(amy_panel, 1, 5, not na(amy_zoneLow) ? str.tostring(amy_zoneLow, format.mintick) + " - " + str.tostring(amy_zoneHigh, format.mintick) : "-", text_color=color.white, bgcolor=color.new(color.black, 70))
     table.cell(amy_panel, 0, 6, "Rule", text_color=color.white, bgcolor=color.new(color.black, 70))
     table.cell(amy_panel, 1, 6, "Ready inside retrace", text_color=color.white, bgcolor=color.new(color.black, 70))
+else if barstate.islast
+    table.clear(amy_panel, 0, 0, 1, 6)
 
 alertcondition(amy_buySignal, title="AMY NEO WAVE BUY READY", message="AMY Neo Wave: BUY READY")
 alertcondition(amy_sellSignal, title="AMY NEO WAVE SELL READY", message="AMY Neo Wave: SELL READY")

@@ -347,7 +347,7 @@ draw(left, col) =>
     x2      := bar_index -1
     ph       = ta.pivothigh(hi, left, 1)
     pl       = ta.pivotlow (lo, left, 1)
-    if ph   
+    if not na(ph)
         dir := aZZ.d.get (0) 
         x1  := aZZ.x.get (0) 
         y1  := aZZ.y.get (0) 
@@ -403,7 +403,7 @@ draw(left, col) =>
                     getLast.bx.delete()
                     getLast.ln.delete()               
     //
-    if pl
+    if not na(pl)
         dir := aZZ.d.get (0) 
         x1  := aZZ.x.get (0) 
         y1  := aZZ.y.get (0) 
@@ -532,10 +532,10 @@ if MSS.l_bosBr.size() > 200
     MSS.lbBosBr.pop().delete()
 
 //Killzones 
-ny          = time(timeframe.period, input.session('0700-0900', '', inline = 'ny', group = 'Killzones'), 'America/New_York') and showNy 
-ldn_open    = time(timeframe.period, input.session('0700-1000', '', inline = 'lo', group = 'Killzones'), 'Europe/London'   ) and showLdno // 0200-0500 UTC-5
-ldn_close   = time(timeframe.period, input.session('1500-1700', '', inline = 'lc', group = 'Killzones'), 'Europe/London'   ) and showLdnc // 1000-1200 UTC-5
-asian       = time(timeframe.period, input.session('1000-1400', '', inline = 'as', group = 'Killzones'), 'Asia/Tokyo'      ) and showAsia // 2000-0000 UTC-5
+ny          = not na(time(timeframe.period, input.session('0700-0900', '', inline = 'ny', group = 'Killzones'), 'America/New_York')) and showNy
+ldn_open    = not na(time(timeframe.period, input.session('0700-1000', '', inline = 'lo', group = 'Killzones'), 'Europe/London'   )) and showLdno // 0200-0500 UTC-5
+ldn_close   = not na(time(timeframe.period, input.session('1500-1700', '', inline = 'lc', group = 'Killzones'), 'Europe/London'   )) and showLdnc // 1000-1200 UTC-5
+asian       = not na(time(timeframe.period, input.session('1000-1400', '', inline = 'as', group = 'Killzones'), 'Asia/Tokyo'      )) and showAsia // 2000-0000 UTC-5
 
 //Pivotpoints 
 ph          = ta.pivothigh(3, 1), lPh = fixnan(ph)
@@ -775,7 +775,7 @@ if barstate.isfirst
 if dayofweek == dayofweek.friday
     friCp := close, friCi := n
 
-if ta.change(dayofweek) 
+if ta.change(dayofweek) != 0
     if  dayofweek == dayofweek.monday and iNWOG
         monOp := open , monOi := n
         bl_NWOG.unshift(bx_ln.new(   
@@ -1151,9 +1151,9 @@ amyPivotV2_extendBars = input.int(40, "Right Bars", minval=5, maxval=300, group=
 amyPivotV2_lineWidth = input.int(1, "Line Width", minval=1, maxval=4, group=amyPivotV2_group)
 amyPivotV2_nearAtrMult = input.float(2.0, "Show Level If Near ATR", minval=0.5, step=0.5, group=amyPivotV2_group)
 
-amyPivotV2_rawHigh = request.security(syminfo.tickerid, amyPivotV2_tf, high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyPivotV2_rawLow = request.security(syminfo.tickerid, amyPivotV2_tf, low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyPivotV2_rawClose = request.security(syminfo.tickerid, amyPivotV2_tf, close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+amyPivotV2_rawHigh = request.security(syminfo.tickerid, amyPivotV2_tf, high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyPivotV2_rawLow = request.security(syminfo.tickerid, amyPivotV2_tf, low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyPivotV2_rawClose = request.security(syminfo.tickerid, amyPivotV2_tf, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyPivotV2_newTfBar = ta.change(time(amyPivotV2_tf)) != 0
 
@@ -1162,9 +1162,9 @@ var float amyPivotV2_prevLow = na
 var float amyPivotV2_prevClose = na
 
 if amyPivotV2_newTfBar or na(amyPivotV2_prevHigh)
-    amyPivotV2_prevHigh := amyPivotV2_rawHigh[1]
-    amyPivotV2_prevLow := amyPivotV2_rawLow[1]
-    amyPivotV2_prevClose := amyPivotV2_rawClose[1]
+    amyPivotV2_prevHigh := amyPivotV2_rawHigh
+    amyPivotV2_prevLow := amyPivotV2_rawLow
+    amyPivotV2_prevClose := amyPivotV2_rawClose
 
 amyPivotV2_atr = ta.atr(14)
 amyPivotV2_range = amyPivotV2_prevHigh - amyPivotV2_prevLow
@@ -1291,8 +1291,8 @@ if amyKeyV2_newDayChart or na(amyKeyV2_moFallback)
 
 amyKeyV2_midnightOpen = na(amyKeyV2_moFixed) ? amyKeyV2_moFallback : amyKeyV2_moFixed
 
-amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+amyKeyV2_rawDailyHigh = request.security(syminfo.tickerid, "D", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+amyKeyV2_rawDailyLow = request.security(syminfo.tickerid, "D", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyKeyV2_newExchangeDay = ta.change(time("D")) != 0
 
@@ -1300,8 +1300,8 @@ var float amyKeyV2_pdh = na
 var float amyKeyV2_pdl = na
 
 if amyKeyV2_newExchangeDay or na(amyKeyV2_pdh)
-    amyKeyV2_pdh := amyKeyV2_rawDailyHigh[1]
-    amyKeyV2_pdl := amyKeyV2_rawDailyLow[1]
+    amyKeyV2_pdh := amyKeyV2_rawDailyHigh
+    amyKeyV2_pdl := amyKeyV2_rawDailyLow
 
 amyKeyV2_ph = ta.pivothigh(high, amyKeyV2_swingLen, amyKeyV2_swingLen)
 amyKeyV2_pl = ta.pivotlow(low, amyKeyV2_swingLen, amyKeyV2_swingLen)
@@ -1727,7 +1727,7 @@ amyDashV2_engine(_swingLen, _freshBars, _nearAtr, _dispMult, _minSweepTicks) =>
 
     [_o, _h, _l, _c, _lastPH, _lastPL, _biasDir, _mssDir, _bullMss, _bearMss, _lockedInvalid, _invalidStatus, _rh, _rl, _eq, _eqLow, _eqHigh, _priceZone, _locStatus, _bsl, _ssl, _lastSweepDir, _sweepStatus, _sweptPrice, _sweepExtreme, _dolDir, _dolTarget, _dolStatus, _dolDistance, _dolAlign, _poiType, _poiHigh, _poiLow, _poiMid, _poiDist, _poiStatus, _poiAlign, _poiLoc, _poiPriority]
 
-[amyDashV2_o15, amyDashV2_h15, amyDashV2_l15, amyDashV2_c15, amyDashV2_protectedHigh, amyDashV2_protectedLow, amyDashV2_biasDir, amyDashV2_mssDir, amyDashV2_bullMssNow, amyDashV2_bearMssNow, amyDashV2_invalidLevel, amyDashV2_invalidStatus, amyDashV2_rangeHigh, amyDashV2_rangeLow, amyDashV2_eq, amyDashV2_eqLow, amyDashV2_eqHigh, amyDashV2_priceZone, amyDashV2_locationStatus, amyDashV2_bsl, amyDashV2_ssl, amyDashV2_sweepDir, amyDashV2_sweepStatus, amyDashV2_sweptPrice, amyDashV2_sweepExtreme, amyDashV2_dolDir, amyDashV2_dolTarget, amyDashV2_dolStatus, amyDashV2_dolDistance, amyDashV2_dolAlign, amyDashV2_poiType, amyDashV2_poiHigh, amyDashV2_poiLow, amyDashV2_poiMid, amyDashV2_poiDistance, amyDashV2_poiStatus, amyDashV2_poiAlign, amyDashV2_poiLocation, amyDashV2_poiPriority] = request.security(syminfo.tickerid, "15", amyDashV2_engine(amyDashV2_swingLen, amyDashV2_sweepFreshBars, amyDashV2_nearInvalidAtr, amyDashV2_dispMult, amyDashV2_minSweepTicks), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[amyDashV2_o15, amyDashV2_h15, amyDashV2_l15, amyDashV2_c15, amyDashV2_protectedHigh, amyDashV2_protectedLow, amyDashV2_biasDir, amyDashV2_mssDir, amyDashV2_bullMssNow, amyDashV2_bearMssNow, amyDashV2_invalidLevel, amyDashV2_invalidStatus, amyDashV2_rangeHigh, amyDashV2_rangeLow, amyDashV2_eq, amyDashV2_eqLow, amyDashV2_eqHigh, amyDashV2_priceZone, amyDashV2_locationStatus, amyDashV2_bsl, amyDashV2_ssl, amyDashV2_sweepDir, amyDashV2_sweepStatus, amyDashV2_sweptPrice, amyDashV2_sweepExtreme, amyDashV2_dolDir, amyDashV2_dolTarget, amyDashV2_dolStatus, amyDashV2_dolDistance, amyDashV2_dolAlign, amyDashV2_poiType, amyDashV2_poiHigh, amyDashV2_poiLow, amyDashV2_poiMid, amyDashV2_poiDistance, amyDashV2_poiStatus, amyDashV2_poiAlign, amyDashV2_poiLocation, amyDashV2_poiPriority] = request.security(syminfo.tickerid, "15", amyDashV2_engine(amyDashV2_swingLen, amyDashV2_sweepFreshBars, amyDashV2_nearInvalidAtr, amyDashV2_dispMult, amyDashV2_minSweepTicks), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyDashV2_biasText = amyDashV2_biasDir == 1 ? "BUY CTX" : amyDashV2_biasDir == -1 ? "SELL CTX" : "NO CLEAR BIAS"
 amyDashV2_arahText = amyDashV2_biasDir == 1 ? "NAIK" : amyDashV2_biasDir == -1 ? "TURUN" : "BELUM JELAS"
@@ -1919,69 +1919,67 @@ amyEntryV3_ltfEngine(_swingLen, _dispMult, _rejectWickMult, _retestAtr, _validBa
     var bool _bullActive = false
     var bool _bearActive = false
 
-    _ph = ta.pivothigh(high, _swingLen, _swingLen)
-    _pl = ta.pivotlow(low, _swingLen, _swingLen)
+    _ph = ta.pivothigh(high, _swingLen, _swingLen)[1]
+    _pl = ta.pivotlow(low, _swingLen, _swingLen)[1]
 
     if not na(_ph)
         _lastHigh := _ph
     if not na(_pl)
         _lastLow := _pl
 
-    _atr = ta.atr(14)
+    _atr = ta.atr(14)[1]
     _tol = _atr * _retestAtr
-    _body = math.abs(close - open)
-    _meanBody = ta.sma(math.abs(close - open), 20)
+    _body = math.abs(close[1] - open[1])
+    _meanBody = ta.sma(math.abs(close - open), 20)[1]
     _safeBody = math.max(_body, syminfo.mintick)
-    _upperWick = high - math.max(open, close)
-    _lowerWick = math.min(open, close) - low
+    _upperWick = high[1] - math.max(open[1], close[1])
+    _lowerWick = math.min(open[1], close[1]) - low[1]
 
-    _bullDisp = close > open and _body > _meanBody * _dispMult and close > high[1]
-    _bearDisp = close < open and _body > _meanBody * _dispMult and close < low[1]
-    _bullBreak = not na(_lastHigh) and close > _lastHigh and close[1] <= _lastHigh and _bullDisp
-    _bearBreak = not na(_lastLow) and close < _lastLow and close[1] >= _lastLow and _bearDisp
+    _bullDisp = close[1] > open[1] and _body > _meanBody * _dispMult and close[1] > high[2]
+    _bearDisp = close[1] < open[1] and _body > _meanBody * _dispMult and close[1] < low[2]
+    _bullBreak = not na(_lastHigh) and close[1] > _lastHigh and close[2] <= _lastHigh and _bullDisp
+    _bearBreak = not na(_lastLow) and close[1] < _lastLow and close[2] >= _lastLow and _bearDisp
 
     if _bullBreak
         _bullBreakLevel := _lastHigh
         _bullAge := 0
         _bullActive := true
         _bearActive := false
+    else if _bullActive
+        _bullAge := nz(_bullAge) + 1
+        if close[1] < _bullBreakLevel - _tol or _bullAge > _validBars
+            _bullActive := false
 
     if _bearBreak
         _bearBreakLevel := _lastLow
         _bearAge := 0
         _bearActive := true
         _bullActive := false
-
-    if _bullActive
-        _bullAge := nz(_bullAge) + 1
-        if close < _bullBreakLevel - _tol or _bullAge > _validBars
-            _bullActive := false
-
-    if _bearActive
+    else if _bearActive
         _bearAge := nz(_bearAge) + 1
-        if close > _bearBreakLevel + _tol or _bearAge > _validBars
+        if close[1] > _bearBreakLevel + _tol or _bearAge > _validBars
             _bearActive := false
 
-    _bullRetest = _bullActive and _bullAge > 0 and low <= _bullBreakLevel + _tol and close >= _bullBreakLevel - _tol
-    _bearRetest = _bearActive and _bearAge > 0 and high >= _bearBreakLevel - _tol and close <= _bearBreakLevel + _tol
-    _bullReject = close > open and _lowerWick >= _safeBody * _rejectWickMult
-    _bearReject = close < open and _upperWick >= _safeBody * _rejectWickMult
+    _bullRetest = _bullActive and _bullAge > 0 and low[1] <= _bullBreakLevel + _tol and close[1] >= _bullBreakLevel - _tol
+    _bearRetest = _bearActive and _bearAge > 0 and high[1] >= _bearBreakLevel - _tol and close[1] <= _bearBreakLevel + _tol
+    _bullReject = close[1] > open[1] and _lowerWick >= _safeBody * _rejectWickMult
+    _bearReject = close[1] < open[1] and _upperWick >= _safeBody * _rejectWickMult
     _bullSignal = _bullRetest and _bullReject
     _bearSignal = _bearRetest and _bearReject
 
     _signalDir = _bullSignal and not _bearSignal ? 1 : _bearSignal and not _bullSignal ? -1 : 0
     _signalLevel = _signalDir == 1 ? _bullBreakLevel : _signalDir == -1 ? _bearBreakLevel : na
-    _signalLow = _signalDir == 1 ? low : na
-    _signalHigh = _signalDir == -1 ? high : na
+    _signalLow = _signalDir == 1 ? low[1] : na
+    _signalHigh = _signalDir == -1 ? high[1] : na
 
     if _bullSignal
         _bullActive := false
     if _bearSignal
         _bearActive := false
 
-    [_lastHigh, _lastLow, _signalDir, _signalLevel, _signalLow, _signalHigh, _bullBreak, _bearBreak, _bullActive, _bearActive, _bullReject, _bearReject, close]
+    [_lastHigh, _lastLow, _signalDir, _signalLevel, _signalLow, _signalHigh, _bullBreak, _bearBreak, _bullActive, _bearActive, _bullReject, _bearReject, close[1]]
 
-[amyEntryV3_ltfHigh, amyEntryV3_ltfLow, amyEntryV3_ltfSignalDir, amyEntryV3_ltfSignalLevel, amyEntryV3_ltfSignalLow, amyEntryV3_ltfSignalHigh, amyEntryV3_ltfBullBreak, amyEntryV3_ltfBearBreak, amyEntryV3_ltfBullPending, amyEntryV3_ltfBearPending, amyEntryV3_ltfBullReject, amyEntryV3_ltfBearReject, amyEntryV3_ltfClose] = request.security(syminfo.tickerid, amyEntryV3_triggerTf, amyEntryV3_ltfEngine(amyEntryV3_swingLen, amyEntryV3_dispMult, amyEntryV3_rejectWickMult, amyEntryV3_retestAtr, amyEntryV3_validBars), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[amyEntryV3_ltfHigh, amyEntryV3_ltfLow, amyEntryV3_ltfSignalDir, amyEntryV3_ltfSignalLevel, amyEntryV3_ltfSignalLow, amyEntryV3_ltfSignalHigh, amyEntryV3_ltfBullBreak, amyEntryV3_ltfBearBreak, amyEntryV3_ltfBullPending, amyEntryV3_ltfBearPending, amyEntryV3_ltfBullReject, amyEntryV3_ltfBearReject, amyEntryV3_ltfClose] = request.security(syminfo.tickerid, amyEntryV3_triggerTf, amyEntryV3_ltfEngine(amyEntryV3_swingLen, amyEntryV3_dispMult, amyEntryV3_rejectWickMult, amyEntryV3_retestAtr, amyEntryV3_validBars), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
 amyEntryV3_contextOk = amyEntryV3_show and amyDashV2_biasDir != 0 and amyDashV2_invalidStatus != 2
 amyEntryV3_atr14 = ta.atr(14)
@@ -2212,4 +2210,3 @@ if amyEntryV3_show and amyEntryV3_showPanel and barstate.islast
 
 if (not amyEntryV3_show or not amyEntryV3_showPanel) and barstate.islast
     table.clear(amyEntryV3_panel, 0, 0, 1, 7)
-

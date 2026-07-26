@@ -50,6 +50,7 @@ showWarnings = input.bool(true, "Show Warning Labels", group=warningGroup)
 entryGroup = "6. Entry Engine"
 entryMode = input.string("Balanced", "Entry Mode", options=["Conservative", "Balanced", "Aggressive"], group=entryGroup)
 entryCooldown = input.int(6, "Entry Cooldown Bars", minval=0, maxval=50, group=entryGroup)
+retestWindow = input.int(12, "Breakout Retest Valid Bars", minval=1, maxval=100, group=entryGroup)
 requireProjectionAlign = input.bool(true, "Require Projection Alignment", group=entryGroup)
 requireWarningBeforeEntry = input.bool(true, "Require Warning Before Entry", group=entryGroup)
 
@@ -167,8 +168,8 @@ bearBias = htfClose < htfEma20 and htfEma20 < htfEma50
 biasText = bullBias ? "BULL" : bearBias ? "BEAR" : "NEUTRAL"
 
 // Structure Context
-levelPh = request.security(syminfo.tickerid, structureTf, ta.pivothigh(high, swingLen, swingLen), lookahead=barmerge.lookahead_off)
-levelPl = request.security(syminfo.tickerid, structureTf, ta.pivotlow(low, swingLen, swingLen), lookahead=barmerge.lookahead_off)
+levelPh = request.security(syminfo.tickerid, structureTf, ta.pivothigh(high, swingLen, swingLen)[1], lookahead=barmerge.lookahead_on)
+levelPl = request.security(syminfo.tickerid, structureTf, ta.pivotlow(low, swingLen, swingLen)[1], lookahead=barmerge.lookahead_on)
 
 var float activeResistance = na
 var float activeSupport = na
@@ -183,8 +184,8 @@ nearResistance = not na(activeResistance) and math.abs(close - activeResistance)
 
 breakBuffer = atr * 0.10
 displacementOk = body >= atr * 0.25 and bodyRatio >= 0.45
-validBreakUp = not na(activeResistance) and close > activeResistance + breakBuffer and close > open and displacementOk
-validBreakDown = not na(activeSupport) and close < activeSupport - breakBuffer and close < open and displacementOk
+validBreakUp = confirmed and not na(activeResistance) and close > activeResistance + breakBuffer and close[1] <= activeResistance + breakBuffer and close > open and displacementOk
+validBreakDown = confirmed and not na(activeSupport) and close < activeSupport - breakBuffer and close[1] >= activeSupport - breakBuffer and close < open and displacementOk
 
 falseBreakDown = not na(activeSupport) and low < activeSupport - breakBuffer and close > activeSupport and lowerWick > bodySafe * 1.2
 falseBreakUp = not na(activeResistance) and high > activeResistance + breakBuffer and close < activeResistance and upperWick > bodySafe * 1.2
@@ -192,8 +193,27 @@ falseBreakUp = not na(activeResistance) and high > activeResistance + breakBuffe
 rejectionSupport = not na(activeSupport) and low <= activeSupport and close > activeSupport and close > open and lowerWick > bodySafe
 rejectionResistance = not na(activeResistance) and high >= activeResistance and close < activeResistance and close < open and upperWick > bodySafe
 
-retestLong = not na(activeResistance[1]) and low <= activeResistance[1] and close > activeResistance[1] and close > open and bodyRatio >= 0.35
-retestShort = not na(activeSupport[1]) and high >= activeSupport[1] and close < activeSupport[1] and close < open and bodyRatio >= 0.35
+var float brokenResistance = na
+var float brokenSupport = na
+var int brokenResistanceBar = na
+var int brokenSupportBar = na
+
+if validBreakUp
+    brokenResistance := activeResistance
+    brokenResistanceBar := bar_index
+if validBreakDown
+    brokenSupport := activeSupport
+    brokenSupportBar := bar_index
+
+if not na(brokenResistanceBar) and bar_index - brokenResistanceBar > retestWindow
+    brokenResistance := na
+    brokenResistanceBar := na
+if not na(brokenSupportBar) and bar_index - brokenSupportBar > retestWindow
+    brokenSupport := na
+    brokenSupportBar := na
+
+retestLong = not na(brokenResistance) and not na(brokenResistanceBar) and bar_index > brokenResistanceBar and low <= brokenResistance + atr * zonePadAtr and close > brokenResistance and close > open and bodyRatio >= 0.35
+retestShort = not na(brokenSupport) and not na(brokenSupportBar) and bar_index > brokenSupportBar and high >= brokenSupport - atr * zonePadAtr and close < brokenSupport and close < open and bodyRatio >= 0.35
 
 // Premium / Discount Context
 pdHigh = ta.highest(high, pdLookback)
@@ -215,23 +235,29 @@ var float bullFvgHigh = na
 var float bullFvgLow = na
 var float bearFvgHigh = na
 var float bearFvgLow = na
+var int bullFvgBar = na
+var int bearFvgBar = na
 
-if bullFvgCreated
+if confirmed and bullFvgCreated
     bullFvgHigh := low
     bullFvgLow := high[2]
-if bearFvgCreated
+    bullFvgBar := bar_index
+if confirmed and bearFvgCreated
     bearFvgHigh := low[2]
     bearFvgLow := high
+    bearFvgBar := bar_index
 
-if not na(bullFvgLow) and close < bullFvgLow
+if confirmed and not na(bullFvgLow) and close < bullFvgLow
     bullFvgHigh := na
     bullFvgLow := na
-if not na(bearFvgHigh) and close > bearFvgHigh
+    bullFvgBar := na
+if confirmed and not na(bearFvgHigh) and close > bearFvgHigh
     bearFvgHigh := na
     bearFvgLow := na
+    bearFvgBar := na
 
-inBullFvg = useFVG and not na(bullFvgHigh) and low <= bullFvgHigh and high >= bullFvgLow
-inBearFvg = useFVG and not na(bearFvgHigh) and high >= bearFvgLow and low <= bearFvgHigh
+inBullFvg = useFVG and not na(bullFvgHigh) and not na(bullFvgBar) and bar_index > bullFvgBar and low <= bullFvgHigh and high >= bullFvgLow
+inBearFvg = useFVG and not na(bearFvgHigh) and not na(bearFvgBar) and bar_index > bearFvgBar and high >= bearFvgLow and low <= bearFvgHigh
 
 // Order Block Context
 [bullObHighTmp, bullObLowTmp] = f_lastBearish(obLookback)
@@ -241,23 +267,29 @@ var float bullObHigh = na
 var float bullObLow = na
 var float bearObHigh = na
 var float bearObLow = na
+var int bullObBar = na
+var int bearObBar = na
 
 if useOB and validBreakUp and not na(bullObHighTmp)
     bullObHigh := bullObHighTmp
     bullObLow := bullObLowTmp
+    bullObBar := bar_index
 if useOB and validBreakDown and not na(bearObHighTmp)
     bearObHigh := bearObHighTmp
     bearObLow := bearObLowTmp
+    bearObBar := bar_index
 
-if not na(bullObLow) and close < bullObLow
+if confirmed and not na(bullObLow) and close < bullObLow
     bullObHigh := na
     bullObLow := na
-if not na(bearObHigh) and close > bearObHigh
+    bullObBar := na
+if confirmed and not na(bearObHigh) and close > bearObHigh
     bearObHigh := na
     bearObLow := na
+    bearObBar := na
 
-inBullOb = useOB and not na(bullObHigh) and low <= bullObHigh and high >= bullObLow
-inBearOb = useOB and not na(bearObHigh) and high >= bearObLow and low <= bearObHigh
+inBullOb = useOB and not na(bullObHigh) and not na(bullObBar) and bar_index > bullObBar and low <= bullObHigh and high >= bullObLow
+inBearOb = useOB and not na(bearObHigh) and not na(bearObBar) and bar_index > bearObBar and high >= bearObLow and low <= bearObHigh
 
 // OTE / Fib Context
 ph = ta.pivothigh(high, swingLen, swingLen)
@@ -296,21 +328,23 @@ buySideSweep = high > priorHigh and close < priorHigh
 
 // Order Flow Proxy Context
 safeRange = math.max(high - low, syminfo.mintick)
-buyPressure = volume * (close - low) / safeRange
-sellPressure = volume * (high - close) / safeRange
+flowVolume = nz(volume, 0.0)
+buyPressure = flowVolume * (close - low) / safeRange
+sellPressure = flowVolume * (high - close) / safeRange
 delta = buyPressure - sellPressure
 deltaEma = ta.ema(delta, deltaEmaLen)
 volumeAvg = ta.sma(volume, volLen)
 volumeSpike = volume > volumeAvg * volSpikeMult
-deltaPositive = delta > 0 and deltaEma > 0
-deltaNegative = delta < 0 and deltaEma < 0
+hasVolumeData = not na(volume) and not na(volumeAvg) and volumeAvg > 0
+deltaPositive = hasVolumeData and delta > 0 and deltaEma > 0
+deltaNegative = hasVolumeData and delta < 0 and deltaEma < 0
 
 // Market Regime Context
 extremeCandle = barRange > atr * extremeCandleAtr
 extremeVol = atr > atrSlow * extremeVolMult
 overextendedLong = close > ema20 + atr * maxStretchAtr
 overextendedShort = close < ema20 - atr * maxStretchAtr
-noTrade = useNoTradeFilter and (manualNoTrade or extremeCandle or extremeVol)
+noTrade = manualNoTrade or (useNoTradeFilter and (extremeCandle or extremeVol))
 regimeText = manualNoTrade ? "MANUAL NO TRADE" : extremeCandle ? "EXTREME CANDLE" : extremeVol ? "EXTREME VOL" : "NORMAL"
 
 // Context Scores: hanya kualitas konteks, bukan trigger entry
@@ -347,8 +381,8 @@ sellContextOk = sellContextScore >= minContextScore and projectionDown
 buyZoneContext = discountHalf or nearSupport or inBullFvg or inBullOb or inBullOte or sellSideSweep or asiaLowSwept or falseBreakDown
 sellZoneContext = premiumHalf or nearResistance or inBearFvg or inBearOb or inBearOte or buySideSweep or asiaHighSwept or falseBreakUp
 
-buyWarningRaw = confirmed and not noTrade and buyContextOk and buyZoneContext and not overextendedLong
-sellWarningRaw = confirmed and not noTrade and sellContextOk and sellZoneContext and not overextendedShort
+buyWarningRaw = confirmed and entrySession and not noTrade and buyContextOk and buyZoneContext and not overextendedLong
+sellWarningRaw = confirmed and entrySession and not noTrade and sellContextOk and sellZoneContext and not overextendedShort
 
 var int lastBuyWarningBar = na
 var int lastSellWarningBar = na
@@ -363,8 +397,10 @@ if buyWarning
 if sellWarning
     lastSellWarningBar := bar_index
 
-buyWarningActive = requireWarningBeforeEntry ? (not na(lastBuyWarningBar) and bar_index - lastBuyWarningBar <= warningWindow) : true
-sellWarningActive = requireWarningBeforeEntry ? (not na(lastSellWarningBar) and bar_index - lastSellWarningBar <= warningWindow) : true
+buyWarningActive = requireWarningBeforeEntry and not na(lastBuyWarningBar) and bar_index > lastBuyWarningBar and bar_index - lastBuyWarningBar <= warningWindow
+sellWarningActive = requireWarningBeforeEntry and not na(lastSellWarningBar) and bar_index > lastSellWarningBar and bar_index - lastSellWarningBar <= warningWindow
+buyWarningGate = not requireWarningBeforeEntry or buyWarningActive
+sellWarningGate = not requireWarningBeforeEntry or sellWarningActive
 
 //==============================================================================
 // 3. ENTRY ENGINE
@@ -383,8 +419,8 @@ sellReject = (buySideSweep or asiaHighSwept or falseBreakUp) and close < math.mi
 buyTriggerCore = retestLong or rejectionSupport or buyReclaim or bullPinbar or bullEngulfing
 sellTriggerCore = retestShort or rejectionResistance or sellReject or bearPinbar or bearEngulfing
 
-buyDeltaOk = useDeltaFilter ? deltaPositive : true
-sellDeltaOk = useDeltaFilter ? deltaNegative : true
+buyDeltaOk = not useDeltaFilter or not hasVolumeData or deltaPositive
+sellDeltaOk = not useDeltaFilter or not hasVolumeData or deltaNegative
 buyProjectionOk = requireProjectionAlign ? projectionUp : true
 sellProjectionOk = requireProjectionAlign ? projectionDown : true
 
@@ -421,11 +457,11 @@ shortRiskOk = shortRisk > syminfo.mintick and shortRisk <= atr * maxStopAtr
 shortTp1 = close - shortRisk * rr1
 shortTp2 = close - shortRisk * rr2
 
-buySignal = confirmed and not noTrade and buyEntryCooldownOk and buyContextOk and buyWarningActive and buyProjectionOk and buyModeOk and buyDeltaOk and longRiskOk and not overextendedLong
-sellSignal = confirmed and not noTrade and sellEntryCooldownOk and sellContextOk and sellWarningActive and sellProjectionOk and sellModeOk and sellDeltaOk and shortRiskOk and not overextendedShort
+rawBuySignal = confirmed and entrySession and not noTrade and buyEntryCooldownOk and buyContextOk and buyWarningGate and buyProjectionOk and buyModeOk and buyDeltaOk and longRiskOk and not overextendedLong
+rawSellSignal = confirmed and entrySession and not noTrade and sellEntryCooldownOk and sellContextOk and sellWarningGate and sellProjectionOk and sellModeOk and sellDeltaOk and shortRiskOk and not overextendedShort
 
-buySignal := buySignal and not sellSignal
-sellSignal := sellSignal and not buySignal
+buySignal = rawBuySignal and not rawSellSignal
+sellSignal = rawSellSignal and not rawBuySignal
 
 if buySignal
     lastBuyEntryBar := bar_index
@@ -479,6 +515,20 @@ if (buySignal or sellSignal) and showTradeLevels
     tp1Line := line.new(bar_index, tp1Price, bar_index + 20, tp1Price, color=color.new(color.green, 0), width=2)
     tp2Line := line.new(bar_index, tp2Price, bar_index + 20, tp2Price, color=color.new(color.green, 40), style=line.style_dotted, width=2)
 
+if not showTradeLevels and barstate.islast
+    if not na(entryLine)
+        line.delete(entryLine)
+        entryLine := na
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+    if not na(tp1Line)
+        line.delete(tp1Line)
+        tp1Line := na
+    if not na(tp2Line)
+        line.delete(tp2Line)
+        tp2Line := na
+
 if (buyWarning or sellWarning or buySignal or sellSignal) and showProjection
     if not na(projectionLine)
         line.delete(projectionLine)
@@ -511,8 +561,10 @@ if showDashboard and barstate.islast
     table.cell(dash, 0, 4, "Sell Context", text_color=color.white, bgcolor=color.new(color.black, 0))
     table.cell(dash, 1, 4, str.tostring(sellContextScore) + " / " + f_grade(sellContextScore), text_color=color.white, bgcolor=sellContextOk ? color.new(color.red, 0) : color.new(color.gray, 50))
 
+    warningText = not requireWarningBeforeEntry ? "BYPASSED" : buyWarningActive ? "BUY ACTIVE" : sellWarningActive ? "SELL ACTIVE" : "NONE"
+    warningBg = not requireWarningBeforeEntry ? color.new(color.blue, 45) : buyWarningActive ? color.new(color.green, 30) : sellWarningActive ? color.new(color.red, 30) : color.new(color.gray, 50)
     table.cell(dash, 0, 5, "Warning", text_color=color.white, bgcolor=color.new(color.black, 0))
-    table.cell(dash, 1, 5, buyWarningActive ? "BUY ACTIVE" : sellWarningActive ? "SELL ACTIVE" : "NONE", text_color=color.white, bgcolor=buyWarningActive ? color.new(color.green, 30) : sellWarningActive ? color.new(color.red, 30) : color.new(color.gray, 50))
+    table.cell(dash, 1, 5, warningText, text_color=color.white, bgcolor=warningBg)
 
     table.cell(dash, 0, 6, "Trigger", text_color=color.white, bgcolor=color.new(color.black, 0))
     table.cell(dash, 1, 6, buyTriggerCore ? "BUY TRIGGER" : sellTriggerCore ? "SELL TRIGGER" : "WAIT", text_color=color.white, bgcolor=buyTriggerCore ? color.new(color.green, 30) : sellTriggerCore ? color.new(color.red, 30) : color.new(color.gray, 50))
@@ -531,6 +583,8 @@ if showDashboard and barstate.islast
 
     table.cell(dash, 0, 11, "No Trade", text_color=color.white, bgcolor=color.new(color.black, 0))
     table.cell(dash, 1, 11, f_bool(noTrade), text_color=color.white, bgcolor=noTrade ? color.new(color.red, 0) : color.new(color.green, 35))
+else if barstate.islast
+    table.clear(dash, 0, 0, 1, 11)
 
 //==============================================================================
 // ALERTS
