@@ -1,0 +1,117 @@
+//@version=6
+indicator("AMY Simple ATR Bot", shorttitle="AMY ATR Bot", overlay=true, max_labels_count=500)
+
+//==============================================================================
+// AMY SIMPLE ATR BOT
+// Konsep sederhana: harga + ATR trailing stop + pergantian arah.
+// Tidak memakai ICT, FVG, OB, scoring, dashboard, atau filter berlapis.
+// Sinyal dikunci pada candle close secara default agar tidak repaint intrabar.
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// INPUT
+//------------------------------------------------------------------------------
+groupCore = "Pengaturan Utama"
+sensitivity = input.float(1.0, "Sensitivity / Key Value", minval=0.1, step=0.1, group=groupCore,
+     tooltip="Semakin kecil semakin sensitif dan semakin banyak sinyal. Nilai awal yang disarankan: 1.0")
+atrPeriod = input.int(10, "ATR Period", minval=1, group=groupCore)
+confirmOnClose = input.bool(true, "Konfirmasi Saat Candle Close", group=groupCore,
+     tooltip="Aktif: sinyal hanya dikunci setelah candle selesai. Nonaktif: sinyal dapat berubah selama candle berjalan.")
+sourceMode = input.string("Close", "Sumber Harga", options=["Close", "Heikin Ashi"], group=groupCore)
+
+// Filter opsional. Default OFF agar konsep tetap sederhana dan sinyal tidak terlalu jarang.
+groupFilter = "Filter Opsional"
+useEmaFilter = input.bool(false, "Gunakan Filter EMA", group=groupFilter)
+emaLength = input.int(200, "EMA Length", minval=1, group=groupFilter)
+minBarsBetweenSignals = input.int(0, "Jarak Minimum Antar Sinyal", minval=0, maxval=100, group=groupFilter)
+
+// Visual
+groupVisual = "Visual"
+showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
+showEma = input.bool(false, "Tampilkan EMA", group=groupVisual)
+colorBars = input.bool(true, "Warnai Candle Sesuai Arah", group=groupVisual)
+showLabels = input.bool(true, "Tampilkan Label BUY / SELL", group=groupVisual)
+
+//------------------------------------------------------------------------------
+// SOURCE
+//------------------------------------------------------------------------------
+haTicker = ticker.heikinashi(syminfo.tickerid)
+haClose = request.security(haTicker, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+src = sourceMode == "Heikin Ashi" ? haClose : close
+
+//------------------------------------------------------------------------------
+// ATR TRAILING STOP ENGINE
+//------------------------------------------------------------------------------
+atrValue = ta.atr(atrPeriod)
+stopDistance = sensitivity * atrValue
+
+var float trailingStop = na
+previousStop = nz(trailingStop[1], src)
+previousSource = nz(src[1], src)
+
+if na(trailingStop[1])
+    trailingStop := src - stopDistance
+else if src > previousStop and previousSource > previousStop
+    trailingStop := math.max(previousStop, src - stopDistance)
+else if src < previousStop and previousSource < previousStop
+    trailingStop := math.min(previousStop, src + stopDistance)
+else
+    trailingStop := src > previousStop ? src - stopDistance : src + stopDistance
+
+//------------------------------------------------------------------------------
+// DIRECTION AND SIGNALS
+//------------------------------------------------------------------------------
+var int direction = 0
+previousDirection = nz(direction[1], 0)
+
+direction := src > trailingStop ? 1 : src < trailingStop ? -1 : previousDirection
+
+confirmed = confirmOnClose ? barstate.isconfirmed : true
+emaValue = ta.ema(src, emaLength)
+
+buyFilterOk = not useEmaFilter or src > emaValue
+sellFilterOk = not useEmaFilter or src < emaValue
+
+rawBuy = confirmed and ta.crossover(src, trailingStop) and buyFilterOk
+rawSell = confirmed and ta.crossunder(src, trailingStop) and sellFilterOk
+
+var int lastSignalBar = na
+cooldownOk = na(lastSignalBar) or bar_index - lastSignalBar > minBarsBetweenSignals
+
+buySignal = rawBuy and cooldownOk
+sellSignal = rawSell and cooldownOk
+
+if buySignal or sellSignal
+    lastSignalBar := bar_index
+
+//------------------------------------------------------------------------------
+// VISUALS
+//------------------------------------------------------------------------------
+trailColor = direction == 1 ? color.lime : direction == -1 ? color.red : color.gray
+plot(showTrail ? trailingStop : na, "ATR Trailing Stop", color=trailColor, linewidth=2)
+plot(showEma ? emaValue : na, "EMA Filter", color=color.orange, linewidth=1)
+
+plotshape(showLabels and buySignal, title="BUY", text="BUY", style=shape.labelup,
+     location=location.belowbar, color=color.lime, textcolor=color.black, size=size.small)
+
+plotshape(showLabels and sellSignal, title="SELL", text="SELL", style=shape.labeldown,
+     location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+
+barColorValue = colorBars ? (direction == 1 ? color.new(color.lime, 55) : direction == -1 ? color.new(color.red, 55) : na) : na
+barcolor(barColorValue)
+
+bgcolor(buySignal ? color.new(color.lime, 88) : sellSignal ? color.new(color.red, 88) : na)
+
+//------------------------------------------------------------------------------
+// STATUS DATA WINDOW
+//------------------------------------------------------------------------------
+plot(direction, "Direction: 1 Buy / -1 Sell", display=display.data_window)
+plot(atrValue, "ATR", display=display.data_window)
+plot(stopDistance, "ATR Stop Distance", display=display.data_window)
+
+//------------------------------------------------------------------------------
+// ALERTS
+//------------------------------------------------------------------------------
+alertcondition(buySignal, title="AMY ATR Bot BUY", message="AMY Simple ATR Bot: BUY pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(sellSignal, title="AMY ATR Bot SELL", message="AMY Simple ATR Bot: SELL pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(buySignal or sellSignal, title="AMY ATR Bot Any Signal", message="AMY Simple ATR Bot: sinyal baru pada {{ticker}} {{interval}} di {{close}}")
