@@ -1,0 +1,110 @@
+//@version=6
+strategy("AMY Simple ATR Bot v2 Strategy", shorttitle="AMY ATR Bot v2 STR", overlay=true,
+     pyramiding=0, process_orders_on_close=false, calc_on_order_fills=true,
+     default_qty_type=strategy.fixed, default_qty_value=1)
+
+//==============================================================================
+// STRATEGY TESTER VERSION
+// Entry diproses pada open candle berikutnya setelah sinyal candle close.
+// Satu posisi pada satu waktu. Posisi berakhir hanya oleh SL atau TP tetap.
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// INPUT
+//------------------------------------------------------------------------------
+groupCore = "Pengaturan Utama"
+keyValue = input.float(2.75, "Key Value", minval=0.1, step=0.05, group=groupCore)
+atrPeriod = input.int(30, "ATR Period", minval=1, group=groupCore)
+useHeikinAshi = input.bool(false, "Signals from Heikin Ashi", group=groupCore)
+
+groupTrend = "Filter Tren Sederhana"
+useTrendFilter = input.bool(true, "Gunakan Filter EMA", group=groupTrend)
+emaLength = input.int(75, "EMA Length", minval=1, group=groupTrend)
+emaSlopeBars = input.int(3, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend)
+
+groupRisk = "Risk"
+stopPoints = input.float(10.0, "Stop Loss (poin harga)", minval=0.1, step=0.1, group=groupRisk)
+targetPoints = input.float(10.0, "Take Profit (poin harga)", minval=0.1, step=0.1, group=groupRisk)
+
+groupVisual = "Visual"
+showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
+showTrendEma = input.bool(false, "Tampilkan EMA Filter", group=groupVisual)
+showTradeLevels = input.bool(true, "Tampilkan Entry / SL / TP", group=groupVisual)
+
+//------------------------------------------------------------------------------
+// SOURCE
+//------------------------------------------------------------------------------
+haTicker = ticker.heikinashi(syminfo.tickerid)
+haClose = request.security(haTicker, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+src = useHeikinAshi ? haClose : close
+
+//------------------------------------------------------------------------------
+// ATR TRAILING STOP
+//------------------------------------------------------------------------------
+xAtr = ta.atr(atrPeriod)
+nLoss = keyValue * xAtr
+
+var float atrTrailingStop = na
+prevStop = nz(atrTrailingStop[1], 0.0)
+prevSrc = nz(src[1], src)
+
+atrTrailingStop :=
+     src > prevStop and prevSrc > prevStop ? math.max(prevStop, src - nLoss) :
+     src < prevStop and prevSrc < prevStop ? math.min(prevStop, src + nLoss) :
+     src > prevStop ? src - nLoss : src + nLoss
+
+emaOne = ta.ema(src, 1)
+above = ta.crossover(emaOne, atrTrailingStop)
+below = ta.crossover(atrTrailingStop, emaOne)
+
+trendEma = ta.ema(src, emaLength)
+trendRising = not na(trendEma[emaSlopeBars]) and trendEma > trendEma[emaSlopeBars]
+trendFalling = not na(trendEma[emaSlopeBars]) and trendEma < trendEma[emaSlopeBars]
+
+buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
+sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
+
+flat = strategy.position_size == 0
+buySignal = barstate.isconfirmed and flat and src > atrTrailingStop and above and buyTrendOk
+sellSignal = barstate.isconfirmed and flat and src < atrTrailingStop and below and sellTrendOk
+
+if buySignal
+    strategy.entry("BUY", strategy.long)
+
+if sellSignal
+    strategy.entry("SELL", strategy.short)
+
+if strategy.position_size > 0
+    strategy.exit("BUY EXIT", from_entry="BUY",
+         stop=strategy.position_avg_price - stopPoints,
+         limit=strategy.position_avg_price + targetPoints)
+
+if strategy.position_size < 0
+    strategy.exit("SELL EXIT", from_entry="SELL",
+         stop=strategy.position_avg_price + stopPoints,
+         limit=strategy.position_avg_price - targetPoints)
+
+//------------------------------------------------------------------------------
+// VISUALS
+//------------------------------------------------------------------------------
+plot(showTrail ? atrTrailingStop : na, "ATR Trailing Stop",
+     color=src >= atrTrailingStop ? color.lime : color.red, linewidth=2, style=plot.style_linebr)
+plot(showTrendEma ? trendEma : na, "EMA Trend Filter", color=color.orange, linewidth=1)
+
+entryLevel = strategy.position_size != 0 ? strategy.position_avg_price : na
+slLevel = strategy.position_size > 0 ? strategy.position_avg_price - stopPoints :
+     strategy.position_size < 0 ? strategy.position_avg_price + stopPoints : na
+tpLevel = strategy.position_size > 0 ? strategy.position_avg_price + targetPoints :
+     strategy.position_size < 0 ? strategy.position_avg_price - targetPoints : na
+
+plot(showTradeLevels ? entryLevel : na, "Entry", color=color.yellow, linewidth=2, style=plot.style_linebr)
+plot(showTradeLevels ? slLevel : na, "Stop Loss", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(showTradeLevels ? tpLevel : na, "Take Profit", color=color.lime, linewidth=2, style=plot.style_linebr)
+
+plotshape(buySignal, title="BUY", text="BUY", style=shape.labelup,
+     location=location.belowbar, color=color.lime, textcolor=color.black, size=size.tiny)
+plotshape(sellSignal, title="SELL", text="SELL", style=shape.labeldown,
+     location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny)
+
+alertcondition(buySignal, title="AMY ATR Bot Strategy BUY", message="AMY ATR Bot v2 Strategy: BUY {{ticker}} {{interval}}")
+alertcondition(sellSignal, title="AMY ATR Bot Strategy SELL", message="AMY ATR Bot v2 Strategy: SELL {{ticker}} {{interval}}")
