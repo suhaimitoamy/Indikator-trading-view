@@ -25,7 +25,7 @@ emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=g
 
 groupExhaustion = "Filter Anti-Exhaustion"
 useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion)
-maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
+maxClosePosition = input.float(0.92, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
 maxSignalBodyAtr = input.float(2.0, "Maks. Body Candle (ATR)", minval=0.1, step=0.1, group=groupExhaustion)
 
 groupRisk = "Risk"
