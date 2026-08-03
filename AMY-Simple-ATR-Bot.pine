@@ -7,7 +7,7 @@ indicator("AMY Simple ATR Bot v5", shorttitle="AMY ATR Bot v5", overlay=true, ma
 // 1) ATR trailing stop.
 // 2) Harga memotong trailing stop.
 // 3) EMA menentukan arah tren dan harus memiliki kemiringan searah.
-// 4) Filter anti-exhaustion menolak candle sinyal yang sudah terlalu ekstrem.
+// 4) Satu filter anti-exhaustion menolak close yang terlalu dekat ujung candle.
 // Tidak memakai filter sesi, ICT, FVG, OB, scoring, atau dashboard.
 //==============================================================================
 
@@ -28,9 +28,8 @@ emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=g
 
 groupExhaustion = "Filter Anti-Exhaustion"
 useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion,
-     tooltip="Melewati candle sinyal yang menutup pada 8% ujung ekstrem atau memiliki body lebih dari batas ATR.")
-maxClosePosition = input.float(0.92, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
-maxSignalBodyAtr = input.float(2.0, "Maks. Body Candle (ATR)", minval=0.1, step=0.1, group=groupExhaustion)
+     tooltip="Melewati candle sinyal yang menutup pada 5% ujung ekstrem agar tidak mengejar spike.")
+maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
 
 groupVisual = "Visual"
 showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
@@ -80,17 +79,14 @@ trendFalling = not na(trendEma[emaSlopeBars]) and trendEma < trendEma[emaSlopeBa
 buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
 sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 
-// Backtest menunjukkan candle yang menutup terlalu dekat ujung ekstrem lebih
-// sering menjadi entry terlambat. Filter ini hanya membuang spike, bukan sesi.
+// Backtest lintas 2025–2026 menunjukkan close tepat di ujung candle lebih sering
+// menjadi entry terlambat. Tidak ada pembatasan sesi atau jam trading.
 signalRange = math.max(high - low, syminfo.mintick)
 buyClosePosition = (src - low) / signalRange
 sellClosePosition = (high - src) / signalRange
-signalBodyAtr = xAtr > 0 ? math.abs(close - open) / xAtr : na
 
-buyExhaustionOk = not useExhaustionFilter or
-     (buyClosePosition <= maxClosePosition and signalBodyAtr <= maxSignalBodyAtr)
-sellExhaustionOk = not useExhaustionFilter or
-     (sellClosePosition <= maxClosePosition and signalBodyAtr <= maxSignalBodyAtr)
+buyExhaustionOk = not useExhaustionFilter or buyClosePosition <= maxClosePosition
+sellExhaustionOk = not useExhaustionFilter or sellClosePosition <= maxClosePosition
 
 confirmed = confirmOnClose ? barstate.isconfirmed : true
 buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk and buyExhaustionOk
@@ -115,7 +111,6 @@ barcolor(barColorValue)
 // Data Window untuk audit tanpa menambah objek ke chart.
 plot(buyClosePosition, "Posisi Close BUY", display=display.data_window)
 plot(sellClosePosition, "Posisi Close SELL", display=display.data_window)
-plot(signalBodyAtr, "Body Candle (ATR)", display=display.data_window)
 
 //------------------------------------------------------------------------------
 // ALERTS
