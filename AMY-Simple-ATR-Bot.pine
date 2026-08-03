@@ -3,9 +3,9 @@ indicator("AMY Simple ATR Bot", shorttitle="AMY ATR Bot", overlay=true, max_labe
 
 //==============================================================================
 // AMY SIMPLE ATR BOT
-// Implementasi original dengan konsep classic UT Bot:
-// ATR trailing stop + pergantian state + BUY/SELL pada crossover.
-// Tanpa ICT, FVG, OB, scoring, dashboard, atau filter berlapis.
+// Konsep utama tetap sederhana:
+// ATR trailing stop + crossover harga + satu filter tren EMA.
+// Tidak memakai ICT, FVG, OB, scoring, dashboard, atau filter berlapis.
 //==============================================================================
 
 //------------------------------------------------------------------------------
@@ -17,8 +17,14 @@ atrPeriod = input.int(10, "ATR Period", minval=1, group=groupCore)
 useHeikinAshi = input.bool(false, "Signals from Heikin Ashi", group=groupCore)
 confirmOnClose = input.bool(true, "Konfirmasi Saat Candle Close", group=groupCore)
 
+groupFilter = "Filter Tren Sederhana"
+useTrendFilter = input.bool(true, "Gunakan Filter EMA", group=groupFilter,
+     tooltip="BUY hanya di atas EMA dan SELL hanya di bawah EMA untuk mengurangi sinyal bolak-balik saat sideways.")
+emaLength = input.int(50, "EMA Length", minval=1, group=groupFilter)
+
 groupVisual = "Visual"
 showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
+showTrendEma = input.bool(false, "Tampilkan EMA Filter", group=groupVisual)
 showLabels = input.bool(true, "Tampilkan Label BUY / SELL", group=groupVisual)
 colorBars = input.bool(false, "Warnai Candle Sesuai Arah", group=groupVisual)
 
@@ -45,7 +51,7 @@ atrTrailingStop :=
      src > prevStop ? src - nLoss : src + nLoss
 
 //------------------------------------------------------------------------------
-// TREND STATE
+// TREND STATE DAN SINYAL
 //------------------------------------------------------------------------------
 var int position = 0
 position :=
@@ -53,21 +59,27 @@ position :=
      prevSrc > prevStop and src < prevStop ? -1 :
      nz(position[1], 0)
 
-// EMA 1 sama dengan source, dipertahankan agar mekanisme crossover mengikuti
-// pola classic UT Bot Alerts.
+// EMA 1 sama dengan source. Mekanisme crossover tetap mengikuti pola
+// classic UT Bot Alerts.
 emaOne = ta.ema(src, 1)
 above = ta.crossover(emaOne, atrTrailingStop)
 below = ta.crossover(atrTrailingStop, emaOne)
 
+// Hanya satu filter tambahan agar indikator tetap sederhana.
+trendEma = ta.ema(src, emaLength)
+buyTrendOk = not useTrendFilter or src > trendEma
+sellTrendOk = not useTrendFilter or src < trendEma
+
 confirmed = confirmOnClose ? barstate.isconfirmed : true
-buySignal = confirmed and src > atrTrailingStop and above
-sellSignal = confirmed and src < atrTrailingStop and below
+buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk
+sellSignal = confirmed and src < atrTrailingStop and below and sellTrendOk
 
 //------------------------------------------------------------------------------
 // VISUALS
 //------------------------------------------------------------------------------
 trailColor = position == 1 ? color.lime : position == -1 ? color.red : color.gray
 plot(showTrail ? atrTrailingStop : na, "ATR Trailing Stop", color=trailColor, linewidth=2, style=plot.style_linebr)
+plot(showTrendEma ? trendEma : na, "EMA Trend Filter", color=color.orange, linewidth=1)
 
 plotshape(showLabels and buySignal, title="BUY", text="BUY", style=shape.labelup,
      location=location.belowbar, color=color.lime, textcolor=color.black, size=size.tiny)
