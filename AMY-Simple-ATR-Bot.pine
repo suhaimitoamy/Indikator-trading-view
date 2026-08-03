@@ -1,35 +1,34 @@
 //@version=6
-indicator("AMY Simple ATR Bot v5", shorttitle="AMY ATR Bot v5", overlay=true, max_labels_count=500)
+indicator("AMY Simple ATR Bot v6", shorttitle="AMY ATR Bot v6", overlay=true, max_labels_count=500)
 
 //==============================================================================
-// AMY SIMPLE ATR BOT V5
-// Tetap sederhana:
-// 1) ATR trailing stop.
-// 2) Harga memotong trailing stop.
-// 3) EMA menentukan arah tren dan harus memiliki kemiringan searah.
-// 4) Satu filter anti-exhaustion menolak close yang terlalu dekat ujung candle.
-// Tidak memakai filter sesi, ICT, FVG, OB, scoring, atau dashboard.
+// AMY SIMPLE ATR BOT V6
+// Sederhana dan dipilih dari replay bulanan XAUUSD Januari 2019–Juli 2026:
+// 1) ATR trailing stop mendeteksi pergantian arah.
+// 2) EMA memeriksa arah tren dan kemiringannya.
+// 3) Filter body/wick menolak candle impulsif yang terlalu penuh.
+// Semua sesi diperlakukan sama. Tidak memakai ICT, FVG, OB, atau scoring.
 //==============================================================================
 
 //------------------------------------------------------------------------------
 // INPUT
 //------------------------------------------------------------------------------
 groupCore = "Pengaturan Utama"
-keyValue = input.float(3.75, "Key Value", minval=0.1, step=0.05, group=groupCore)
+keyValue = input.float(2.0, "Key Value", minval=0.1, step=0.05, group=groupCore)
 atrPeriod = input.int(20, "ATR Period", minval=1, group=groupCore)
 useHeikinAshi = input.bool(false, "Signals from Heikin Ashi", group=groupCore)
 confirmOnClose = input.bool(true, "Konfirmasi Saat Candle Close", group=groupCore)
 
 groupTrend = "Filter Tren Sederhana"
 useTrendFilter = input.bool(true, "Gunakan Filter EMA", group=groupTrend)
-emaLength = input.int(150, "EMA Length", minval=1, group=groupTrend)
-emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend,
+emaLength = input.int(80, "EMA Length", minval=1, group=groupTrend)
+emaSlopeBars = input.int(2, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend,
      tooltip="BUY hanya ketika harga di atas EMA dan EMA naik. SELL hanya ketika harga di bawah EMA dan EMA turun.")
 
-groupExhaustion = "Filter Anti-Exhaustion"
-useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion,
-     tooltip="Melewati candle sinyal yang menutup pada 5% ujung ekstrem agar tidak mengejar spike.")
-maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
+groupCandle = "Filter Body / Wick"
+useBodyFilter = input.bool(true, "Gunakan Filter Body / Wick", group=groupCandle,
+     tooltip="Candle sinyal harus memiliki body maksimal 40% dari seluruh range. Ini menghindari entry setelah candle impulsif yang sudah terlalu penuh.")
+maxBodyFraction = input.float(0.40, "Maks. Body terhadap Range", minval=0.05, maxval=1.00, step=0.05, group=groupCandle)
 
 groupVisual = "Visual"
 showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
@@ -60,7 +59,7 @@ atrTrailingStop :=
      src > prevStop ? src - nLoss : src + nLoss
 
 //------------------------------------------------------------------------------
-// TREND STATE DAN SINYAL
+// TREND DAN FILTER CANDLE
 //------------------------------------------------------------------------------
 var int position = 0
 position :=
@@ -79,18 +78,13 @@ trendFalling = not na(trendEma[emaSlopeBars]) and trendEma < trendEma[emaSlopeBa
 buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
 sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 
-// Backtest lintas 2025–2026 menunjukkan close tepat di ujung candle lebih sering
-// menjadi entry terlambat. Tidak ada pembatasan sesi atau jam trading.
 signalRange = math.max(high - low, syminfo.mintick)
-buyClosePosition = (src - low) / signalRange
-sellClosePosition = (high - src) / signalRange
-
-buyExhaustionOk = not useExhaustionFilter or buyClosePosition <= maxClosePosition
-sellExhaustionOk = not useExhaustionFilter or sellClosePosition <= maxClosePosition
+signalBodyFraction = math.abs(close - open) / signalRange
+bodyFilterOk = not useBodyFilter or signalBodyFraction <= maxBodyFraction
 
 confirmed = confirmOnClose ? barstate.isconfirmed : true
-buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk and buyExhaustionOk
-sellSignal = confirmed and src < atrTrailingStop and below and sellTrendOk and sellExhaustionOk
+buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk and bodyFilterOk
+sellSignal = confirmed and src < atrTrailingStop and below and sellTrendOk and bodyFilterOk
 
 //------------------------------------------------------------------------------
 // VISUALS
@@ -101,20 +95,17 @@ plot(showTrendEma ? trendEma : na, "EMA Trend Filter", color=color.orange, linew
 
 plotshape(showLabels and buySignal, title="BUY", text="BUY", style=shape.labelup,
      location=location.belowbar, color=color.lime, textcolor=color.black, size=size.tiny)
-
 plotshape(showLabels and sellSignal, title="SELL", text="SELL", style=shape.labeldown,
      location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny)
 
 barColorValue = colorBars ? (position == 1 ? color.lime : position == -1 ? color.red : na) : na
 barcolor(barColorValue)
 
-// Data Window untuk audit tanpa menambah objek ke chart.
-plot(buyClosePosition, "Posisi Close BUY", display=display.data_window)
-plot(sellClosePosition, "Posisi Close SELL", display=display.data_window)
+plot(signalBodyFraction, "Body / Range", display=display.data_window)
 
 //------------------------------------------------------------------------------
 // ALERTS
 //------------------------------------------------------------------------------
-alertcondition(buySignal, title="AMY ATR Bot BUY", message="AMY Simple ATR Bot v5: BUY pada {{ticker}} {{interval}} di {{close}}")
-alertcondition(sellSignal, title="AMY ATR Bot SELL", message="AMY Simple ATR Bot v5: SELL pada {{ticker}} {{interval}} di {{close}}")
-alertcondition(buySignal or sellSignal, title="AMY ATR Bot Any Signal", message="AMY Simple ATR Bot v5: sinyal baru pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(buySignal, title="AMY ATR Bot BUY", message="AMY Simple ATR Bot v6: BUY pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(sellSignal, title="AMY ATR Bot SELL", message="AMY Simple ATR Bot v6: SELL pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(buySignal or sellSignal, title="AMY ATR Bot Any Signal", message="AMY Simple ATR Bot v6: sinyal baru pada {{ticker}} {{interval}} di {{close}}")
