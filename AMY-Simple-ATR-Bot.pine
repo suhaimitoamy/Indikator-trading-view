@@ -1,13 +1,14 @@
 //@version=6
-indicator("AMY Simple ATR Bot v2", shorttitle="AMY ATR Bot v2", overlay=true, max_labels_count=500)
+indicator("AMY Simple ATR Bot v3", shorttitle="AMY ATR Bot v3", overlay=true, max_labels_count=500)
 
 //==============================================================================
-// AMY SIMPLE ATR BOT V2
+// AMY SIMPLE ATR BOT V3
 // Tetap sederhana:
 // 1) ATR trailing stop.
 // 2) Harga memotong trailing stop.
-// 3) Satu filter tren EMA: posisi harga + kemiringan EMA.
-// Tidak memakai ICT, FVG, OB, scoring, dashboard, atau filter berlapis.
+// 3) EMA untuk arah tren.
+// 4) Anti-chase: jangan entry bila harga/candle sudah terlalu jauh bergerak.
+// Tidak memakai sesi, ICT, FVG, OB, scoring, atau dashboard.
 //==============================================================================
 
 //------------------------------------------------------------------------------
@@ -23,7 +24,13 @@ groupTrend = "Filter Tren Sederhana"
 useTrendFilter = input.bool(true, "Gunakan Filter EMA", group=groupTrend)
 emaLength = input.int(75, "EMA Length", minval=1, group=groupTrend)
 emaSlopeBars = input.int(3, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend,
-     tooltip="BUY hanya ketika EMA naik dibanding beberapa bar sebelumnya. SELL hanya ketika EMA turun.")
+     tooltip="BUY hanya ketika EMA naik. SELL hanya ketika EMA turun.")
+
+groupAntiChase = "Filter Anti-Chase"
+useAntiChase = input.bool(true, "Gunakan Filter Anti-Chase", group=groupAntiChase,
+     tooltip="Mencegah entry terlambat setelah harga atau candle sudah terlalu jauh bergerak.")
+maxEmaDistanceAtr = input.float(4.0, "Maks. Jarak Harga dari EMA (ATR)", minval=0.1, step=0.1, group=groupAntiChase)
+maxSignalBodyAtr = input.float(2.0, "Maks. Body Candle Sinyal (ATR)", minval=0.1, step=0.1, group=groupAntiChase)
 
 groupVisual = "Visual"
 showTrail = input.bool(true, "Tampilkan ATR Trailing Stop", group=groupVisual)
@@ -73,9 +80,13 @@ trendFalling = not na(trendEma[emaSlopeBars]) and trendEma < trendEma[emaSlopeBa
 buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
 sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 
+emaDistanceAtr = xAtr > 0 ? math.abs(src - trendEma) / xAtr : na
+signalBodyAtr = xAtr > 0 ? math.abs(close - open) / xAtr : na
+antiChaseOk = not useAntiChase or (emaDistanceAtr <= maxEmaDistanceAtr and signalBodyAtr <= maxSignalBodyAtr)
+
 confirmed = confirmOnClose ? barstate.isconfirmed : true
-buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk
-sellSignal = confirmed and src < atrTrailingStop and below and sellTrendOk
+buySignal = confirmed and src > atrTrailingStop and above and buyTrendOk and antiChaseOk
+sellSignal = confirmed and src < atrTrailingStop and below and sellTrendOk and antiChaseOk
 
 //------------------------------------------------------------------------------
 // VISUALS
@@ -93,9 +104,13 @@ plotshape(showLabels and sellSignal, title="SELL", text="SELL", style=shape.labe
 barColorValue = colorBars ? (position == 1 ? color.lime : position == -1 ? color.red : na) : na
 barcolor(barColorValue)
 
+// Data Window untuk audit sederhana.
+plot(emaDistanceAtr, "Jarak Harga ke EMA (ATR)", display=display.data_window)
+plot(signalBodyAtr, "Body Candle Sinyal (ATR)", display=display.data_window)
+
 //------------------------------------------------------------------------------
 // ALERTS
 //------------------------------------------------------------------------------
-alertcondition(buySignal, title="AMY ATR Bot BUY", message="AMY Simple ATR Bot v2: BUY pada {{ticker}} {{interval}} di {{close}}")
-alertcondition(sellSignal, title="AMY ATR Bot SELL", message="AMY Simple ATR Bot v2: SELL pada {{ticker}} {{interval}} di {{close}}")
-alertcondition(buySignal or sellSignal, title="AMY ATR Bot Any Signal", message="AMY Simple ATR Bot v2: sinyal baru pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(buySignal, title="AMY ATR Bot BUY", message="AMY Simple ATR Bot v3: BUY pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(sellSignal, title="AMY ATR Bot SELL", message="AMY Simple ATR Bot v3: SELL pada {{ticker}} {{interval}} di {{close}}")
+alertcondition(buySignal or sellSignal, title="AMY ATR Bot Any Signal", message="AMY Simple ATR Bot v3: sinyal baru pada {{ticker}} {{interval}} di {{close}}")
