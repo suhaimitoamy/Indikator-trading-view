@@ -25,8 +25,7 @@ emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=g
 
 groupExhaustion = "Filter Anti-Exhaustion"
 useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion)
-maxClosePosition = input.float(0.92, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
-maxSignalBodyAtr = input.float(2.0, "Maks. Body Candle (ATR)", minval=0.1, step=0.1, group=groupExhaustion)
+maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
 
 groupRisk = "Risk"
 stopPoints = input.float(10.0, "Stop Loss (poin harga)", minval=0.1, step=0.1, group=groupRisk)
@@ -73,12 +72,9 @@ sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 signalRange = math.max(high - low, syminfo.mintick)
 buyClosePosition = (src - low) / signalRange
 sellClosePosition = (high - src) / signalRange
-signalBodyAtr = xAtr > 0 ? math.abs(close - open) / xAtr : na
 
-buyExhaustionOk = not useExhaustionFilter or
-     (buyClosePosition <= maxClosePosition and signalBodyAtr <= maxSignalBodyAtr)
-sellExhaustionOk = not useExhaustionFilter or
-     (sellClosePosition <= maxClosePosition and signalBodyAtr <= maxSignalBodyAtr)
+buyExhaustionOk = not useExhaustionFilter or buyClosePosition <= maxClosePosition
+sellExhaustionOk = not useExhaustionFilter or sellClosePosition <= maxClosePosition
 
 flat = strategy.position_size == 0
 buySignal = barstate.isconfirmed and flat and src > atrTrailingStop and above and buyTrendOk and buyExhaustionOk
