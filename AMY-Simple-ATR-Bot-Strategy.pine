@@ -1,11 +1,11 @@
 //@version=6
-strategy("AMY Simple ATR Bot v5 Strategy", shorttitle="AMY ATR Bot v5 STR", overlay=true,
+strategy("AMY Simple ATR Bot v6 Strategy", shorttitle="AMY ATR Bot v6 STR", overlay=true,
      pyramiding=0, process_orders_on_close=false, calc_on_order_fills=true,
      default_qty_type=strategy.fixed, default_qty_value=1)
 
 //==============================================================================
 // STRATEGY TESTER VERSION
-// Entry pada open candle berikutnya setelah sinyal candle close.
+// Entry diproses pada open candle berikutnya setelah sinyal candle close.
 // Satu posisi pada satu waktu. Posisi berakhir oleh SL atau TP tetap.
 // Semua sesi diperlakukan sama.
 //==============================================================================
@@ -14,18 +14,18 @@ strategy("AMY Simple ATR Bot v5 Strategy", shorttitle="AMY ATR Bot v5 STR", over
 // INPUT
 //------------------------------------------------------------------------------
 groupCore = "Pengaturan Utama"
-keyValue = input.float(3.75, "Key Value", minval=0.1, step=0.05, group=groupCore)
+keyValue = input.float(2.0, "Key Value", minval=0.1, step=0.05, group=groupCore)
 atrPeriod = input.int(20, "ATR Period", minval=1, group=groupCore)
 useHeikinAshi = input.bool(false, "Signals from Heikin Ashi", group=groupCore)
 
 groupTrend = "Filter Tren Sederhana"
 useTrendFilter = input.bool(true, "Gunakan Filter EMA", group=groupTrend)
-emaLength = input.int(150, "EMA Length", minval=1, group=groupTrend)
-emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend)
+emaLength = input.int(80, "EMA Length", minval=1, group=groupTrend)
+emaSlopeBars = input.int(2, "Kemiringan EMA (bar)", minval=1, maxval=20, group=groupTrend)
 
-groupExhaustion = "Filter Anti-Exhaustion"
-useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion)
-maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
+groupCandle = "Filter Body / Wick"
+useBodyFilter = input.bool(true, "Gunakan Filter Body / Wick", group=groupCandle)
+maxBodyFraction = input.float(0.40, "Maks. Body terhadap Range", minval=0.05, maxval=1.00, step=0.05, group=groupCandle)
 
 groupRisk = "Risk"
 stopPoints = input.float(10.0, "Stop Loss (poin harga)", minval=0.1, step=0.1, group=groupRisk)
@@ -70,19 +70,15 @@ buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
 sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 
 signalRange = math.max(high - low, syminfo.mintick)
-buyClosePosition = (src - low) / signalRange
-sellClosePosition = (high - src) / signalRange
-
-buyExhaustionOk = not useExhaustionFilter or buyClosePosition <= maxClosePosition
-sellExhaustionOk = not useExhaustionFilter or sellClosePosition <= maxClosePosition
+signalBodyFraction = math.abs(close - open) / signalRange
+bodyFilterOk = not useBodyFilter or signalBodyFraction <= maxBodyFraction
 
 flat = strategy.position_size == 0
-buySignal = barstate.isconfirmed and flat and src > atrTrailingStop and above and buyTrendOk and buyExhaustionOk
-sellSignal = barstate.isconfirmed and flat and src < atrTrailingStop and below and sellTrendOk and sellExhaustionOk
+buySignal = barstate.isconfirmed and flat and src > atrTrailingStop and above and buyTrendOk and bodyFilterOk
+sellSignal = barstate.isconfirmed and flat and src < atrTrailingStop and below and sellTrendOk and bodyFilterOk
 
 if buySignal
     strategy.entry("BUY", strategy.long)
-
 if sellSignal
     strategy.entry("SELL", strategy.short)
 
@@ -90,7 +86,6 @@ if strategy.position_size > 0
     strategy.exit("BUY EXIT", from_entry="BUY",
          stop=strategy.position_avg_price - stopPoints,
          limit=strategy.position_avg_price + targetPoints)
-
 if strategy.position_size < 0
     strategy.exit("SELL EXIT", from_entry="SELL",
          stop=strategy.position_avg_price + stopPoints,
@@ -118,5 +113,5 @@ plotshape(buySignal, title="BUY", text="BUY", style=shape.labelup,
 plotshape(sellSignal, title="SELL", text="SELL", style=shape.labeldown,
      location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny)
 
-alertcondition(buySignal, title="AMY ATR Bot Strategy BUY", message="AMY ATR Bot v5 Strategy: BUY {{ticker}} {{interval}}")
-alertcondition(sellSignal, title="AMY ATR Bot Strategy SELL", message="AMY ATR Bot v5 Strategy: SELL {{ticker}} {{interval}}")
+alertcondition(buySignal, title="AMY ATR Bot Strategy BUY", message="AMY ATR Bot v6 Strategy: BUY {{ticker}} {{interval}}")
+alertcondition(sellSignal, title="AMY ATR Bot Strategy SELL", message="AMY ATR Bot v6 Strategy: SELL {{ticker}} {{interval}}")
