@@ -28,8 +28,8 @@ emaSlopeBars = input.int(4, "Kemiringan EMA (bar)", minval=1, maxval=20, group=g
 
 groupExhaustion = "Filter Anti-Exhaustion"
 useExhaustionFilter = input.bool(true, "Gunakan Filter Anti-Exhaustion", group=groupExhaustion,
-     tooltip="Melewati candle sinyal yang menutup pada 5% ujung ekstrem atau memiliki body lebih dari batas ATR.")
-maxClosePosition = input.float(0.95, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
+     tooltip="Melewati candle sinyal yang menutup pada 8% ujung ekstrem atau memiliki body lebih dari batas ATR.")
+maxClosePosition = input.float(0.92, "Maks. Posisi Close", minval=0.50, maxval=1.00, step=0.01, group=groupExhaustion)
 maxSignalBodyAtr = input.float(2.0, "Maks. Body Candle (ATR)", minval=0.1, step=0.1, group=groupExhaustion)
 
 groupVisual = "Visual"
@@ -80,8 +80,8 @@ trendFalling = not na(trendEma[emaSlopeBars]) and trendEma < trendEma[emaSlopeBa
 buyTrendOk = not useTrendFilter or (src > trendEma and trendRising)
 sellTrendOk = not useTrendFilter or (src < trendEma and trendFalling)
 
-// Backtest menunjukkan candle yang menutup tepat di ujung ekstrem lebih sering
-// menjadi entry terlambat. Filter ini hanya membuang spike, bukan membatasi sesi.
+// Backtest menunjukkan candle yang menutup terlalu dekat ujung ekstrem lebih
+// sering menjadi entry terlambat. Filter ini hanya membuang spike, bukan sesi.
 signalRange = math.max(high - low, syminfo.mintick)
 buyClosePosition = (src - low) / signalRange
 sellClosePosition = (high - src) / signalRange
