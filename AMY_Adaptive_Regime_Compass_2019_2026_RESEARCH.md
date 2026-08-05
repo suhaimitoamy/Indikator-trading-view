@@ -1,127 +1,164 @@
 # AMY Adaptive Regime Compass 2019–2026
 
-## Purpose
+## Tujuan
 
-This indicator was built from the audited XAUUSD candle archive in Google Drive to read:
+Indikator ini adalah **pembaca arah dan kondisi market**, bukan strategy dan bukan sistem entry otomatis.
 
-- **Past:** historical direction and regime changes without future leakage.
-- **Present:** current closed-candle direction, regime, confidence, and higher-timeframe conflict.
-- **Future:** a selective directional forecast with target and invalidation, or **WAIT** when the evidence is weak.
+Output utamanya:
 
-It is a context and forecast engine, not an automatic entry strategy.
+- arah resmi: **BULLISH / BEARISH / TUNGGU**;
+- kondisi: continuation, pullback, expansion, range, kandidat reversal, atau transition;
+- konteks D1–H4–H1–M15/M5;
+- level struktur yang membatalkan arah resmi;
+- label Buy/Sell hanya ketika arah resmi benar-benar berubah.
 
-## Dataset read
+## Dataset
 
-The analysis loaded all available monthly archives from **January 2019 through July 2026**.
+Seluruh arsip candle XAUUSD yang tersedia telah dibaca dari Januari 2019 sampai 31 Juli 2026.
 
-| Timeframe | Rows loaded |
+| Timeframe | Bar |
 |---|---:|
-| M5 | 548,000 |
-| M15 | 182,680 |
-| H1 | 45,690 |
-| H4 | 12,421 |
-| D1 | 2,389 |
+| M5 | 548.000 |
+| M15 | 182.680 |
+| H1 | 45.690 |
+| H4 | 12.421 |
+| D1 | 2.389 |
 
-### Data integrity
+Pembagian pengembangan:
 
-- **2019–2025:** repaired/audited BID data. The source clock is fixed UTC-05:00. Upstream gaps were retained; no synthetic candles were inserted.
-- **2020–2024:** provenance was verified against HistData.com.
-- **2019 and 2025:** lineage is consistent but provenance remains inferred.
-- **2026:** January–July replacement data from Dukascopy BID UTC. It passed timestamp, OHLC, aggregation, and archive validation.
-- 2026 is **year-to-date through July 31**, not a full calendar year.
+- **2019–2023:** mempelajari perilaku trend, range, pullback, ekspansi volatilitas, dan reversal;
+- **2024:** validasi aturan awal;
+- **2025:** stress test pada trend besar dan ekspansi harga;
+- **2026 Januari–Juli:** pemeriksaan out-of-sample pada volatilitas dan sumber data berbeda.
 
-## Market behavior found
+Data 2026 belum merupakan satu tahun penuh.
 
-The data does not support one permanent market model.
+## Temuan utama per kondisi market
 
-- Strong continuation phases appeared in 2019–2020 and especially 2024–2025.
-- 2021–2023 repeatedly punished fixed trend-following assumptions through rotation, failed continuation, and deeper drawdowns.
-- 2026 showed a different volatility profile and more directional persistence at H1, while also producing the largest median daily ATR percentage in the sample.
-- H1 regime composition changed continuously: roughly 36–41% trend, 37–45% range, and 17–25% transition depending on year.
+### Trend kuat
 
-This is why the indicator does **not** force a single trend rule across all years.
+Periode 2019–2020 dan terutama 2024–2025 menunjukkan bahwa koreksi lokal berulang kali terjadi tanpa mengubah arah besar. Karena itu, indikator tidak lagi membalik arah hanya karena momentum lokal atau EMA cepat berubah.
 
-## Architecture
+Arah resmi dipertahankan selama struktur dan konteks H1/H4 belum terinvalidasi. Koreksi ditampilkan sebagai **BULLISH PULLBACK** atau **BEARISH PULLBACK**.
 
-### 1. Scale-independent features
+### Range dan rotasi
 
-All directional components are normalized by ATR or bounded to `[-1, +1]`:
+Periode 2021–2023 menunjukkan banyak persilangan, breakout pendek, dan perubahan momentum yang gagal berlanjut. Label berdasarkan ambang skor mentah menghasilkan puluhan ribu perubahan dan secara diagnostik mendekati acak.
 
-- EMA 21/55/200 relationship
-- EMA slope
-- 20-bar structural position and breakout
-- 12-bar momentum
-- Kaufman-style efficiency ratio
-- DMI/ADX regime strength
-- distance from the medium EMA
+Karena itu, kondisi range memerlukan:
 
-The engine is therefore not tied to XAUUSD price level changes from 1,200 to above 4,000.
+- efisiensi pergerakan rendah;
+- ADX rendah;
+- konteks lokal dan timeframe penghubung sama-sama lemah;
+- output **TUNGGU**, bukan Buy/Sell berulang.
 
-### 2. Two competing models
+### Volatility expansion
 
-The indicator calculates:
+Volatilitas absolut XAUUSD berubah sangat besar dari 2019 sampai 2026. Semua jarak utama dinormalisasi terhadap ATR. Expansion hanya diakui ketika:
 
-1. **Continuation model** — follows aligned trend, slope, structure, momentum, and efficiency.
-2. **Mean-reversion model** — fades excessive distance, momentum extension, and failed structural pressure.
+- ATR meningkat dibanding baseline 100 bar;
+- true range lebih besar dari ATR normal;
+- body candle cukup dominan;
+- arah candle sesuai dorongan struktur.
 
-### 3. Past-only adaptive memory
+### Reversal
 
-For each model, the script evaluates the outcome of the prediction made `forecastHorizon` bars earlier. The current model weight is based only on already-realized historical outcomes.
+Reversal tidak lagi ditentukan oleh satu crossover. Perubahan arah resmi membutuhkan kombinasi:
 
-- Positive continuation edge gives weight to continuation.
-- Positive reversion edge gives weight to mean reversion.
-- If neither model has positive edge, the forecast loses confidence and normally becomes **WAIT**.
+- sweep pada swing sebelumnya;
+- market structure shift atau break struktur yang kuat;
+- candle sudah close;
+- H1 mulai mendukung;
+- H4 tidak lagi kuat melawan;
+- konfirmasi berurutan dan minimum hold time agar arah tidak berkedip.
 
-This is adaptation, not future leakage.
+## State machine
 
-### 4. Confirmed multi-timeframe context
+Alur arah resmi:
 
-Default context:
+```text
+TUNGGU
+  ├─> BULLISH
+  │     ├─> BULLISH CONTINUATION
+  │     ├─> BULLISH EXPANSION
+  │     └─> BULLISH PULLBACK
+  │            └─> tetap bullish sampai invalidasi/reversal terkonfirmasi
+  └─> BEARISH
+        ├─> BEARISH CONTINUATION
+        ├─> BEARISH EXPANSION
+        └─> BEARISH PULLBACK
+               └─> tetap bearish sampai invalidasi/reversal terkonfirmasi
+```
 
-- chart timeframe
-- H1
-- H4
-- D1
+Saat belum ada arah resmi, indikator dapat menunjukkan:
 
-Higher-timeframe requests use the confirmed-bar offset pattern. The user must keep each configured context timeframe strictly higher than the previous one. Otherwise, the dashboard returns **SET HIGHER TFs** and the decision remains **WAIT**.
+- RANGE / SIDEWAYS;
+- TRANSISI;
+- KANDIDAT BULLISH;
+- KANDIDAT BEARISH.
 
-### 5. Conservative decision gate
+## Hierarki timeframe
 
-A BUY or SELL focus requires all of the following:
+### Chart M5
 
-- composite score exceeds the threshold;
-- confidence exceeds the threshold;
-- multi-timeframe alignment exceeds the threshold;
-- H1/H4 do not have a strong opposite-direction conflict;
-- context timeframe configuration is valid.
+Bobot konteks:
 
-Any failure produces **WAIT** with a reason.
+- M15: 15%;
+- H1: 35%;
+- H4: 35%;
+- D1: 15%.
 
-## Default interpretation
+M5 membutuhkan dua candle konfirmasi dan minimum hold 12 bar, setara sekitar satu jam.
 
-- **BUY FOCUS:** directional evidence favors bullish continuation or bullish mean reversion.
-- **SELL FOCUS:** directional evidence favors bearish continuation or bearish mean reversion.
-- **WAIT:** score, confidence, alignment, model edge, or higher-timeframe context is insufficient.
+### Chart M15
 
-The projected target is ATR-adaptive. Mean-reversion forecasts prefer the medium EMA when it lies in the forecast direction. Invalidation uses the medium EMA, recent structural extreme, and an ATR buffer.
+Bobot konteks:
 
-## Non-repainting safeguards
+- H1: 45%;
+- H4: 40%;
+- D1: 15%.
 
-- Local decisions use the last closed chart candle on realtime bars.
-- Higher-timeframe values are offset by one HTF bar and requested with `barmerge.lookahead_on`.
-- Alerts trigger only on confirmed local bars.
-- No pivots or historical values are moved after confirmation.
+M15 membutuhkan satu candle close dan minimum hold empat bar, juga sekitar satu jam.
 
-## Files
+Indikator sengaja dibatasi untuk M5 dan M15 karena dua timeframe tersebut yang dianalisis dan divalidasi secara langsung pada dataset.
 
-- `AMY_Adaptive_Regime_Compass_2019_2026.pine`
-- `AMY_Adaptive_Regime_Compass_2019_2026_Annual_Research.csv`
-- `AMY_Adaptive_Regime_Compass_2019_2026_RESEARCH.md`
+## Buy dan Sell di chart
 
-## Limitations
+Label **Buy** dan **Sell** bukan order atau rekomendasi entry.
 
-- No indicator can be accurate in every future market condition.
-- Different broker feeds and daily boundaries can change individual candles.
-- The 2019 and 2025 source provenance is inferred, and upstream gaps remain.
-- 2026 covers January–July only and uses a different provider/timezone from 2019–2025.
-- The indicator should be validated manually on TradingView before being used in live execution.
+- Buy muncul ketika arah resmi berubah menjadi bullish.
+- Sell muncul ketika arah resmi berubah menjadi bearish.
+- Pullback tidak menghasilkan label berlawanan.
+- Range, transition, dan konflik H1/H4 tidak menghasilkan label.
+- Semua label memakai candle yang sudah close dan tetap terlihat sebagai riwayat arah.
+
+## Anti-repaint
+
+- keputusan lokal memakai candle chart yang sudah close;
+- data M15, H1, H4, dan D1 memakai candle HTF sebelumnya yang sudah selesai;
+- `lookahead_on` hanya digunakan bersama offset satu candle HTF;
+- state dan label diperbarui hanya saat `barstate.isconfirmed`.
+
+## Yang sengaja dihapus
+
+Versi state-machine tidak memiliki:
+
+- `strategy()`;
+- simulasi order;
+- entry otomatis;
+- Stop Loss atau Take Profit;
+- profit factor;
+- target harga buatan;
+- skor Memory Edge yang sulit diterjemahkan;
+- label Buy/Sell dari perubahan skor mentah.
+
+## Batasan yang jujur
+
+Data historis tidak dapat menjamin arah masa depan. Pengujian menunjukkan bahwa memaksa prediksi pada setiap perubahan kecil menghasilkan akurasi yang mendekati acak. Oleh sebab itu, indikator ini memprioritaskan:
+
+1. pembacaan kondisi market saat ini;
+2. kestabilan arah resmi;
+3. pemisahan pullback dari reversal;
+4. memilih TUNGGU ketika konteks belum cukup.
+
+Data baru belum diperlukan untuk merancang ulang logika ini. Data setelah Juli 2026 sebaiknya digunakan sebagai forward validation, bukan untuk terus menyesuaikan aturan agar cocok dengan masa lalu.
