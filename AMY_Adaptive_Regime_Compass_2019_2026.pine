@@ -1,38 +1,21 @@
 //@version=5
-indicator("AMY Adaptive Regime Compass 2019-2026", shorttitle="AMY Regime Compass", overlay=true, max_labels_count=100, max_lines_count=20)
+indicator("AMY Adaptive Regime Compass 2019-2026", shorttitle="AMY Regime Compass", overlay=true, max_labels_count=300, max_lines_count=20)
 
 // ============================================================================
-// AMY ADAPTIVE REGIME COMPASS 2019-2026
-// Adaptive market direction and regime reader based on confirmed candles.
+// AMY ADAPTIVE REGIME COMPASS — STATE MACHINE
+// Built from XAUUSD candle behavior observed across 2019-July 2026.
+// This is a market-direction indicator, not a strategy and not an entry system.
+// Best used on M5 and M15.
 // ============================================================================
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inputs
+// Visual settings
 // ─────────────────────────────────────────────────────────────────────────────
-grpCore = "Core Engine"
-fastLen = input.int(21, "Fast EMA", minval=5, maxval=100, group=grpCore)
-midLen = input.int(55, "Medium EMA", minval=20, maxval=200, group=grpCore)
-slowLen = input.int(200, "Slow EMA", minval=50, maxval=500, group=grpCore)
-structureLen = input.int(20, "Structure Lookback", minval=10, maxval=100, group=grpCore)
-erLen = input.int(20, "Efficiency Ratio Length", minval=8, maxval=100, group=grpCore)
-forecastHorizon = input.int(12, "Adaptive Memory Outcome Horizon", minval=3, maxval=50, group=grpCore)
-memoryLen = input.int(120, "Adaptive Performance Memory", minval=40, maxval=500, group=grpCore)
-
-grpMtf = "Multi-Timeframe Context"
-htf1 = input.timeframe("60", "Context TF 1", group=grpMtf)
-htf2 = input.timeframe("240", "Context TF 2", group=grpMtf)
-htf3 = input.timeframe("D", "Context TF 3", group=grpMtf)
-
-grpDecision = "Decision Thresholds"
-minScore = input.float(0.28, "Minimum Composite Score", minval=0.05, maxval=0.90, step=0.01, group=grpDecision)
-minConfidence = input.float(58.0, "Minimum Confidence", minval=20.0, maxval=95.0, step=1.0, group=grpDecision)
-minAlignment = input.float(0.65, "Minimum MTF Alignment", minval=0.30, maxval=1.00, step=0.05, group=grpDecision)
-
-grpVisual = "Visual"
-showDashboard = input.bool(true, "Show Dashboard", group=grpVisual)
-showBackground = input.bool(true, "Show Direction Background", group=grpVisual)
-showEma = input.bool(true, "Show Adaptive EMA Map", group=grpVisual)
-showMarkers = input.bool(true, "Show Confirmed Direction Changes", group=grpVisual)
+grpVisual = "Tampilan"
+showDashboard = input.bool(true, "Tampilkan dashboard", group=grpVisual)
+showEma = input.bool(true, "Tampilkan EMA 21 / 55 / 200", group=grpVisual)
+showBackground = input.bool(true, "Warnai latar sesuai arah resmi", group=grpVisual)
+showMarkers = input.bool(true, "Tampilkan riwayat Buy / Sell", group=grpVisual)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -41,233 +24,306 @@ f_clamp(_x, _lo, _hi) =>
     math.max(_lo, math.min(_hi, _x))
 
 f_sign(_x) =>
-    _x > 0 ? 1.0 : _x < 0 ? -1.0 : 0.0
+    _x > 0 ? 1 : _x < 0 ? -1 : 0
 
-f_squash(_x) =>
-    _x / (1.0 + math.abs(_x))
-
-f_regime_text(_regime, _score) =>
-    _regime == 1 ? (_score > 0 ? "TREND BULLISH" : _score < 0 ? "TREND BEARISH" : "TREND") :
-     _regime == 2 ? "SIDEWAYS" :
-     _score > 0 ? "TRANSISI BULLISH" : _score < 0 ? "TRANSISI BEARISH" : "TRANSISI"
-
-f_model_text(_model) =>
-    _model == 1 ? "IKUTI TREN" : _model == -1 ? "CARI PANTULAN" : "BELUM JELAS"
-
-f_conf_text(_conf) =>
-    str.tostring(_conf, "#.0") + "%"
+f_direction_text(_score) =>
+    na(_score) ? "?" : _score > 0.12 ? "BULLISH" : _score < -0.12 ? "BEARISH" : "NETRAL"
 
 f_price_text(_price) =>
     na(_price) ? "-" : str.tostring(_price, format.mintick)
 
-f_status_color(_bias) =>
+f_bias_color(_bias) =>
     _bias == 1 ? color.new(color.lime, 0) : _bias == -1 ? color.new(color.red, 0) : color.new(color.orange, 0)
 
-f_direction_text(_score) =>
-    na(_score) ? "?" : _score > 0.08 ? "↑" : _score < -0.08 ? "↓" : "—"
-
-f_conf_level(_conf) =>
-    _conf >= 75 ? "TINGGI" : _conf >= 58 ? "CUKUP" : "RENDAH"
-
-f_alignment_level(_alignment) =>
-    _alignment >= 0.80 ? "KOMPAK" : _alignment >= 0.65 ? "CUKUP" : "BELUM KOMPAK"
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Adaptive dual-model core
+// Context engine
+// Values are normalized by ATR so the rules survive large price-level changes.
 // ─────────────────────────────────────────────────────────────────────────────
-f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
+f_context() =>
     _tick = math.max(syminfo.mintick, 0.0000001)
     _atr = ta.atr(14)
     _atrSafe = math.max(_atr, _tick)
-    _emaFast = ta.ema(close, _fastLen)
-    _emaMid = ta.ema(close, _midLen)
-    _emaSlow = ta.ema(close, _slowLen)
+    _ema21 = ta.ema(close, 21)
+    _ema55 = ta.ema(close, 55)
+    _ema200 = ta.ema(close, 200)
     [_plusDi, _minusDi, _adx] = ta.dmi(14, 14)
 
-    _directionalChange = math.abs(close - close[_erLen])
-    _pathTravel = math.sum(math.abs(close - close[1]), _erLen)
-    _er = _pathTravel > 0 ? _directionalChange / _pathTravel : 0.0
-    _erDir = _er * f_sign(close - close[_erLen])
+    _directionalChange = math.abs(close - close[20])
+    _pathTravel = math.sum(math.abs(close - close[1]), 20)
+    _efficiency = _pathTravel > 0 ? _directionalChange / _pathTravel : 0.0
 
-    _priorHigh = ta.highest(high[1], _structureLen)
-    _priorLow = ta.lowest(low[1], _structureLen)
+    _priorHigh = ta.highest(high[1], 20)
+    _priorLow = ta.lowest(low[1], 20)
     _channelMid = (_priorHigh + _priorLow) * 0.5
     _channelHalf = math.max((_priorHigh - _priorLow) * 0.5, _tick)
     _channelPosition = f_clamp((close - _channelMid) / _channelHalf, -1.5, 1.5) / 1.5
-    _structure = close > _priorHigh ? 1.0 : close < _priorLow ? -1.0 : _channelPosition
 
-    _trendFast = f_squash((_emaFast - _emaMid) / (_atrSafe * 1.20))
-    _trendSlow = f_squash((_emaMid - _emaSlow) / (_atrSafe * 2.00))
-    _slope = f_squash((_emaMid - _emaMid[8]) / (_atrSafe * 1.40))
-    _momentum = f_squash((close - close[12]) / (_atrSafe * 2.00))
-    _meanReversion = -f_squash((close - _emaMid) / (_atrSafe * 1.80))
+    _fastTrend = (_ema21 - _ema55) / (_atrSafe * 1.20)
+    _slowTrend = (_ema55 - _ema200) / (_atrSafe * 2.00)
+    _slope = (_ema55 - _ema55[8]) / (_atrSafe * 1.40)
+    _momentum = (close - close[12]) / (_atrSafe * 2.00)
 
-    _continuationScore =
-         0.30 * _trendFast +
-         0.18 * _trendSlow +
-         0.18 * _slope +
-         0.20 * _structure +
-         0.10 * _momentum +
-         0.04 * _erDir
+    _score =
+         0.32 * (_fastTrend / (1.0 + math.abs(_fastTrend))) +
+         0.28 * (_slowTrend / (1.0 + math.abs(_slowTrend))) +
+         0.16 * (_slope / (1.0 + math.abs(_slope))) +
+         0.14 * _channelPosition +
+         0.10 * (_momentum / (1.0 + math.abs(_momentum)))
+    _score := f_clamp(_score, -1.0, 1.0)
 
-    _reversionScore =
-         0.55 * _meanReversion -
-         0.15 * _momentum -
-         0.15 * _structure -
-         0.15 * _erDir
+    _bosUp = not na(_priorHigh) and close > _priorHigh and close[1] <= _priorHigh[1]
+    _bosDown = not na(_priorLow) and close < _priorLow and close[1] >= _priorLow[1]
+    _sweepLow = not na(_priorLow) and low < _priorLow and close > _priorLow
+    _sweepHigh = not na(_priorHigh) and high > _priorHigh and close < _priorHigh
+    _barsSinceSweepLow = ta.barssince(_sweepLow)
+    _barsSinceSweepHigh = ta.barssince(_sweepHigh)
+    _recentSweepLow = not na(_barsSinceSweepLow) and _barsSinceSweepLow <= 12
+    _recentSweepHigh = not na(_barsSinceSweepHigh) and _barsSinceSweepHigh <= 12
+    _bullMss = _bosUp and _recentSweepLow
+    _bearMss = _bosDown and _recentSweepHigh
 
-    _pastAtr = math.max(_atr[_horizon], _tick)
-    _realizedMove = (close - close[_horizon]) / _pastAtr
-    _boundedMove = f_clamp(_realizedMove, -2.0, 2.0) * 0.5
-    _continuationPayoff = f_sign(_continuationScore[_horizon]) * _boundedMove
-    _reversionPayoff = f_sign(_reversionScore[_horizon]) * _boundedMove
-    _continuationEdge = ta.ema(_continuationPayoff, _memory)
-    _reversionEdge = ta.ema(_reversionPayoff, _memory)
+    _trueRange = ta.tr(true)
+    _atrBase = ta.sma(_atr, 100)
+    _atrRatio = not na(_atrBase) and _atrBase > 0 ? _atr / _atrBase : 1.0
+    _candleRange = math.max(high - low, _tick)
+    _bodyRatio = math.abs(close - open) / _candleRange
+    _expansionUp = _atrRatio >= 1.20 and _trueRange / _atrSafe >= 1.25 and _bodyRatio >= 0.55 and close > open
+    _expansionDown = _atrRatio >= 1.20 and _trueRange / _atrSafe >= 1.25 and _bodyRatio >= 0.55 and close < open
 
-    _continuationWeight = math.max(_continuationEdge, 0.0)
-    _reversionWeight = math.max(_reversionEdge, 0.0)
-    _weightTotal = _continuationWeight + _reversionWeight
-    _adaptiveScore = _weightTotal > 0 ?
-         (_continuationWeight * _continuationScore + _reversionWeight * _reversionScore) / _weightTotal : 0.0
+    // 1 = trend, 2 = range, 0 = transition.
+    _regime = _adx >= 19.0 and _efficiency >= 0.16 and math.abs(_score) >= 0.18 ? 1 :
+         _adx <= 16.0 or _efficiency <= 0.10 ? 2 : 0
 
-    _modelEdge = f_clamp(_weightTotal / 0.25, 0.0, 1.0)
-    _model = _weightTotal <= 0 ? 0 : _continuationWeight >= _reversionWeight ? 1 : -1
+    [_score, _regime, _ema21, _ema55, _ema200, _atr, _priorHigh, _priorLow, _bosUp, _bosDown, _bullMss, _bearMss, _expansionUp, _expansionDown]
 
-    _isTrend = _adx >= 20.0 and _er >= 0.22 and math.abs(_continuationScore) >= 0.20
-    _isRange = _adx <= 17.0 or _er <= 0.14
-    _regime = _isTrend ? 1 : _isRange ? 2 : 0
-
-    _stableDirection = ta.sma(f_sign(_adaptiveScore) == f_sign(_adaptiveScore[1]) ? 1.0 : 0.0, 8)
-    _confidence = 100.0 * math.abs(_adaptiveScore) * (0.55 + 0.45 * _modelEdge) * (0.75 + 0.25 * nz(_stableDirection, 0.0))
-    _confidence := f_clamp(_confidence, 0.0, 100.0)
-
-    [_adaptiveScore, _confidence, _regime, _model, _atr, _emaFast, _emaMid, _emaSlow, _priorHigh, _priorLow, _continuationEdge, _reversionEdge]
-
-f_core_confirmed(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
-    [_s, _c, _r, _m, _a, _ef, _em, _es, _ph, _pl, _ce, _re] = f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory)
-    [_s[1], _c[1], _r[1], _m[1], _a[1], _ef[1], _em[1], _es[1], _ph[1], _pl[1], _ce[1], _re[1]]
+// Confirmed higher-timeframe context only. The offset prevents a live HTF candle
+// from changing an already displayed historical decision.
+f_context_confirmed() =>
+    [_score, _regime, _ema21, _ema55, _ema200, _atr, _priorHigh, _priorLow, _bosUp, _bosDown, _bullMss, _bearMss, _expansionUp, _expansionDown] = f_context()
+    [_score[1], _regime[1], _ema21[1], _ema55[1], _ema200[1], _atr[1], _priorHigh[1], _priorLow[1], _bosUp[1], _bosDown[1], _bullMss[1], _bearMss[1], _expansionUp[1], _expansionDown[1]]
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Local and higher-timeframe state
+// Local and multi-timeframe data
 // ─────────────────────────────────────────────────────────────────────────────
-[localScoreRaw, localConfRaw, localRegimeRaw, localModelRaw, localAtrRaw, localEmaFastRaw, localEmaMidRaw, localEmaSlowRaw, localPriorHighRaw, localPriorLowRaw, localContEdgeRaw, localRevEdgeRaw] = f_core(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen)
+[localScoreRaw, localRegimeRaw, localEma21Raw, localEma55Raw, localEma200Raw, localAtrRaw, localPriorHighRaw, localPriorLowRaw, localBosUpRaw, localBosDownRaw, localBullMssRaw, localBearMssRaw, localExpansionUpRaw, localExpansionDownRaw] = f_context()
 
-localScore = barstate.isconfirmed ? localScoreRaw : nz(localScoreRaw[1], localScoreRaw)
-localConf = barstate.isconfirmed ? localConfRaw : nz(localConfRaw[1], localConfRaw)
-localRegime = barstate.isconfirmed ? localRegimeRaw : nz(localRegimeRaw[1], localRegimeRaw)
-localModel = barstate.isconfirmed ? localModelRaw : nz(localModelRaw[1], localModelRaw)
-localAtr = barstate.isconfirmed ? localAtrRaw : nz(localAtrRaw[1], localAtrRaw)
-localEmaFast = barstate.isconfirmed ? localEmaFastRaw : nz(localEmaFastRaw[1], localEmaFastRaw)
-localEmaMid = barstate.isconfirmed ? localEmaMidRaw : nz(localEmaMidRaw[1], localEmaMidRaw)
-localEmaSlow = barstate.isconfirmed ? localEmaSlowRaw : nz(localEmaSlowRaw[1], localEmaSlowRaw)
+localScore = barstate.isconfirmed ? localScoreRaw : localScoreRaw[1]
+localRegime = barstate.isconfirmed ? localRegimeRaw : localRegimeRaw[1]
+localEma21 = barstate.isconfirmed ? localEma21Raw : localEma21Raw[1]
+localEma55 = barstate.isconfirmed ? localEma55Raw : localEma55Raw[1]
+localEma200 = barstate.isconfirmed ? localEma200Raw : localEma200Raw[1]
+localAtr = barstate.isconfirmed ? localAtrRaw : localAtrRaw[1]
+localPriorHigh = barstate.isconfirmed ? localPriorHighRaw : localPriorHighRaw[1]
+localPriorLow = barstate.isconfirmed ? localPriorLowRaw : localPriorLowRaw[1]
+localBosUp = barstate.isconfirmed ? localBosUpRaw : localBosUpRaw[1]
+localBosDown = barstate.isconfirmed ? localBosDownRaw : localBosDownRaw[1]
+localBullMss = barstate.isconfirmed ? localBullMssRaw : localBullMssRaw[1]
+localBearMss = barstate.isconfirmed ? localBearMssRaw : localBearMssRaw[1]
+localExpansionUp = barstate.isconfirmed ? localExpansionUpRaw : localExpansionUpRaw[1]
+localExpansionDown = barstate.isconfirmed ? localExpansionDownRaw : localExpansionDownRaw[1]
+decisionClose = barstate.isconfirmed ? close : close[1]
 
-[tf1Score, tf1Conf, tf1Regime, tf1Model, tf1Atr, tf1EmaFast, tf1EmaMid, tf1EmaSlow, tf1PriorHigh, tf1PriorLow, tf1ContEdge, tf1RevEdge] = request.security(syminfo.tickerid, htf1, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-[tf2Score, tf2Conf, tf2Regime, tf2Model, tf2Atr, tf2EmaFast, tf2EmaMid, tf2EmaSlow, tf2PriorHigh, tf2PriorLow, tf2ContEdge, tf2RevEdge] = request.security(syminfo.tickerid, htf2, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-[tf3Score, tf3Conf, tf3Regime, tf3Model, tf3Atr, tf3EmaFast, tf3EmaMid, tf3EmaSlow, tf3PriorHigh, tf3PriorLow, tf3ContEdge, tf3RevEdge] = request.security(syminfo.tickerid, htf3, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[m15Score, m15Regime, m15Ema21, m15Ema55, m15Ema200, m15Atr, m15PriorHigh, m15PriorLow, m15BosUp, m15BosDown, m15BullMss, m15BearMss, m15ExpansionUp, m15ExpansionDown] = request.security(syminfo.tickerid, "15", f_context_confirmed(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[h1Score, h1Regime, h1Ema21, h1Ema55, h1Ema200, h1Atr, h1PriorHigh, h1PriorLow, h1BosUp, h1BosDown, h1BullMss, h1BearMss, h1ExpansionUp, h1ExpansionDown] = request.security(syminfo.tickerid, "60", f_context_confirmed(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[h4Score, h4Regime, h4Ema21, h4Ema55, h4Ema200, h4Atr, h4PriorHigh, h4PriorLow, h4BosUp, h4BosDown, h4BullMss, h4BearMss, h4ExpansionUp, h4ExpansionDown] = request.security(syminfo.tickerid, "240", f_context_confirmed(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[d1Score, d1Regime, d1Ema21, d1Ema55, d1Ema200, d1Atr, d1PriorHigh, d1PriorLow, d1BosUp, d1BosDown, d1BullMss, d1BearMss, d1ExpansionUp, d1ExpansionDown] = request.security(syminfo.tickerid, "D", f_context_confirmed(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Composite direction and decision
-// ─────────────────────────────────────────────────────────────────────────────
-localWeight = 0.45
-tf1Weight = 0.30
-tf2Weight = 0.20
-tf3Weight = 0.05
+isM5Mode = timeframe.isminutes and timeframe.multiplier <= 5
+isM15Mode = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 15
+supportedTimeframe = isM5Mode or isM15Mode
 
-compositeScore =
-     localWeight * nz(localScore, 0.0) +
-     tf1Weight * nz(tf1Score, 0.0) +
-     tf2Weight * nz(tf2Score, 0.0) +
-     tf3Weight * nz(tf3Score, 0.0)
+// M5 needs M15 as a bridge. M15 uses H1-H4-D1 directly.
+anchorScore = isM5Mode ?
+     0.15 * nz(m15Score, 0.0) + 0.35 * nz(h1Score, 0.0) + 0.35 * nz(h4Score, 0.0) + 0.15 * nz(d1Score, 0.0) :
+     0.45 * nz(h1Score, 0.0) + 0.40 * nz(h4Score, 0.0) + 0.15 * nz(d1Score, 0.0)
 
-compositeDirection = f_sign(compositeScore)
-alignment =
-     (f_sign(localScore) == compositeDirection and compositeDirection != 0 ? localWeight : 0.0) +
-     (f_sign(tf1Score) == compositeDirection and compositeDirection != 0 ? tf1Weight : 0.0) +
-     (f_sign(tf2Score) == compositeDirection and compositeDirection != 0 ? tf2Weight : 0.0) +
-     (f_sign(tf3Score) == compositeDirection and compositeDirection != 0 ? tf3Weight : 0.0)
+fastContextRegime = isM5Mode ? m15Regime : h1Regime
+entryThreshold = isM5Mode ? 0.30 : 0.28
+confirmationBars = isM5Mode ? 2 : 1
+minimumHoldBars = isM5Mode ? 12 : 4
+flipThreshold = 0.20
+exitThreshold = 0.16
 
-baseConfidence =
-     localWeight * nz(localConf, 0.0) +
-     tf1Weight * nz(tf1Conf, 0.0) +
-     tf2Weight * nz(tf2Conf, 0.0) +
-     tf3Weight * nz(tf3Conf, 0.0)
+strongHtfConflict = not na(h1Score) and not na(h4Score) and h1Score * h4Score < 0 and math.abs(h1Score) >= 0.25 and math.abs(h4Score) >= 0.25
+rangeNow = localRegime == 2 and fastContextRegime == 2 and math.abs(anchorScore) < 0.30
 
-compositeConfidence = f_clamp(baseConfidence * (0.55 + 0.45 * alignment), 0.0, 100.0)
+bullLocalConfirmation = localScore > 0.18 and decisionClose > localEma55 and
+     (localBosUp or localExpansionUp or (decisionClose > localEma21 and localScore > 0.25))
+bearLocalConfirmation = localScore < -0.18 and decisionClose < localEma55 and
+     (localBosDown or localExpansionDown or (decisionClose < localEma21 and localScore < -0.25))
 
-strongConflict = f_sign(tf1Score) != 0 and f_sign(tf2Score) != 0 and f_sign(tf1Score) != f_sign(tf2Score) and math.abs(tf1Score) >= 0.25 and math.abs(tf2Score) >= 0.25
-contextConfigValid = timeframe.in_seconds() < timeframe.in_seconds(htf1) and timeframe.in_seconds(htf1) < timeframe.in_seconds(htf2) and timeframe.in_seconds(htf2) < timeframe.in_seconds(htf3)
-qualified = contextConfigValid and math.abs(compositeScore) >= minScore and compositeConfidence >= minConfidence and alignment >= minAlignment and not strongConflict
-bias = qualified ? (compositeScore > 0 ? 1 : -1) : 0
+bullInitialSetup = anchorScore > entryThreshold and h1Score > 0.05 and h4Score > -0.10 and bullLocalConfirmation and not strongHtfConflict and not rangeNow
+bearInitialSetup = anchorScore < -entryThreshold and h1Score < -0.05 and h4Score < 0.10 and bearLocalConfirmation and not strongHtfConflict and not rangeNow
 
-trendVotes = (localRegime == 1 ? localWeight : 0.0) + (tf1Regime == 1 ? tf1Weight : 0.0) + (tf2Regime == 1 ? tf2Weight : 0.0) + (tf3Regime == 1 ? tf3Weight : 0.0)
-rangeVotes = (localRegime == 2 ? localWeight : 0.0) + (tf1Regime == 2 ? tf1Weight : 0.0) + (tf2Regime == 2 ? tf2Weight : 0.0) + (tf3Regime == 2 ? tf3Weight : 0.0)
-compositeRegime = trendVotes >= 0.55 ? 1 : rangeVotes >= 0.55 ? 2 : 0
-
-modelVote = localWeight * localModel + tf1Weight * tf1Model + tf2Weight * tf2Model + tf3Weight * tf3Model
-compositeModel = modelVote >= 0.15 ? 1 : modelVote <= -0.15 ? -1 : 0
-
-statusText = bias == 1 ? "BULLISH" : bias == -1 ? "BEARISH" : "TUNGGU"
-reasonText = not contextConfigValid ? "ATUR TF LEBIH TINGGI" : strongConflict ? "H1 & H4 BERLAWANAN" : compositeConfidence < minConfidence ? "KEYAKINAN MASIH RENDAH" : alignment < minAlignment ? "ARAH TF BELUM KOMPAK" : math.abs(compositeScore) < minScore ? "DORONGAN ARAH MASIH LEMAH" : "ARAH SUDAH TERKONFIRMASI"
+// A direction flip is harder than continuation: it needs a sweep+MSS or a
+// strong structure break, plus improving H1/H4 context.
+bullFlipSetup = anchorScore > flipThreshold and h1Score > 0.10 and h4Score > -0.15 and
+     (localBullMss or (localBosUp and localScore > 0.35)) and decisionClose > localEma55 and not strongHtfConflict
+bearFlipSetup = anchorScore < -flipThreshold and h1Score < -0.10 and h4Score < 0.15 and
+     (localBearMss or (localBosDown and localScore < -0.35)) and decisionClose < localEma55 and not strongHtfConflict
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Direction output only — this is not an entry strategy.
-// No order simulation, SL, TP, profit factor, or trade result is calculated.
+// Persistent market-direction state machine
+// Pullbacks do not automatically reverse the official direction.
 // ─────────────────────────────────────────────────────────────────────────────
+var int marketBias = 0
+var int bullConfirmCount = 0
+var int bearConfirmCount = 0
+var int barsInBias = 0
+var float lockedInvalidation = na
+
+if barstate.isconfirmed
+    if not supportedTimeframe
+        marketBias := 0
+        bullConfirmCount := 0
+        bearConfirmCount := 0
+        barsInBias := 0
+        lockedInvalidation := na
+    else if marketBias == 0
+        bullConfirmCount := bullInitialSetup ? bullConfirmCount + 1 : 0
+        bearConfirmCount := bearInitialSetup ? bearConfirmCount + 1 : 0
+
+        if bullConfirmCount >= confirmationBars
+            marketBias := 1
+            barsInBias := 0
+            lockedInvalidation := localPriorLow
+            bullConfirmCount := 0
+            bearConfirmCount := 0
+        else if bearConfirmCount >= confirmationBars
+            marketBias := -1
+            barsInBias := 0
+            lockedInvalidation := localPriorHigh
+            bullConfirmCount := 0
+            bearConfirmCount := 0
+    else if marketBias == 1
+        barsInBias += 1
+        bearConfirmCount := bearFlipSetup ? bearConfirmCount + 1 : 0
+        bullConfirmCount := 0
+
+        if localBosUp and not na(localPriorLow)
+            lockedInvalidation := na(lockedInvalidation) ? localPriorLow : math.max(lockedInvalidation, localPriorLow)
+
+        bullHardInvalid =
+             (not na(localPriorLow) and decisionClose < localPriorLow and localScore < -0.10 and h1Score < 0) or
+             (anchorScore < -exitThreshold and h1Score < -0.10 and h4Score < 0)
+
+        if barsInBias >= minimumHoldBars and bearConfirmCount >= confirmationBars
+            marketBias := -1
+            barsInBias := 0
+            lockedInvalidation := localPriorHigh
+            bearConfirmCount := 0
+        else if barsInBias >= minimumHoldBars and bullHardInvalid
+            marketBias := 0
+            barsInBias := 0
+            lockedInvalidation := na
+            bearConfirmCount := 0
+    else
+        barsInBias += 1
+        bullConfirmCount := bullFlipSetup ? bullConfirmCount + 1 : 0
+        bearConfirmCount := 0
+
+        if localBosDown and not na(localPriorHigh)
+            lockedInvalidation := na(lockedInvalidation) ? localPriorHigh : math.min(lockedInvalidation, localPriorHigh)
+
+        bearHardInvalid =
+             (not na(localPriorHigh) and decisionClose > localPriorHigh and localScore > 0.10 and h1Score > 0) or
+             (anchorScore > exitThreshold and h1Score > 0.10 and h4Score > 0)
+
+        if barsInBias >= minimumHoldBars and bullConfirmCount >= confirmationBars
+            marketBias := 1
+            barsInBias := 0
+            lockedInvalidation := localPriorLow
+            bullConfirmCount := 0
+        else if barsInBias >= minimumHoldBars and bearHardInvalid
+            marketBias := 0
+            barsInBias := 0
+            lockedInvalidation := na
+            bullConfirmCount := 0
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Human-readable market state
+// ─────────────────────────────────────────────────────────────────────────────
+currentDirectionText = not supportedTimeframe ? "GUNAKAN M5 / M15" : marketBias == 1 ? "BULLISH" : marketBias == -1 ? "BEARISH" : "TUNGGU"
+
+bullPullback = marketBias == 1 and (localScore < 0 or decisionClose < localEma21)
+bearPullback = marketBias == -1 and (localScore > 0 or decisionClose > localEma21)
+
+conditionText = not supportedTimeframe ? "TIMEFRAME TIDAK DIDUKUNG" :
+     marketBias == 1 ? (localExpansionUp ? "BULLISH EXPANSION" : bullPullback ? "BULLISH PULLBACK" : "BULLISH CONTINUATION") :
+     marketBias == -1 ? (localExpansionDown ? "BEARISH EXPANSION" : bearPullback ? "BEARISH PULLBACK" : "BEARISH CONTINUATION") :
+     rangeNow ? "RANGE / SIDEWAYS" :
+     anchorScore > 0.20 ? "KANDIDAT BULLISH" :
+     anchorScore < -0.20 ? "KANDIDAT BEARISH" : "TRANSISI"
+
+macroScore = 0.55 * nz(h4Score, 0.0) + 0.45 * nz(d1Score, 0.0)
+macroText = f_direction_text(macroScore)
+activeText = f_direction_text(h1Score)
+localText = f_direction_text(localScore)
+
+waitingText = not supportedTimeframe ? "PINDAHKAN CHART KE M5 ATAU M15" :
+     strongHtfConflict ? "TUNGGU H1 DAN H4 SEARAH" :
+     marketBias == 1 ? (bullPullback ? "TUNGGU PULLBACK BULLISH SELESAI" : "BIAS BULLISH MASIH AKTIF") :
+     marketBias == -1 ? (bearPullback ? "TUNGGU PULLBACK BEARISH SELESAI" : "BIAS BEARISH MASIH AKTIF") :
+     rangeNow ? "TUNGGU BREAKOUT DAN CANDLE CLOSE" :
+     anchorScore > 0.20 ? "TUNGGU BREAK STRUKTUR BULLISH" :
+     anchorScore < -0.20 ? "TUNGGU BREAK STRUKTUR BEARISH" : "TUNGGU H1 DAN H4 MEMBERI ARAH"
+
+alignmentText = strongHtfConflict ? "BERLAWANAN" :
+     f_sign(h1Score) == f_sign(h4Score) and f_sign(h4Score) == f_sign(d1Score) and f_sign(h1Score) != 0 ? "KOMPAK" :
+     f_sign(h1Score) == f_sign(h4Score) and f_sign(h1Score) != 0 ? "H1-H4 SEARAH" : "BELUM KOMPAK"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Visuals
 // ─────────────────────────────────────────────────────────────────────────────
-plot(showEma ? localEmaFast : na, "Adaptive Fast EMA", color=color.new(color.aqua, 15), linewidth=1)
-plot(showEma ? localEmaMid : na, "Adaptive Medium EMA", color=color.new(color.yellow, 5), linewidth=2)
-plot(showEma ? localEmaSlow : na, "Adaptive Slow EMA", color=color.new(color.fuchsia, 25), linewidth=2)
+plot(showEma ? localEma21 : na, "EMA 21", color=color.new(color.aqua, 10), linewidth=1)
+plot(showEma ? localEma55 : na, "EMA 55", color=color.new(color.yellow, 0), linewidth=2)
+plot(showEma ? localEma200 : na, "EMA 200", color=color.new(color.fuchsia, 15), linewidth=2)
 
-backgroundColor = bias == 1 ? color.new(color.lime, 91) : bias == -1 ? color.new(color.red, 91) : compositeRegime == 2 ? color.new(color.gray, 94) : na
-bgcolor(showBackground ? backgroundColor : na, title="Confirmed Market Direction")
+backgroundColor = marketBias == 1 ? color.new(color.lime, 92) : marketBias == -1 ? color.new(color.red, 92) : rangeNow ? color.new(color.gray, 95) : na
+bgcolor(showBackground ? backgroundColor : na, title="Arah market resmi")
 
-// Buy/Sell labels are historical direction-change markers, not trade entries.
-// They use the same qualified direction shown by the dashboard.
-buyMarker = barstate.isconfirmed and bias == 1 and bias[1] != 1
-sellMarker = barstate.isconfirmed and bias == -1 and bias[1] != -1
-plotshape(showMarkers and buyMarker, title="Bullish Direction", style=shape.labelup, text="Buy", location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.black, size=size.small)
-plotshape(showMarkers and sellMarker, title="Bearish Direction", style=shape.labeldown, text="Sell", location=location.abovebar, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+buyMarker = supportedTimeframe and barstate.isconfirmed and marketBias == 1 and nz(marketBias[1], 0) != 1
+sellMarker = supportedTimeframe and barstate.isconfirmed and marketBias == -1 and nz(marketBias[1], 0) != -1
+
+plotshape(showMarkers and buyMarker, title="Arah berubah bullish", style=shape.labelup, text="Buy", location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.black, size=size.small)
+plotshape(showMarkers and sellMarker, title="Arah berubah bearish", style=shape.labeldown, text="Sell", location=location.abovebar, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Compact dashboard — bottom right, direction-only wording
+// Compact dashboard — bottom right
 // ─────────────────────────────────────────────────────────────────────────────
-var table dash = table.new(position.bottom_right, 2, 7, border_width=1, frame_color=color.new(color.silver, 40), border_color=color.new(color.silver, 70))
+var table dash = table.new(position.bottom_right, 2, 8, border_width=1, frame_color=color.new(color.silver, 45), border_color=color.new(color.silver, 72))
 
 if barstate.islast and showDashboard
-    _statusColor = f_status_color(bias)
-    _tfText = timeframe.period + " " + f_direction_text(localScore) + " | " + htf1 + " " + f_direction_text(tf1Score) + " | " + htf2 + " " + f_direction_text(tf2Score) + " | " + htf3 + " " + f_direction_text(tf3Score)
-    _confText = f_conf_text(compositeConfidence) + " · " + f_conf_level(compositeConfidence)
-    _alignText = str.tostring(alignment * 100.0, "#.0") + "% · " + f_alignment_level(alignment)
-    _conditionText = f_regime_text(compositeRegime, compositeScore)
+    _biasColor = f_bias_color(marketBias)
 
     table.cell(dash, 0, 0, "AMY", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.tiny)
-    table.cell(dash, 1, 0, "ARAH MARKET", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.tiny)
+    table.cell(dash, 1, 0, "MARKET DIRECTION", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.tiny)
 
-    table.cell(dash, 0, 1, "ARAH", text_color=color.silver, bgcolor=color.new(color.black, 15), text_size=size.tiny)
-    table.cell(dash, 1, 1, statusText, text_color=bias == 1 ? color.black : color.white, bgcolor=_statusColor, text_size=size.small)
+    table.cell(dash, 0, 1, "ARAH SAAT INI", text_color=color.silver, bgcolor=color.new(color.black, 18), text_size=size.tiny)
+    table.cell(dash, 1, 1, currentDirectionText, text_color=marketBias == 1 ? color.black : color.white, bgcolor=_biasColor, text_size=size.small)
 
-    table.cell(dash, 0, 2, "KONDISI", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-    table.cell(dash, 1, 2, _conditionText, text_color=color.white, bgcolor=color.new(color.black, 25), text_size=size.tiny)
+    table.cell(dash, 0, 2, "KONDISI", text_color=color.silver, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+    table.cell(dash, 1, 2, conditionText, text_color=color.white, bgcolor=color.new(color.black, 28), text_size=size.tiny)
 
-    table.cell(dash, 0, 3, "ARAH TF", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-    table.cell(dash, 1, 3, _tfText, text_color=color.white, bgcolor=color.new(color.black, 25), text_size=size.tiny)
+    table.cell(dash, 0, 3, "ARAH BESAR", text_color=color.silver, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+    table.cell(dash, 1, 3, "H4/D1 " + macroText, text_color=macroScore > 0.12 ? color.lime : macroScore < -0.12 ? color.red : color.orange, bgcolor=color.new(color.black, 28), text_size=size.tiny)
 
-    table.cell(dash, 0, 4, "KEYAKINAN", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-    table.cell(dash, 1, 4, _confText, text_color=compositeConfidence >= minConfidence ? color.lime : color.orange, bgcolor=color.new(color.black, 25), text_size=size.tiny)
+    table.cell(dash, 0, 4, "ARAH AKTIF", text_color=color.silver, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+    table.cell(dash, 1, 4, "H1 " + activeText, text_color=h1Score > 0.12 ? color.lime : h1Score < -0.12 ? color.red : color.orange, bgcolor=color.new(color.black, 28), text_size=size.tiny)
 
-    table.cell(dash, 0, 5, "KESELARASAN", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-    table.cell(dash, 1, 5, _alignText, text_color=alignment >= minAlignment ? color.lime : color.orange, bgcolor=color.new(color.black, 25), text_size=size.tiny)
+    table.cell(dash, 0, 5, "STRUKTUR LOKAL", text_color=color.silver, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+    table.cell(dash, 1, 5, timeframe.period + " " + localText, text_color=localScore > 0.12 ? color.lime : localScore < -0.12 ? color.red : color.orange, bgcolor=color.new(color.black, 28), text_size=size.tiny)
 
-    table.cell(dash, 0, 6, "STATUS", text_color=color.silver, bgcolor=color.new(color.black, 15), text_size=size.tiny)
-    table.cell(dash, 1, 6, reasonText, text_color=bias == 0 ? color.orange : color.lime, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(dash, 0, 6, "KONTEKS TF", text_color=color.silver, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+    table.cell(dash, 1, 6, alignmentText, text_color=strongHtfConflict ? color.red : alignmentText == "KOMPAK" ? color.lime : color.orange, bgcolor=color.new(color.black, 28), text_size=size.tiny)
+
+    table.cell(dash, 0, 7, "MENUNGGU", text_color=color.silver, bgcolor=color.new(color.black, 18), text_size=size.tiny)
+    table.cell(dash, 1, 7, waitingText + (marketBias != 0 ? " | BATAL " + f_price_text(lockedInvalidation) : ""), text_color=marketBias == 0 ? color.orange : color.white, bgcolor=color.new(color.black, 18), text_size=size.tiny)
 
 if barstate.islast and not showDashboard
-    table.clear(dash, 0, 0, 1, 6)
+    table.clear(dash, 0, 0, 1, 7)
 
-// Direction alerts only.
-alertcondition(buyMarker, "AMY Regime Compass Bullish", "AMY Adaptive Regime Compass berubah menjadi arah bullish terkonfirmasi.")
-alertcondition(sellMarker, "AMY Regime Compass Bearish", "AMY Adaptive Regime Compass berubah menjadi arah bearish terkonfirmasi.")
-alertcondition(barstate.isconfirmed and strongConflict and not strongConflict[1], "AMY Regime Compass Konflik HTF", "AMY Adaptive Regime Compass mendeteksi arah H1 dan H4 yang berlawanan.")
+// Direction-change alerts only. No order, SL, TP, or strategy simulation.
+alertcondition(buyMarker, "AMY arah bullish", "AMY Regime Compass mengonfirmasi perubahan arah market menjadi bullish.")
+alertcondition(sellMarker, "AMY arah bearish", "AMY Regime Compass mengonfirmasi perubahan arah market menjadi bearish.")
+alertcondition(barstate.isconfirmed and strongHtfConflict and not strongHtfConflict[1], "AMY konflik H1-H4", "AMY Regime Compass mendeteksi H1 dan H4 bergerak berlawanan.")
