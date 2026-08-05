@@ -85,7 +85,7 @@ f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
     [_plusDi, _minusDi, _adx] = ta.dmi(14, 14)
 
     _directionalChange = math.abs(close - close[_erLen])
-    _pathTravel = ta.sum(math.abs(close - close[1]), _erLen)
+    _pathTravel = math.sum(math.abs(close - close[1]), _erLen)
     _er = _pathTravel > 0 ? _directionalChange / _pathTravel : 0.0
     _erDir = _er * f_sign(close - close[_erLen])
 
