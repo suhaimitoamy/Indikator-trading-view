@@ -1,14 +1,7 @@
 //@version=5
 indicator("AMY Adaptive Regime Compass 2019-2026", shorttitle="AMY Regime Compass", overlay=true, max_labels_count=100, max_lines_count=20)
 
-// ============================================================================
-// AMY ADAPTIVE REGIME COMPASS 2019-2026
-// Adaptive market direction and regime reader based on confirmed candles.
-// ============================================================================
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Inputs
-// ─────────────────────────────────────────────────────────────────────────────
+// Context indicator only. All readings use confirmed candles.
 grpCore = "Core Engine"
 fastLen = input.int(21, "Fast EMA", minval=5, maxval=100, group=grpCore)
 midLen = input.int(55, "Medium EMA", minval=20, maxval=200, group=grpCore)
@@ -29,59 +22,32 @@ minConfidence = input.float(58.0, "Minimum Confidence", minval=20.0, maxval=95.0
 minAlignment = input.float(0.65, "Minimum MTF Alignment", minval=0.30, maxval=1.00, step=0.05, group=grpDecision)
 
 grpVisual = "Visual"
-showDashboard = input.bool(true, "Show Dashboard", group=grpVisual)
-showBackground = input.bool(true, "Show Direction Background", group=grpVisual)
-showEma = input.bool(true, "Show Adaptive EMA Map", group=grpVisual)
-showProjection = input.bool(true, "Show Forecast Target / Invalidation", group=grpVisual)
-showMarkers = input.bool(true, "Show Confirmed Direction Changes", group=grpVisual)
-projectionBars = input.int(20, "Projection Length (bars)", minval=5, maxval=50, group=grpVisual)
+showDashboard = input.bool(true, "Tampilkan Dashboard", group=grpVisual)
+showBackground = input.bool(true, "Tampilkan Warna Arah", group=grpVisual)
+showEma = input.bool(true, "Tampilkan EMA", group=grpVisual)
+showProjection = input.bool(true, "Tampilkan Target dan Batas Batal", group=grpVisual)
+showMarkers = input.bool(true, "Tampilkan Label Buy/Sell", group=grpVisual)
+projectionBars = input.int(20, "Panjang Proyeksi", minval=5, maxval=50, group=grpVisual)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-f_clamp(_x, _lo, _hi) =>
-    math.max(_lo, math.min(_hi, _x))
+f_clamp(_x, _lo, _hi) => math.max(_lo, math.min(_hi, _x))
+f_sign(_x) => _x > 0 ? 1.0 : _x < 0 ? -1.0 : 0.0
+f_squash(_x) => _x / (1.0 + math.abs(_x))
+f_regime_text(_r) => _r == 1 ? "TREND" : _r == 2 ? "SIDEWAYS" : "TRANSISI"
+f_model_text(_m) => _m == 1 ? "IKUTI TREN" : _m == -1 ? "CARI PANTULAN" : "BELUM JELAS"
+f_conf_text(_c) => str.tostring(_c, "#.0") + "%"
+f_price_text(_p) => na(_p) ? "-" : str.tostring(_p, format.mintick)
+f_status_color(_b) => _b == 1 ? color.lime : _b == -1 ? color.red : color.orange
+f_direction_text(_s) => na(_s) ? "?" : _s > 0.08 ? "↑" : _s < -0.08 ? "↓" : "—"
+f_conf_level(_c) => _c >= 75 ? "TINGGI" : _c >= 58 ? "CUKUP" : "RENDAH"
+f_alignment_level(_a) => _a >= 0.80 ? "KOMPAK" : _a >= 0.65 ? "CUKUP" : "BELUM KOMPAK"
 
-f_sign(_x) =>
-    _x > 0 ? 1.0 : _x < 0 ? -1.0 : 0.0
-
-f_squash(_x) =>
-    _x / (1.0 + math.abs(_x))
-
-f_regime_text(_regime) =>
-    _regime == 1 ? "TREND" : _regime == 2 ? "SIDEWAYS" : "TRANSISI"
-
-f_model_text(_model) =>
-    _model == 1 ? "IKUTI TREN" : _model == -1 ? "CARI PANTULAN" : "BELUM JELAS"
-
-f_conf_text(_conf) =>
-    str.tostring(_conf, "#.0") + "%"
-
-f_price_text(_price) =>
-    na(_price) ? "-" : str.tostring(_price, format.mintick)
-
-f_status_color(_bias) =>
-    _bias == 1 ? color.new(color.lime, 0) : _bias == -1 ? color.new(color.red, 0) : color.new(color.orange, 0)
-
-f_direction_text(_score) =>
-    na(_score) ? "?" : _score > 0.08 ? "↑" : _score < -0.08 ? "↓" : "—"
-
-f_conf_level(_conf) =>
-    _conf >= 75 ? "TINGGI" : _conf >= 58 ? "CUKUP" : "RENDAH"
-
-f_alignment_level(_alignment) =>
-    _alignment >= 0.80 ? "KOMPAK" : _alignment >= 0.65 ? "CUKUP" : "BELUM KOMPAK"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Adaptive dual-model core
-// ─────────────────────────────────────────────────────────────────────────────
-f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
+f_core(_fast, _mid, _slow, _structureLen, _erLen, _horizon, _memory) =>
     _tick = math.max(syminfo.mintick, 0.0000001)
     _atr = ta.atr(14)
     _atrSafe = math.max(_atr, _tick)
-    _emaFast = ta.ema(close, _fastLen)
-    _emaMid = ta.ema(close, _midLen)
-    _emaSlow = ta.ema(close, _slowLen)
+    _emaFast = ta.ema(close, _fast)
+    _emaMid = ta.ema(close, _mid)
+    _emaSlow = ta.ema(close, _slow)
     [_plusDi, _minusDi, _adx] = ta.dmi(14, 14)
 
     _directionalChange = math.abs(close - close[_erLen])
@@ -102,56 +68,29 @@ f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
     _momentum = f_squash((close - close[12]) / (_atrSafe * 2.00))
     _meanReversion = -f_squash((close - _emaMid) / (_atrSafe * 1.80))
 
-    _continuationScore =
-         0.30 * _trendFast +
-         0.18 * _trendSlow +
-         0.18 * _slope +
-         0.20 * _structure +
-         0.10 * _momentum +
-         0.04 * _erDir
-
-    _reversionScore =
-         0.55 * _meanReversion -
-         0.15 * _momentum -
-         0.15 * _structure -
-         0.15 * _erDir
+    _continuationScore = 0.30 * _trendFast + 0.18 * _trendSlow + 0.18 * _slope + 0.20 * _structure + 0.10 * _momentum + 0.04 * _erDir
+    _reversionScore = 0.55 * _meanReversion - 0.15 * _momentum - 0.15 * _structure - 0.15 * _erDir
 
     _pastAtr = math.max(_atr[_horizon], _tick)
-    _realizedMove = (close - close[_horizon]) / _pastAtr
-    _boundedMove = f_clamp(_realizedMove, -2.0, 2.0) * 0.5
-    _continuationPayoff = f_sign(_continuationScore[_horizon]) * _boundedMove
-    _reversionPayoff = f_sign(_reversionScore[_horizon]) * _boundedMove
-    _continuationEdge = ta.ema(_continuationPayoff, _memory)
-    _reversionEdge = ta.ema(_reversionPayoff, _memory)
-
+    _boundedMove = f_clamp((close - close[_horizon]) / _pastAtr, -2.0, 2.0) * 0.5
+    _continuationEdge = ta.ema(f_sign(_continuationScore[_horizon]) * _boundedMove, _memory)
+    _reversionEdge = ta.ema(f_sign(_reversionScore[_horizon]) * _boundedMove, _memory)
     _continuationWeight = math.max(_continuationEdge, 0.0)
     _reversionWeight = math.max(_reversionEdge, 0.0)
     _weightTotal = _continuationWeight + _reversionWeight
-    _adaptiveScore = _weightTotal > 0 ?
-         (_continuationWeight * _continuationScore + _reversionWeight * _reversionScore) / _weightTotal : 0.0
-
+    _adaptiveScore = _weightTotal > 0 ? (_continuationWeight * _continuationScore + _reversionWeight * _reversionScore) / _weightTotal : 0.0
     _modelEdge = f_clamp(_weightTotal / 0.25, 0.0, 1.0)
     _model = _weightTotal <= 0 ? 0 : _continuationWeight >= _reversionWeight ? 1 : -1
+    _regime = _adx >= 20 and _er >= 0.22 and math.abs(_continuationScore) >= 0.20 ? 1 : _adx <= 17 or _er <= 0.14 ? 2 : 0
+    _stable = ta.sma(f_sign(_adaptiveScore) == f_sign(_adaptiveScore[1]) ? 1.0 : 0.0, 8)
+    _confidence = f_clamp(100.0 * math.abs(_adaptiveScore) * (0.55 + 0.45 * _modelEdge) * (0.75 + 0.25 * nz(_stable, 0.0)), 0.0, 100.0)
+    [_adaptiveScore, _confidence, _regime, _model, _atr, _emaFast, _emaMid, _emaSlow]
 
-    _isTrend = _adx >= 20.0 and _er >= 0.22 and math.abs(_continuationScore) >= 0.20
-    _isRange = _adx <= 17.0 or _er <= 0.14
-    _regime = _isTrend ? 1 : _isRange ? 2 : 0
+f_core_confirmed(_fast, _mid, _slow, _structureLen, _erLen, _horizon, _memory) =>
+    [_s, _c, _r, _m, _a, _ef, _em, _es] = f_core(_fast, _mid, _slow, _structureLen, _erLen, _horizon, _memory)
+    [_s[1], _c[1], _r[1], _m[1], _a[1], _ef[1], _em[1], _es[1]]
 
-    _stableDirection = ta.sma(f_sign(_adaptiveScore) == f_sign(_adaptiveScore[1]) ? 1.0 : 0.0, 8)
-    _confidence = 100.0 * math.abs(_adaptiveScore) * (0.55 + 0.45 * _modelEdge) * (0.75 + 0.25 * nz(_stableDirection, 0.0))
-    _confidence := f_clamp(_confidence, 0.0, 100.0)
-
-    [_adaptiveScore, _confidence, _regime, _model, _atr, _emaFast, _emaMid, _emaSlow, _priorHigh, _priorLow, _continuationEdge, _reversionEdge]
-
-f_core_confirmed(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
-    [_s, _c, _r, _m, _a, _ef, _em, _es, _ph, _pl, _ce, _re] = f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory)
-    [_s[1], _c[1], _r[1], _m[1], _a[1], _ef[1], _em[1], _es[1], _ph[1], _pl[1], _ce[1], _re[1]]
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Local and higher-timeframe state
-// ─────────────────────────────────────────────────────────────────────────────
-[localScoreRaw, localConfRaw, localRegimeRaw, localModelRaw, localAtrRaw, localEmaFastRaw, localEmaMidRaw, localEmaSlowRaw, localPriorHighRaw, localPriorLowRaw, localContEdgeRaw, localRevEdgeRaw] = f_core(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen)
-
+[localScoreRaw, localConfRaw, localRegimeRaw, localModelRaw, localAtrRaw, localEmaFastRaw, localEmaMidRaw, localEmaSlowRaw] = f_core(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen)
 localScore = barstate.isconfirmed ? localScoreRaw : nz(localScoreRaw[1], localScoreRaw)
 localConf = barstate.isconfirmed ? localConfRaw : nz(localConfRaw[1], localConfRaw)
 localRegime = barstate.isconfirmed ? localRegimeRaw : nz(localRegimeRaw[1], localRegimeRaw)
@@ -161,89 +100,58 @@ localEmaFast = barstate.isconfirmed ? localEmaFastRaw : nz(localEmaFastRaw[1], l
 localEmaMid = barstate.isconfirmed ? localEmaMidRaw : nz(localEmaMidRaw[1], localEmaMidRaw)
 localEmaSlow = barstate.isconfirmed ? localEmaSlowRaw : nz(localEmaSlowRaw[1], localEmaSlowRaw)
 
-[tf1Score, tf1Conf, tf1Regime, tf1Model, tf1Atr, tf1EmaFast, tf1EmaMid, tf1EmaSlow, tf1PriorHigh, tf1PriorLow, tf1ContEdge, tf1RevEdge] = request.security(syminfo.tickerid, htf1, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-[tf2Score, tf2Conf, tf2Regime, tf2Model, tf2Atr, tf2EmaFast, tf2EmaMid, tf2EmaSlow, tf2PriorHigh, tf2PriorLow, tf2ContEdge, tf2RevEdge] = request.security(syminfo.tickerid, htf2, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-[tf3Score, tf3Conf, tf3Regime, tf3Model, tf3Atr, tf3EmaFast, tf3EmaMid, tf3EmaSlow, tf3PriorHigh, tf3PriorLow, tf3ContEdge, tf3RevEdge] = request.security(syminfo.tickerid, htf3, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[tf1Score, tf1Conf, tf1Regime, tf1Model, tf1Atr, tf1EmaFast, tf1EmaMid, tf1EmaSlow] = request.security(syminfo.tickerid, htf1, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[tf2Score, tf2Conf, tf2Regime, tf2Model, tf2Atr, tf2EmaFast, tf2EmaMid, tf2EmaSlow] = request.security(syminfo.tickerid, htf2, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[tf3Score, tf3Conf, tf3Regime, tf3Model, tf3Atr, tf3EmaFast, tf3EmaMid, tf3EmaSlow] = request.security(syminfo.tickerid, htf3, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Composite direction and decision
-// ─────────────────────────────────────────────────────────────────────────────
 localWeight = 0.45
 tf1Weight = 0.30
 tf2Weight = 0.20
 tf3Weight = 0.05
-
-compositeScore =
-     localWeight * nz(localScore, 0.0) +
-     tf1Weight * nz(tf1Score, 0.0) +
-     tf2Weight * nz(tf2Score, 0.0) +
-     tf3Weight * nz(tf3Score, 0.0)
-
+compositeScore = localWeight * nz(localScore) + tf1Weight * nz(tf1Score) + tf2Weight * nz(tf2Score) + tf3Weight * nz(tf3Score)
 compositeDirection = f_sign(compositeScore)
-alignment =
-     (f_sign(localScore) == compositeDirection and compositeDirection != 0 ? localWeight : 0.0) +
-     (f_sign(tf1Score) == compositeDirection and compositeDirection != 0 ? tf1Weight : 0.0) +
-     (f_sign(tf2Score) == compositeDirection and compositeDirection != 0 ? tf2Weight : 0.0) +
-     (f_sign(tf3Score) == compositeDirection and compositeDirection != 0 ? tf3Weight : 0.0)
-
-baseConfidence =
-     localWeight * nz(localConf, 0.0) +
-     tf1Weight * nz(tf1Conf, 0.0) +
-     tf2Weight * nz(tf2Conf, 0.0) +
-     tf3Weight * nz(tf3Conf, 0.0)
-
+alignment = (f_sign(localScore) == compositeDirection and compositeDirection != 0 ? localWeight : 0.0) + (f_sign(tf1Score) == compositeDirection and compositeDirection != 0 ? tf1Weight : 0.0) + (f_sign(tf2Score) == compositeDirection and compositeDirection != 0 ? tf2Weight : 0.0) + (f_sign(tf3Score) == compositeDirection and compositeDirection != 0 ? tf3Weight : 0.0)
+baseConfidence = localWeight * nz(localConf) + tf1Weight * nz(tf1Conf) + tf2Weight * nz(tf2Conf) + tf3Weight * nz(tf3Conf)
 compositeConfidence = f_clamp(baseConfidence * (0.55 + 0.45 * alignment), 0.0, 100.0)
-
 strongConflict = f_sign(tf1Score) != 0 and f_sign(tf2Score) != 0 and f_sign(tf1Score) != f_sign(tf2Score) and math.abs(tf1Score) >= 0.25 and math.abs(tf2Score) >= 0.25
 contextConfigValid = timeframe.in_seconds() < timeframe.in_seconds(htf1) and timeframe.in_seconds(htf1) < timeframe.in_seconds(htf2) and timeframe.in_seconds(htf2) < timeframe.in_seconds(htf3)
 qualified = contextConfigValid and math.abs(compositeScore) >= minScore and compositeConfidence >= minConfidence and alignment >= minAlignment and not strongConflict
 bias = qualified ? (compositeScore > 0 ? 1 : -1) : 0
-
 trendVotes = (localRegime == 1 ? localWeight : 0.0) + (tf1Regime == 1 ? tf1Weight : 0.0) + (tf2Regime == 1 ? tf2Weight : 0.0) + (tf3Regime == 1 ? tf3Weight : 0.0)
 rangeVotes = (localRegime == 2 ? localWeight : 0.0) + (tf1Regime == 2 ? tf1Weight : 0.0) + (tf2Regime == 2 ? tf2Weight : 0.0) + (tf3Regime == 2 ? tf3Weight : 0.0)
 compositeRegime = trendVotes >= 0.55 ? 1 : rangeVotes >= 0.55 ? 2 : 0
-
 modelVote = localWeight * localModel + tf1Weight * tf1Model + tf2Weight * tf2Model + tf3Weight * tf3Model
 compositeModel = modelVote >= 0.15 ? 1 : modelVote <= -0.15 ? -1 : 0
-
 statusText = bias == 1 ? "BUY" : bias == -1 ? "SELL" : "TUNGGU"
 reasonText = not contextConfigValid ? "ATUR TF LEBIH TINGGI" : strongConflict ? "H1 & H4 BERLAWANAN" : compositeConfidence < minConfidence ? "KEYAKINAN MASIH RENDAH" : alignment < minAlignment ? "ARAH TF BELUM KOMPAK" : math.abs(compositeScore) < minScore ? "DORONGAN ARAH MASIH LEMAH" : "ARAH SUDAH TERKONFIRMASI"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Forecast target and invalidation
-// ─────────────────────────────────────────────────────────────────────────────
 decisionClose = barstate.isconfirmed ? close : close[1]
 recentLowRaw = ta.lowest(low, 10)
 recentHighRaw = ta.highest(high, 10)
 recentLow = barstate.isconfirmed ? recentLowRaw : nz(recentLowRaw[1], recentLowRaw)
 recentHigh = barstate.isconfirmed ? recentHighRaw : nz(recentHighRaw[1], recentHighRaw)
 atrSafe = math.max(localAtr, syminfo.mintick)
-
-trendTargetMult = compositeRegime == 1 ? 2.40 : compositeRegime == 2 ? 1.20 : 1.70
-fallbackTarget = bias == 1 ? decisionClose + atrSafe * trendTargetMult : bias == -1 ? decisionClose - atrSafe * trendTargetMult : na
+targetMult = compositeRegime == 1 ? 2.40 : compositeRegime == 2 ? 1.20 : 1.70
+fallbackTarget = bias == 1 ? decisionClose + atrSafe * targetMult : bias == -1 ? decisionClose - atrSafe * targetMult : na
 meanTargetValid = compositeModel == -1 and ((bias == 1 and localEmaMid > decisionClose) or (bias == -1 and localEmaMid < decisionClose))
 forecastTarget = bias == 0 ? na : meanTargetValid ? localEmaMid : fallbackTarget
 forecastInvalidation = bias == 1 ? math.min(localEmaMid, recentLow) - atrSafe * 0.15 : bias == -1 ? math.max(localEmaMid, recentHigh) + atrSafe * 0.15 : na
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Visuals
-// ─────────────────────────────────────────────────────────────────────────────
 plot(showEma ? localEmaFast : na, "Adaptive Fast EMA", color=color.new(color.aqua, 15), linewidth=1)
 plot(showEma ? localEmaMid : na, "Adaptive Medium EMA", color=color.new(color.yellow, 5), linewidth=2)
 plot(showEma ? localEmaSlow : na, "Adaptive Slow EMA", color=color.new(color.fuchsia, 25), linewidth=2)
+bgcolor(showBackground ? bias == 1 ? color.new(color.lime, 91) : bias == -1 ? color.new(color.red, 91) : compositeRegime == 2 ? color.new(color.gray, 94) : na : na)
 
-backgroundColor = bias == 1 ? color.new(color.lime, 91) : bias == -1 ? color.new(color.red, 91) : compositeRegime == 2 ? color.new(color.gray, 94) : na
-bgcolor(showBackground ? backgroundColor : na, title="Confirmed Direction / Regime")
-
-biasChanged = barstate.isconfirmed and bias != bias[1]
-plotshape(showMarkers and biasChanged and bias == 1, title="Confirmed Buy Focus", style=shape.labelup, text="BUY", location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.black, size=size.tiny)
-plotshape(showMarkers and biasChanged and bias == -1, title="Confirmed Sell Focus", style=shape.labeldown, text="SELL", location=location.abovebar, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
-plotshape(showMarkers and biasChanged and bias == 0, title="Confirmed Wait", style=shape.circle, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+// Marker uses the existing composite direction. Once plotted on a confirmed bar,
+// it remains visible as historical Buy/Sell information.
+buyMarker = barstate.isconfirmed and compositeScore > 0.08 and compositeScore[1] <= 0.08
+sellMarker = barstate.isconfirmed and compositeScore < -0.08 and compositeScore[1] >= -0.08
+plotshape(showMarkers and buyMarker, title="Buy", style=shape.labelup, text="Buy", location=location.belowbar, color=color.lime, textcolor=color.black, size=size.small)
+plotshape(showMarkers and sellMarker, title="Sell", style=shape.labeldown, text="Sell", location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
 
 var line targetLine = na
 var line invalidationLine = na
 var label forecastLabel = na
-
 if barstate.islast
     if not na(targetLine)
         line.delete(targetLine)
@@ -251,57 +159,38 @@ if barstate.islast
         line.delete(invalidationLine)
     if not na(forecastLabel)
         label.delete(forecastLabel)
-
     if showProjection and bias != 0 and not na(forecastTarget) and not na(forecastInvalidation)
         _statusColor = f_status_color(bias)
-        targetLine := line.new(bar_index, forecastTarget, bar_index + projectionBars, forecastTarget, xloc=xloc.bar_index, extend=extend.none, color=_statusColor, style=line.style_dashed, width=2)
-        invalidationLine := line.new(bar_index, forecastInvalidation, bar_index + projectionBars, forecastInvalidation, xloc=xloc.bar_index, extend=extend.none, color=color.new(color.orange, 0), style=line.style_dotted, width=2)
-        _labelText = statusText + "\n" + f_model_text(compositeModel) + "\nTarget: " + f_price_text(forecastTarget) + "\nBatal: " + f_price_text(forecastInvalidation)
-        forecastLabel := label.new(bar_index + projectionBars, forecastTarget, _labelText, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(_statusColor, 10), textcolor=bias == 1 ? color.black : color.white, size=size.small)
+        targetLine := line.new(bar_index, forecastTarget, bar_index + projectionBars, forecastTarget, xloc=xloc.bar_index, color=_statusColor, style=line.style_dashed, width=2)
+        invalidationLine := line.new(bar_index, forecastInvalidation, bar_index + projectionBars, forecastInvalidation, xloc=xloc.bar_index, color=color.orange, style=line.style_dotted, width=2)
+        forecastLabel := label.new(bar_index + projectionBars, forecastTarget, statusText + "\n" + f_model_text(compositeModel) + "\nTarget: " + f_price_text(forecastTarget) + "\nBatal: " + f_price_text(forecastInvalidation), xloc=xloc.bar_index, style=label.style_label_left, color=color.new(_statusColor, 10), textcolor=bias == 1 ? color.black : color.white, size=size.small)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Compact dashboard — bottom right, simple Indonesian wording
-// ─────────────────────────────────────────────────────────────────────────────
 var table dash = table.new(position.bottom_right, 2, 8, border_width=1, frame_color=color.new(color.silver, 40), border_color=color.new(color.silver, 70))
-
 if barstate.islast and showDashboard
     _statusColor = f_status_color(bias)
     _tfText = timeframe.period + " " + f_direction_text(localScore) + " | " + htf1 + " " + f_direction_text(tf1Score) + " | " + htf2 + " " + f_direction_text(tf2Score) + " | " + htf3 + " " + f_direction_text(tf3Score)
     _confText = f_conf_text(compositeConfidence) + " · " + f_conf_level(compositeConfidence)
     _alignText = str.tostring(alignment * 100.0, "#.0") + "% · " + f_alignment_level(alignment)
     _statusDetail = bias == 0 ? reasonText : "TARGET " + f_price_text(forecastTarget) + " · BATAL " + f_price_text(forecastInvalidation)
-
-    table.cell(dash, 0, 0, "AMY", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.tiny)
-    table.cell(dash, 1, 0, "ARAH MARKET", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.tiny)
-
+    table.cell(dash, 0, 0, "AMY", text_color=color.white, bgcolor=color.black, text_size=size.tiny)
+    table.cell(dash, 1, 0, "ARAH MARKET", text_color=color.white, bgcolor=color.black, text_size=size.tiny)
     table.cell(dash, 0, 1, "KEPUTUSAN", text_color=color.silver, bgcolor=color.new(color.black, 15), text_size=size.tiny)
     table.cell(dash, 1, 1, statusText, text_color=bias == 1 ? color.black : color.white, bgcolor=_statusColor, text_size=size.small)
-
     table.cell(dash, 0, 2, "KONDISI", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
     table.cell(dash, 1, 2, f_regime_text(compositeRegime), text_color=color.white, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-
     table.cell(dash, 0, 3, "CARA BACA", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
     table.cell(dash, 1, 3, f_model_text(compositeModel), text_color=color.white, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-
     table.cell(dash, 0, 4, "ARAH TF", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
     table.cell(dash, 1, 4, _tfText, text_color=color.white, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-
     table.cell(dash, 0, 5, "KEYAKINAN", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
     table.cell(dash, 1, 5, _confText, text_color=compositeConfidence >= minConfidence ? color.lime : color.orange, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-
     table.cell(dash, 0, 6, "KESELARASAN", text_color=color.silver, bgcolor=color.new(color.black, 25), text_size=size.tiny)
     table.cell(dash, 1, 6, _alignText, text_color=alignment >= minAlignment ? color.lime : color.orange, bgcolor=color.new(color.black, 25), text_size=size.tiny)
-
     table.cell(dash, 0, 7, "STATUS", text_color=color.silver, bgcolor=color.new(color.black, 15), text_size=size.tiny)
     table.cell(dash, 1, 7, _statusDetail, text_color=bias == 0 ? color.orange : color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
-
 if barstate.islast and not showDashboard
     table.clear(dash, 0, 0, 1, 7)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Alerts
-// ─────────────────────────────────────────────────────────────────────────────
-alertcondition(barstate.isconfirmed and bias == 1 and bias[1] != 1, "AMY Regime Compass BUY", "AMY Adaptive Regime Compass berubah menjadi BUY terkonfirmasi.")
-alertcondition(barstate.isconfirmed and bias == -1 and bias[1] != -1, "AMY Regime Compass SELL", "AMY Adaptive Regime Compass berubah menjadi SELL terkonfirmasi.")
-alertcondition(barstate.isconfirmed and bias == 0 and bias[1] != 0, "AMY Regime Compass TUNGGU", "AMY Adaptive Regime Compass berubah menjadi TUNGGU karena arah belum memenuhi syarat.")
+alertcondition(buyMarker, "AMY Regime Compass Buy", "AMY Adaptive Regime Compass menampilkan Buy terkonfirmasi.")
+alertcondition(sellMarker, "AMY Regime Compass Sell", "AMY Adaptive Regime Compass menampilkan Sell terkonfirmasi.")
 alertcondition(barstate.isconfirmed and strongConflict and not strongConflict[1], "AMY Regime Compass Konflik HTF", "AMY Adaptive Regime Compass mendeteksi arah H1 dan H4 yang berlawanan.")
