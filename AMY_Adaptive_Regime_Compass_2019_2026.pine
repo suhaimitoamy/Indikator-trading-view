@@ -1,0 +1,349 @@
+//@version=5
+indicator("AMY Adaptive Regime Compass 2019-2026", shorttitle="AMY Regime Compass", overlay=true, max_labels_count=100, max_lines_count=20)
+
+// ============================================================================
+// AMY ADAPTIVE REGIME COMPASS 2019-2026
+// Data-informed market context indicator for XAUUSD and other liquid markets.
+//
+// Design goals:
+// 1. Read historical and current market direction from closed candles.
+// 2. Separate TREND, RANGE, and TRANSITION regimes.
+// 3. Adapt between continuation and mean-reversion models using only outcomes
+//    already known at the current bar (no future leak).
+// 4. Confirm direction across configurable higher timeframes.
+// 5. Forecast selectively and return WAIT when evidence is weak/conflicted.
+//
+// This is a context/forecast tool, not a guaranteed entry signal.
+// ============================================================================
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+grpCore = "Core Engine"
+fastLen = input.int(21, "Fast EMA", minval=5, maxval=100, group=grpCore)
+midLen = input.int(55, "Medium EMA", minval=20, maxval=200, group=grpCore)
+slowLen = input.int(200, "Slow EMA", minval=50, maxval=500, group=grpCore)
+structureLen = input.int(20, "Structure Lookback", minval=10, maxval=100, group=grpCore)
+erLen = input.int(20, "Efficiency Ratio Length", minval=8, maxval=100, group=grpCore)
+forecastHorizon = input.int(12, "Adaptive Memory Outcome Horizon", minval=3, maxval=50, group=grpCore)
+memoryLen = input.int(120, "Adaptive Performance Memory", minval=40, maxval=500, group=grpCore)
+
+// The defaults are intended for M5/M15 chart use. They remain configurable so
+// the same engine can be used on other chart timeframes.
+grpMtf = "Multi-Timeframe Context"
+htf1 = input.timeframe("60", "Context TF 1", group=grpMtf)
+htf2 = input.timeframe("240", "Context TF 2", group=grpMtf)
+htf3 = input.timeframe("D", "Context TF 3", group=grpMtf)
+
+// Conservative defaults deliberately create WAIT more often than false certainty.
+grpDecision = "Decision Thresholds"
+minScore = input.float(0.28, "Minimum Composite Score", minval=0.05, maxval=0.90, step=0.01, group=grpDecision)
+minConfidence = input.float(58.0, "Minimum Confidence", minval=20.0, maxval=95.0, step=1.0, group=grpDecision)
+minAlignment = input.float(0.65, "Minimum MTF Alignment", minval=0.30, maxval=1.00, step=0.05, group=grpDecision)
+
+// Visual controls.
+grpVisual = "Visual"
+showDashboard = input.bool(true, "Show Dashboard", group=grpVisual)
+showBackground = input.bool(true, "Show Direction Background", group=grpVisual)
+showEma = input.bool(true, "Show Adaptive EMA Map", group=grpVisual)
+showProjection = input.bool(true, "Show Forecast Target / Invalidation", group=grpVisual)
+showMarkers = input.bool(true, "Show Confirmed Direction Changes", group=grpVisual)
+projectionBars = input.int(20, "Projection Length (bars)", minval=5, maxval=50, group=grpVisual)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+f_clamp(_x, _lo, _hi) =>
+    math.max(_lo, math.min(_hi, _x))
+
+f_sign(_x) =>
+    _x > 0 ? 1.0 : _x < 0 ? -1.0 : 0.0
+
+// Smooth bounded normalization without relying on symbol price scale.
+f_squash(_x) =>
+    _x / (1.0 + math.abs(_x))
+
+f_regime_text(_regime) =>
+    _regime == 1 ? "TREND" : _regime == 2 ? "RANGE" : "TRANSITION"
+
+f_model_text(_model) =>
+    _model == 1 ? "CONTINUATION" : _model == -1 ? "MEAN REVERSION" : "NO EDGE"
+
+f_score_text(_score) =>
+    str.tostring(_score, "#.000")
+
+f_conf_text(_conf) =>
+    str.tostring(_conf, "#.0") + "%"
+
+f_price_text(_price) =>
+    na(_price) ? "-" : str.tostring(_price, format.mintick)
+
+f_status_color(_bias) =>
+    _bias == 1 ? color.new(color.lime, 0) : _bias == -1 ? color.new(color.red, 0) : color.new(color.orange, 0)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adaptive dual-model core
+// ─────────────────────────────────────────────────────────────────────────────
+// The continuation and mean-reversion models are both calculated. Their recent
+// realized performance is measured from predictions made forecastHorizon bars
+// ago. Only positive historical edge receives weight at the current bar.
+f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
+    _tick = math.max(syminfo.mintick, 0.0000001)
+    _atr = ta.atr(14)
+    _atrSafe = math.max(_atr, _tick)
+    _emaFast = ta.ema(close, _fastLen)
+    _emaMid = ta.ema(close, _midLen)
+    _emaSlow = ta.ema(close, _slowLen)
+    [_plusDi, _minusDi, _adx] = ta.dmi(14, 14)
+
+    _directionalChange = math.abs(close - close[_erLen])
+    _pathTravel = math.sum(math.abs(close - close[1]), _erLen)
+    _er = _pathTravel > 0 ? _directionalChange / _pathTravel : 0.0
+    _erDir = _er * f_sign(close - close[_erLen])
+
+    _priorHigh = ta.highest(high[1], _structureLen)
+    _priorLow = ta.lowest(low[1], _structureLen)
+    _channelMid = (_priorHigh + _priorLow) * 0.5
+    _channelHalf = math.max((_priorHigh - _priorLow) * 0.5, _tick)
+    _channelPosition = f_clamp((close - _channelMid) / _channelHalf, -1.5, 1.5) / 1.5
+    _structure = close > _priorHigh ? 1.0 : close < _priorLow ? -1.0 : _channelPosition
+
+    _trendFast = f_squash((_emaFast - _emaMid) / (_atrSafe * 1.20))
+    _trendSlow = f_squash((_emaMid - _emaSlow) / (_atrSafe * 2.00))
+    _slope = f_squash((_emaMid - _emaMid[8]) / (_atrSafe * 1.40))
+    _momentum = f_squash((close - close[12]) / (_atrSafe * 2.00))
+    _meanReversion = -f_squash((close - _emaMid) / (_atrSafe * 1.80))
+
+    // Model A: continuation / directional persistence.
+    _continuationScore =
+         0.30 * _trendFast +
+         0.18 * _trendSlow +
+         0.18 * _slope +
+         0.20 * _structure +
+         0.10 * _momentum +
+         0.04 * _erDir
+
+    // Model B: mean reversion / failed extension recovery.
+    _reversionScore =
+         0.55 * _meanReversion -
+         0.15 * _momentum -
+         0.15 * _structure -
+         0.15 * _erDir
+
+    // Past-only model evaluation. At the current bar, the move from _horizon
+    // bars ago is already known, so this does not use future information.
+    _pastAtr = math.max(_atr[_horizon], _tick)
+    _realizedMove = (close - close[_horizon]) / _pastAtr
+    _boundedMove = f_clamp(_realizedMove, -2.0, 2.0) * 0.5
+    _continuationPayoff = f_sign(_continuationScore[_horizon]) * _boundedMove
+    _reversionPayoff = f_sign(_reversionScore[_horizon]) * _boundedMove
+    _continuationEdge = ta.ema(_continuationPayoff, _memory)
+    _reversionEdge = ta.ema(_reversionPayoff, _memory)
+
+    _continuationWeight = math.max(_continuationEdge, 0.0)
+    _reversionWeight = math.max(_reversionEdge, 0.0)
+    _weightTotal = _continuationWeight + _reversionWeight
+    _adaptiveScore = _weightTotal > 0 ?
+         (_continuationWeight * _continuationScore + _reversionWeight * _reversionScore) / _weightTotal : 0.0
+
+    // Normalized evidence that at least one model is currently proving useful.
+    _modelEdge = f_clamp(_weightTotal / 0.25, 0.0, 1.0)
+    _model = _weightTotal <= 0 ? 0 : _continuationWeight >= _reversionWeight ? 1 : -1
+
+    // Regime is descriptive, while the adaptive model decides the forecast.
+    _isTrend = _adx >= 20.0 and _er >= 0.22 and math.abs(_continuationScore) >= 0.20
+    _isRange = _adx <= 17.0 or _er <= 0.14
+    _regime = _isTrend ? 1 : _isRange ? 2 : 0
+
+    _stableDirection = ta.sma(f_sign(_adaptiveScore) == f_sign(_adaptiveScore[1]) ? 1.0 : 0.0, 8)
+    _confidence = 100.0 * math.abs(_adaptiveScore) * (0.55 + 0.45 * _modelEdge) * (0.75 + 0.25 * nz(_stableDirection, 0.0))
+    _confidence := f_clamp(_confidence, 0.0, 100.0)
+
+    [_adaptiveScore, _confidence, _regime, _model, _atr, _emaFast, _emaMid, _emaSlow, _priorHigh, _priorLow, _continuationEdge, _reversionEdge]
+
+// A standard non-repainting higher-timeframe request pattern: values are shifted
+// one HTF bar and delivered with lookahead_on, so only completed HTF candles are
+// visible to lower timeframes.
+f_core_confirmed(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory) =>
+    [_s, _c, _r, _m, _a, _ef, _em, _es, _ph, _pl, _ce, _re] = f_core(_fastLen, _midLen, _slowLen, _structureLen, _erLen, _horizon, _memory)
+    [_s[1], _c[1], _r[1], _m[1], _a[1], _ef[1], _em[1], _es[1], _ph[1], _pl[1], _ce[1], _re[1]]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local and confirmed higher-timeframe state
+// ─────────────────────────────────────────────────────────────────────────────
+[localScoreRaw, localConfRaw, localRegimeRaw, localModelRaw, localAtrRaw, localEmaFastRaw, localEmaMidRaw, localEmaSlowRaw, localPriorHighRaw, localPriorLowRaw, localContEdgeRaw, localRevEdgeRaw] = f_core(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen)
+
+// On a live candle, use the previous closed local candle. Historical candles are
+// already confirmed, so their original values remain unchanged.
+localScore = barstate.isconfirmed ? localScoreRaw : nz(localScoreRaw[1], localScoreRaw)
+localConf = barstate.isconfirmed ? localConfRaw : nz(localConfRaw[1], localConfRaw)
+localRegime = barstate.isconfirmed ? localRegimeRaw : nz(localRegimeRaw[1], localRegimeRaw)
+localModel = barstate.isconfirmed ? localModelRaw : nz(localModelRaw[1], localModelRaw)
+localAtr = barstate.isconfirmed ? localAtrRaw : nz(localAtrRaw[1], localAtrRaw)
+localEmaFast = barstate.isconfirmed ? localEmaFastRaw : nz(localEmaFastRaw[1], localEmaFastRaw)
+localEmaMid = barstate.isconfirmed ? localEmaMidRaw : nz(localEmaMidRaw[1], localEmaMidRaw)
+localEmaSlow = barstate.isconfirmed ? localEmaSlowRaw : nz(localEmaSlowRaw[1], localEmaSlowRaw)
+localPriorHigh = barstate.isconfirmed ? localPriorHighRaw : nz(localPriorHighRaw[1], localPriorHighRaw)
+localPriorLow = barstate.isconfirmed ? localPriorLowRaw : nz(localPriorLowRaw[1], localPriorLowRaw)
+localContEdge = barstate.isconfirmed ? localContEdgeRaw : nz(localContEdgeRaw[1], localContEdgeRaw)
+localRevEdge = barstate.isconfirmed ? localRevEdgeRaw : nz(localRevEdgeRaw[1], localRevEdgeRaw)
+
+[tf1Score, tf1Conf, tf1Regime, tf1Model, tf1Atr, tf1EmaFast, tf1EmaMid, tf1EmaSlow, tf1PriorHigh, tf1PriorLow, tf1ContEdge, tf1RevEdge] = request.security(syminfo.tickerid, htf1, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[tf2Score, tf2Conf, tf2Regime, tf2Model, tf2Atr, tf2EmaFast, tf2EmaMid, tf2EmaSlow, tf2PriorHigh, tf2PriorLow, tf2ContEdge, tf2RevEdge] = request.security(syminfo.tickerid, htf2, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[tf3Score, tf3Conf, tf3Regime, tf3Model, tf3Atr, tf3EmaFast, tf3EmaMid, tf3EmaSlow, tf3PriorHigh, tf3PriorLow, tf3ContEdge, tf3RevEdge] = request.security(syminfo.tickerid, htf3, f_core_confirmed(fastLen, midLen, slowLen, structureLen, erLen, forecastHorizon, memoryLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Composite direction, confidence, and conflict handling
+// ─────────────────────────────────────────────────────────────────────────────
+localWeight = 0.45
+tf1Weight = 0.30
+tf2Weight = 0.20
+tf3Weight = 0.05
+
+compositeScore =
+     localWeight * nz(localScore, 0.0) +
+     tf1Weight * nz(tf1Score, 0.0) +
+     tf2Weight * nz(tf2Score, 0.0) +
+     tf3Weight * nz(tf3Score, 0.0)
+
+compositeDirection = f_sign(compositeScore)
+alignment =
+     (f_sign(localScore) == compositeDirection and compositeDirection != 0 ? localWeight : 0.0) +
+     (f_sign(tf1Score) == compositeDirection and compositeDirection != 0 ? tf1Weight : 0.0) +
+     (f_sign(tf2Score) == compositeDirection and compositeDirection != 0 ? tf2Weight : 0.0) +
+     (f_sign(tf3Score) == compositeDirection and compositeDirection != 0 ? tf3Weight : 0.0)
+
+baseConfidence =
+     localWeight * nz(localConf, 0.0) +
+     tf1Weight * nz(tf1Conf, 0.0) +
+     tf2Weight * nz(tf2Conf, 0.0) +
+     tf3Weight * nz(tf3Conf, 0.0)
+
+compositeConfidence = f_clamp(baseConfidence * (0.55 + 0.45 * alignment), 0.0, 100.0)
+
+// H1-vs-H4 disagreement is treated as a hard conflict when both scores are real.
+strongConflict = f_sign(tf1Score) != 0 and f_sign(tf2Score) != 0 and f_sign(tf1Score) != f_sign(tf2Score) and math.abs(tf1Score) >= 0.25 and math.abs(tf2Score) >= 0.25
+
+contextConfigValid = timeframe.in_seconds() < timeframe.in_seconds(htf1) and timeframe.in_seconds(htf1) < timeframe.in_seconds(htf2) and timeframe.in_seconds(htf2) < timeframe.in_seconds(htf3)
+qualified = contextConfigValid and math.abs(compositeScore) >= minScore and compositeConfidence >= minConfidence and alignment >= minAlignment and not strongConflict
+bias = qualified ? (compositeScore > 0 ? 1 : -1) : 0
+
+// Composite regime is deliberately conservative.
+trendVotes = (localRegime == 1 ? localWeight : 0.0) + (tf1Regime == 1 ? tf1Weight : 0.0) + (tf2Regime == 1 ? tf2Weight : 0.0) + (tf3Regime == 1 ? tf3Weight : 0.0)
+rangeVotes = (localRegime == 2 ? localWeight : 0.0) + (tf1Regime == 2 ? tf1Weight : 0.0) + (tf2Regime == 2 ? tf2Weight : 0.0) + (tf3Regime == 2 ? tf3Weight : 0.0)
+compositeRegime = trendVotes >= 0.55 ? 1 : rangeVotes >= 0.55 ? 2 : 0
+
+modelVote = localWeight * localModel + tf1Weight * tf1Model + tf2Weight * tf2Model + tf3Weight * tf3Model
+compositeModel = modelVote >= 0.15 ? 1 : modelVote <= -0.15 ? -1 : 0
+
+statusText = bias == 1 ? "BUY FOCUS" : bias == -1 ? "SELL FOCUS" : "WAIT"
+reasonText = not contextConfigValid ? "SET HIGHER TFs" : strongConflict ? "HTF CONFLICT" : compositeConfidence < minConfidence ? "LOW CONFIDENCE" : alignment < minAlignment ? "LOW ALIGNMENT" : math.abs(compositeScore) < minScore ? "WEAK SCORE" : "QUALIFIED"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Forecast target and invalidation
+// ─────────────────────────────────────────────────────────────────────────────
+decisionClose = barstate.isconfirmed ? close : close[1]
+recentLowRaw = ta.lowest(low, 10)
+recentHighRaw = ta.highest(high, 10)
+recentLow = barstate.isconfirmed ? recentLowRaw : nz(recentLowRaw[1], recentLowRaw)
+recentHigh = barstate.isconfirmed ? recentHighRaw : nz(recentHighRaw[1], recentHighRaw)
+atrSafe = math.max(localAtr, syminfo.mintick)
+
+trendTargetMult = compositeRegime == 1 ? 2.40 : compositeRegime == 2 ? 1.20 : 1.70
+fallbackTarget = bias == 1 ? decisionClose + atrSafe * trendTargetMult : bias == -1 ? decisionClose - atrSafe * trendTargetMult : na
+meanTargetValid = compositeModel == -1 and ((bias == 1 and localEmaMid > decisionClose) or (bias == -1 and localEmaMid < decisionClose))
+forecastTarget = bias == 0 ? na : meanTargetValid ? localEmaMid : fallbackTarget
+forecastInvalidation = bias == 1 ? math.min(localEmaMid, recentLow) - atrSafe * 0.15 : bias == -1 ? math.max(localEmaMid, recentHigh) + atrSafe * 0.15 : na
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visual history, current state, and future projection
+// ─────────────────────────────────────────────────────────────────────────────
+plot(showEma ? localEmaFast : na, "Adaptive Fast EMA", color=color.new(color.aqua, 15), linewidth=1)
+plot(showEma ? localEmaMid : na, "Adaptive Medium EMA", color=color.new(color.yellow, 5), linewidth=2)
+plot(showEma ? localEmaSlow : na, "Adaptive Slow EMA", color=color.new(color.fuchsia, 25), linewidth=2)
+
+backgroundColor = bias == 1 ? color.new(color.lime, 91) : bias == -1 ? color.new(color.red, 91) : compositeRegime == 2 ? color.new(color.gray, 94) : na
+bgcolor(showBackground ? backgroundColor : na, title="Confirmed Direction / Regime")
+
+biasChanged = barstate.isconfirmed and bias != bias[1]
+plotshape(showMarkers and biasChanged and bias == 1, title="Confirmed Buy Focus", style=shape.labelup, text="BUY\nFOCUS", location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.black, size=size.tiny)
+plotshape(showMarkers and biasChanged and bias == -1, title="Confirmed Sell Focus", style=shape.labeldown, text="SELL\nFOCUS", location=location.abovebar, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+plotshape(showMarkers and biasChanged and bias == 0, title="Confirmed Wait", style=shape.circle, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+
+var line targetLine = na
+var line invalidationLine = na
+var label forecastLabel = na
+
+if barstate.islast
+    if not na(targetLine)
+        line.delete(targetLine)
+    if not na(invalidationLine)
+        line.delete(invalidationLine)
+    if not na(forecastLabel)
+        label.delete(forecastLabel)
+
+    if showProjection and bias != 0 and not na(forecastTarget) and not na(forecastInvalidation)
+        _statusColor = f_status_color(bias)
+        targetLine := line.new(bar_index, forecastTarget, bar_index + projectionBars, forecastTarget, xloc=xloc.bar_index, extend=extend.none, color=_statusColor, style=line.style_dashed, width=2)
+        invalidationLine := line.new(bar_index, forecastInvalidation, bar_index + projectionBars, forecastInvalidation, xloc=xloc.bar_index, extend=extend.none, color=color.new(color.orange, 0), style=line.style_dotted, width=2)
+        _labelText = statusText + "\n" + f_model_text(compositeModel) + "\nTarget: " + f_price_text(forecastTarget) + "\nInvalid: " + f_price_text(forecastInvalidation)
+        forecastLabel := label.new(bar_index + projectionBars, forecastTarget, _labelText, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(_statusColor, 10), textcolor=bias == 1 ? color.black : color.white, size=size.small)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+var table dash = table.new(position.top_right, 3, 10, border_width=1, frame_color=color.new(color.silver, 35), border_color=color.new(color.silver, 65))
+
+if barstate.islast and showDashboard
+    _statusColor = f_status_color(bias)
+    table.cell(dash, 0, 0, "AMY REGIME COMPASS", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 1, 0, "STATE", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(dash, 2, 0, "CONF", text_color=color.white, bgcolor=color.new(color.black, 0))
+
+    table.cell(dash, 0, 1, "DECISION", text_color=color.white, bgcolor=color.new(color.black, 55))
+    table.cell(dash, 1, 1, statusText, text_color=bias == 1 ? color.black : color.white, bgcolor=_statusColor)
+    table.cell(dash, 2, 1, f_conf_text(compositeConfidence), text_color=color.white, bgcolor=color.new(color.black, 55))
+
+    table.cell(dash, 0, 2, "REGIME", text_color=color.white, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 1, 2, f_regime_text(compositeRegime), text_color=color.white, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 2, 2, f_model_text(compositeModel), text_color=color.white, bgcolor=color.new(color.black, 70))
+
+    table.cell(dash, 0, 3, timeframe.period, text_color=color.white, bgcolor=color.new(color.black, 80))
+    table.cell(dash, 1, 3, f_score_text(localScore), text_color=f_status_color(int(f_sign(localScore))), bgcolor=color.new(color.black, 80))
+    table.cell(dash, 2, 3, f_conf_text(localConf), text_color=color.white, bgcolor=color.new(color.black, 80))
+
+    table.cell(dash, 0, 4, htf1, text_color=color.white, bgcolor=color.new(color.black, 80))
+    table.cell(dash, 1, 4, f_score_text(tf1Score), text_color=f_status_color(int(f_sign(tf1Score))), bgcolor=color.new(color.black, 80))
+    table.cell(dash, 2, 4, f_conf_text(tf1Conf), text_color=color.white, bgcolor=color.new(color.black, 80))
+
+    table.cell(dash, 0, 5, htf2, text_color=color.white, bgcolor=color.new(color.black, 80))
+    table.cell(dash, 1, 5, f_score_text(tf2Score), text_color=f_status_color(int(f_sign(tf2Score))), bgcolor=color.new(color.black, 80))
+    table.cell(dash, 2, 5, f_conf_text(tf2Conf), text_color=color.white, bgcolor=color.new(color.black, 80))
+
+    table.cell(dash, 0, 6, htf3, text_color=color.white, bgcolor=color.new(color.black, 80))
+    table.cell(dash, 1, 6, f_score_text(tf3Score), text_color=f_status_color(int(f_sign(tf3Score))), bgcolor=color.new(color.black, 80))
+    table.cell(dash, 2, 6, f_conf_text(tf3Conf), text_color=color.white, bgcolor=color.new(color.black, 80))
+
+    table.cell(dash, 0, 7, "ALIGNMENT", text_color=color.white, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 1, 7, str.tostring(alignment * 100.0, "#.0") + "%", text_color=color.white, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 2, 7, strongConflict ? "CONFLICT" : "CLEAR", text_color=strongConflict ? color.orange : color.lime, bgcolor=color.new(color.black, 70))
+
+    table.cell(dash, 0, 8, "MEMORY EDGE", text_color=color.white, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 1, 8, "C " + str.tostring(localContEdge, "#.000"), text_color=localContEdge >= 0 ? color.lime : color.silver, bgcolor=color.new(color.black, 70))
+    table.cell(dash, 2, 8, "R " + str.tostring(localRevEdge, "#.000"), text_color=localRevEdge >= 0 ? color.aqua : color.silver, bgcolor=color.new(color.black, 70))
+
+    table.cell(dash, 0, 9, "FORECAST", text_color=color.white, bgcolor=color.new(color.black, 55))
+    table.cell(dash, 1, 9, bias == 0 ? reasonText : f_price_text(forecastTarget), text_color=bias == 0 ? color.orange : color.white, bgcolor=color.new(color.black, 55))
+    table.cell(dash, 2, 9, bias == 0 ? "CLOSED DATA" : "INV " + f_price_text(forecastInvalidation), text_color=color.white, bgcolor=color.new(color.black, 55))
+
+// Hide the dashboard cleanly when disabled.
+if barstate.islast and not showDashboard
+    table.clear(dash, 0, 0, 2, 9)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alerts — all decisions are based on confirmed local and confirmed HTF candles.
+// ─────────────────────────────────────────────────────────────────────────────
+alertcondition(barstate.isconfirmed and bias == 1 and bias[1] != 1, "AMY Regime Compass BUY Focus", "AMY Adaptive Regime Compass changed to confirmed BUY FOCUS.")
+alertcondition(barstate.isconfirmed and bias == -1 and bias[1] != -1, "AMY Regime Compass SELL Focus", "AMY Adaptive Regime Compass changed to confirmed SELL FOCUS.")
+alertcondition(barstate.isconfirmed and bias == 0 and bias[1] != 0, "AMY Regime Compass WAIT", "AMY Adaptive Regime Compass changed to WAIT because score, confidence, alignment, or HTF context is not qualified.")
+alertcondition(barstate.isconfirmed and strongConflict and not strongConflict[1], "AMY Regime Compass HTF Conflict", "AMY Adaptive Regime Compass detected a confirmed higher-timeframe direction conflict.")
