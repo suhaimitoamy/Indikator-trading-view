@@ -18,8 +18,8 @@ strategy("AMY ICT NextGen Strategy Research", shorttitle="AMY-NG-S", overlay=tru
 // INPUTS
 // ============================================================================
 grpTest = "0. Strategy Research"
-startDate = input.time(timestamp(2019, 1, 1, 0, 0), "Backtest Start", group=grpTest)
-endDate = input.time(timestamp(2030, 12, 31, 23, 59), "Backtest End", group=grpTest)
+startDate = input.time(1546272000000, "Backtest Start", group=grpTest)  // 2019-01-01 00:00 WITA
+endDate = input.time(1924963140000, "Backtest End", group=grpTest)  // 2030-12-31 23:59 WITA
 orderMode = input.string("Fixed Qty", "Order Sizing", options=["Fixed Qty", "Risk %"], group=grpTest)
 fixedQty = input.float(1.0, "Fixed Quantity", minval=0.001, step=0.001, group=grpTest)
 riskPct = input.float(1.0, "Risk Per Trade %", minval=0.05, maxval=10.0, step=0.05, group=grpTest)
