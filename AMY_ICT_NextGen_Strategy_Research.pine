@@ -1,0 +1,640 @@
+//@version=5
+strategy("AMY ICT NextGen Strategy Research", shorttitle="AMY-NG-S", overlay=true,
+     pyramiding=0, process_orders_on_close=false, calc_on_order_fills=true, calc_on_every_tick=false, use_bar_magnifier=true,
+     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.percent, commission_value=0.0, slippage=0,
+     max_boxes_count=100, max_lines_count=200, max_labels_count=200, max_bars_back=3000)
+
+// ============================================================================
+// RESEARCH COPY
+// Derived from AMY_ICT_NextGen.pine. The original indicator remains untouched.
+// Market orders are generated on a confirmed signal candle and, with
+// process_orders_on_close=false, are filled by TradingView on the next bar.
+// Set commission, spread/slippage, order size, and Bar Magnifier in Strategy
+// Properties before evaluating live feasibility.
+// ============================================================================
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+grpTest = "0. Strategy Research"
+startDate = input.time(timestamp(2019, 1, 1, 0, 0), "Backtest Start", group=grpTest)
+endDate = input.time(timestamp(2030, 12, 31, 23, 59), "Backtest End", group=grpTest)
+orderMode = input.string("Fixed Qty", "Order Sizing", options=["Fixed Qty", "Risk %"], group=grpTest)
+fixedQty = input.float(1.0, "Fixed Quantity", minval=0.001, step=0.001, group=grpTest)
+riskPct = input.float(1.0, "Risk Per Trade %", minval=0.05, maxval=10.0, step=0.05, group=grpTest)
+tp1ClosePct = input.float(50.0, "Close At TP1 %", minval=1.0, maxval=99.0, step=1.0, group=grpTest)
+requireForecast = input.bool(false, "Require Direction Forecast Alignment", group=grpTest)
+closeAtExpiry = input.bool(true, "Close Position At Setup Expiry", group=grpTest)
+showResearchDashboard = input.bool(true, "Show Strategy Dashboard", group=grpTest)
+
+grpCore = "1. Core"
+tz = input.string("Asia/Makassar", "Timezone", group=grpCore)
+asiaSess = input.session("0600-1400", "Asia Session", group=grpCore)
+londonSess = input.session("1400-1800", "London Session", group=grpCore)
+nySess = input.session("1930-0400", "New York Session", group=grpCore)
+showAsia = input.bool(true, "Show Asia High / Low", group=grpCore)
+showPrevDay = input.bool(true, "Show PDH / PDL", group=grpCore)
+showPrevWeek = input.bool(false, "Show PWH / PWL", group=grpCore)
+showStructure = input.bool(true, "Show BOS / MSS", group=grpCore)
+
+grpCtx = "2. Context"
+htf = input.timeframe("240", "HTF Bias", group=grpCtx)
+htfEmaLen = input.int(20, "HTF EMA Length", minval=1, group=grpCtx)
+pdLookback = input.int(80, "Premium / Discount Lookback", minval=20, maxval=300, group=grpCtx)
+atrLen = input.int(14, "ATR Length", minval=1, group=grpCtx)
+liquidityDirectionThreshold = input.int(97, "Display Prediction Threshold", minval=50, maxval=99, group=grpCtx)
+
+grpEma = "3. EMA"
+showEma = input.bool(true, "Show EMA", group=grpEma)
+ema1Len = input.int(21, "EMA 1 Length", minval=1, group=grpEma)
+ema2Len = input.int(34, "EMA 2 Length", minval=1, group=grpEma)
+ema3Len = input.int(90, "EMA 3 Length", minval=1, group=grpEma)
+
+grpStruct = "4. Structure"
+swingLen = input.int(4, "Fast Swing Length", minval=1, maxval=20, group=grpStruct)
+marketStateSlowLen = input.int(6, "Slow Swing Length", minval=3, maxval=20, group=grpStruct)
+
+grpPoi = "5. POI"
+useFvg = input.bool(true, "Use FVG", group=grpPoi)
+useOb = input.bool(true, "Use Order Block", group=grpPoi)
+obSearchBars = input.int(12, "OB Origin Search Bars", minval=3, maxval=50, group=grpPoi)
+obUseBody = input.bool(true, "Use OB Candle Body", group=grpPoi)
+poiNearAtr = input.float(0.35, "Near POI ATR", minval=0.05, maxval=2.0, step=0.05, group=grpPoi)
+
+grpEntry = "6. Entry Map"
+entryProfile = input.string("Auto", "Profile", options=["Auto", "M5", "M15", "H1"], group=grpEntry)
+manualSlAtrPad = input.float(0.50, "Manual SL ATR Buffer", minval=0.0, maxval=2.0, step=0.05, group=grpEntry)
+useCalibratedSl = input.bool(true, "Use Calibrated SL Buffer", group=grpEntry)
+maxRiskAtr = input.float(6.0, "Maximum Initial Risk ATR", minval=0.5, maxval=10.0, step=0.25, group=grpEntry)
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+f_inSession(_sess) =>
+    not na(time(timeframe.period, _sess, tz))
+
+f_price(_x) =>
+    na(_x) ? "-" : str.tostring(_x, format.mintick)
+
+f_bool(_x) =>
+    _x ? "YES" : "NO"
+
+f_qty(_riskDistance) =>
+    _riskCash = strategy.equity * riskPct / 100.0
+    _pointValue = math.max(syminfo.pointvalue, 0.0000001)
+    _riskQty = _riskDistance > syminfo.mintick ? _riskCash / (_riskDistance * _pointValue) : fixedQty
+    orderMode == "Risk %" ? math.max(_riskQty, 0.001) : fixedQty
+
+// ============================================================================
+// BASE DATA AND SESSIONS
+// ============================================================================
+confirmed = barstate.isconfirmed
+inDateRange = time >= startDate and time <= endDate
+atr = ta.atr(atrLen)
+ema1 = ta.ema(close, ema1Len)
+ema2 = ta.ema(close, ema2Len)
+ema3 = ta.ema(close, ema3Len)
+body = math.abs(close - open)
+barRange = math.max(high - low, syminfo.mintick)
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+
+inAsia = f_inSession(asiaSess)
+inLondon = f_inSession(londonSess)
+inNY = f_inSession(nySess)
+validSession = inLondon or inNY
+sessionText = inAsia ? "ASIA" : inLondon ? "LONDON" : inNY ? "NEW YORK" : "OFF"
+
+// ============================================================================
+// ASIA RANGE
+// ============================================================================
+prevInAsia = bar_index > 0 ? inAsia[1] : false
+asiaStart = inAsia and not prevInAsia
+
+var float asiaHigh = na
+var float asiaLow = na
+var bool asiaHighConsumed = false
+var bool asiaLowConsumed = false
+
+if asiaStart
+    asiaHigh := high
+    asiaLow := low
+    asiaHighConsumed := false
+    asiaLowConsumed := false
+else if inAsia
+    asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
+    asiaLow := na(asiaLow) ? low : math.min(asiaLow, low)
+
+newAsiaHighSweep = confirmed and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high > asiaHigh and close < asiaHigh
+newAsiaLowSweep = confirmed and not inAsia and not asiaLowConsumed and not na(asiaLow) and low < asiaLow and close > asiaLow
+asiaHighReached = confirmed and not inAsia and not asiaHighConsumed and not na(asiaHigh) and high >= asiaHigh
+asiaLowReached = confirmed and not inAsia and not asiaLowConsumed and not na(asiaLow) and low <= asiaLow
+if asiaHighReached
+    asiaHighConsumed := true
+if asiaLowReached
+    asiaLowConsumed := true
+
+// ============================================================================
+// PREVIOUS DAY / WEEK LIQUIDITY
+// ============================================================================
+pdh = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
+pwh = request.security(syminfo.tickerid, "W", high[1], lookahead=barmerge.lookahead_on)
+pwl = request.security(syminfo.tickerid, "W", low[1], lookahead=barmerge.lookahead_on)
+newTradingDay = nz(ta.change(time("D"))) != 0
+newTradingWeek = nz(ta.change(time("W"))) != 0
+
+var bool pdhConsumed = false
+var bool pdlConsumed = false
+var bool pwhConsumed = false
+var bool pwlConsumed = false
+if newTradingDay
+    pdhConsumed := false
+    pdlConsumed := false
+if newTradingWeek
+    pwhConsumed := false
+    pwlConsumed := false
+
+newPdhSweep = confirmed and not pdhConsumed and high > pdh and close < pdh
+newPdlSweep = confirmed and not pdlConsumed and low < pdl and close > pdl
+newPwhSweep = confirmed and not pwhConsumed and high > pwh and close < pwh
+newPwlSweep = confirmed and not pwlConsumed and low < pwl and close > pwl
+if confirmed and not pdhConsumed and high >= pdh
+    pdhConsumed := true
+if confirmed and not pdlConsumed and low <= pdl
+    pdlConsumed := true
+if confirmed and not pwhConsumed and high >= pwh
+    pwhConsumed := true
+if confirmed and not pwlConsumed and low <= pwl
+    pwlConsumed := true
+
+// ============================================================================
+// FAST AND SLOW STRUCTURE
+// ============================================================================
+fastPh = ta.pivothigh(high, swingLen, swingLen)
+fastPl = ta.pivotlow(low, swingLen, swingLen)
+slowPh = ta.pivothigh(high, marketStateSlowLen, marketStateSlowLen)
+slowPl = ta.pivotlow(low, marketStateSlowLen, marketStateSlowLen)
+
+var float lastHigh = na
+var float prevHigh = na
+var float lastLow = na
+var float prevLow = na
+var int lastHighBar = na
+var int lastLowBar = na
+var int lastBrokenHighBar = na
+var int lastBrokenLowBar = na
+var bool bslConsumed = false
+var bool sslConsumed = false
+
+var float slowHigh = na
+var float prevSlowHigh = na
+var float slowLow = na
+var float prevSlowLow = na
+
+if not na(fastPh)
+    prevHigh := lastHigh
+    lastHigh := fastPh
+    lastHighBar := bar_index - swingLen
+    bslConsumed := false
+if not na(fastPl)
+    prevLow := lastLow
+    lastLow := fastPl
+    lastLowBar := bar_index - swingLen
+    sslConsumed := false
+if not na(slowPh)
+    prevSlowHigh := slowHigh
+    slowHigh := slowPh
+if not na(slowPl)
+    prevSlowLow := slowLow
+    slowLow := slowPl
+
+bullBreak = confirmed and not na(lastHigh) and (na(lastBrokenHighBar) or lastBrokenHighBar != lastHighBar) and close > lastHigh and close[1] <= lastHigh
+bearBreak = confirmed and not na(lastLow) and (na(lastBrokenLowBar) or lastBrokenLowBar != lastLowBar) and close < lastLow and close[1] >= lastLow
+
+var int trendDir = 0
+mssBull = bullBreak and trendDir == -1
+mssBear = bearBreak and trendDir == 1
+bosBull = bullBreak and trendDir != -1
+bosBear = bearBreak and trendDir != 1
+
+if bullBreak and not bearBreak
+    trendDir := 1
+    lastBrokenHighBar := lastHighBar
+    lastBrokenLowBar := na
+    bslConsumed := true
+else if bearBreak
+    trendDir := -1
+    lastBrokenLowBar := lastLowBar
+    lastBrokenHighBar := na
+    sslConsumed := true
+
+newBslSweep = confirmed and not bslConsumed and not na(lastHigh) and high > lastHigh and close < lastHigh
+newSslSweep = confirmed and not sslConsumed and not na(lastLow) and low < lastLow and close > lastLow
+if confirmed and not bslConsumed and not na(lastHigh) and high >= lastHigh
+    bslConsumed := true
+if confirmed and not sslConsumed and not na(lastLow) and low <= lastLow
+    sslConsumed := true
+
+if showStructure and mssBull
+    label.new(bar_index, low, "MSS BULL", style=label.style_label_up, color=color.new(color.lime, 15), textcolor=color.white, size=size.tiny)
+if showStructure and mssBear
+    label.new(bar_index, high, "MSS BEAR", style=label.style_label_down, color=color.new(color.red, 15), textcolor=color.white, size=size.tiny)
+if showStructure and bosBull
+    label.new(bar_index, low, "BOS BULL", style=label.style_label_up, color=color.new(color.green, 45), textcolor=color.white, size=size.tiny)
+if showStructure and bosBear
+    label.new(bar_index, high, "BOS BEAR", style=label.style_label_down, color=color.new(color.maroon, 45), textcolor=color.white, size=size.tiny)
+
+// ============================================================================
+// HTF AND CURRENT MARKET STATE
+// ============================================================================
+htfClose = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_on)
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, htfEmaLen)[1], lookahead=barmerge.lookahead_on)
+htfEmaPrev = request.security(syminfo.tickerid, htf, ta.ema(close, htfEmaLen)[2], lookahead=barmerge.lookahead_on)
+htfBullConfirmed = htfClose > htfEma and htfEma >= htfEmaPrev
+htfBearConfirmed = htfClose < htfEma and htfEma <= htfEmaPrev
+emaBull = ema1 > ema2 and ema2 > ema3
+emaBear = ema1 < ema2 and ema2 < ema3
+priceBull = close >= ema2 and ema2 >= ema3
+priceBear = close <= ema2 and ema2 <= ema3
+structureBull = trendDir == 1
+structureBear = trendDir == -1
+mappingDir = htfBullConfirmed and structureBull and emaBull ? 1 : htfBearConfirmed and structureBear and emaBear ? -1 : 0
+
+stateTolerance = atr * 0.05
+fastBull = not na(prevHigh) and not na(prevLow) and lastHigh > prevHigh + stateTolerance and lastLow > prevLow + stateTolerance
+fastBear = not na(prevHigh) and not na(prevLow) and lastHigh < prevHigh - stateTolerance and lastLow < prevLow - stateTolerance
+slowBull = not na(prevSlowHigh) and not na(prevSlowLow) and slowHigh > prevSlowHigh + stateTolerance and slowLow > prevSlowLow + stateTolerance
+slowBear = not na(prevSlowHigh) and not na(prevSlowLow) and slowHigh < prevSlowHigh - stateTolerance and slowLow < prevSlowLow - stateTolerance
+marketBullConfirmed = fastBull and slowBull and structureBull and (na(lastLow) or close > lastLow)
+marketBearConfirmed = fastBear and slowBear and structureBear and (na(lastHigh) or close < lastHigh)
+marketState = marketBullConfirmed ? "UPTREND CONFIRMED" : marketBearConfirmed ? "DOWNTREND CONFIRMED" : "RANGE / TRANSITION"
+
+// ============================================================================
+// PREMIUM / DISCOUNT
+// ============================================================================
+pdHigh = ta.highest(high, pdLookback)
+pdLow = ta.lowest(low, pdLookback)
+pdEq = (pdHigh + pdLow) / 2.0
+inPremium = close > pdEq
+inDiscount = close < pdEq
+
+// ============================================================================
+// LATEST FVG AND ORDER BLOCK POI
+// ============================================================================
+var float bullFvgTop = na
+var float bullFvgBot = na
+var float bearFvgTop = na
+var float bearFvgBot = na
+
+bullFvgNew = confirmed and useFvg and low > high[2]
+bearFvgNew = confirmed and useFvg and high < low[2]
+if bullFvgNew
+    bullFvgTop := low
+    bullFvgBot := high[2]
+if bearFvgNew
+    bearFvgTop := low[2]
+    bearFvgBot := high
+if confirmed and not na(bullFvgBot) and close < bullFvgBot
+    bullFvgTop := na
+    bullFvgBot := na
+if confirmed and not na(bearFvgTop) and close > bearFvgTop
+    bearFvgTop := na
+    bearFvgBot := na
+
+var float bullObTop = na
+var float bullObBot = na
+var float bearObTop = na
+var float bearObBot = na
+
+if useOb and bullBreak
+    float _top = na
+    float _bot = na
+    for i = 1 to obSearchBars
+        if na(_top) and close[i] < open[i]
+            _top := obUseBody ? math.max(open[i], close[i]) : high[i]
+            _bot := obUseBody ? math.min(open[i], close[i]) : low[i]
+    bullObTop := _top
+    bullObBot := _bot
+if useOb and bearBreak
+    float _top = na
+    float _bot = na
+    for i = 1 to obSearchBars
+        if na(_top) and close[i] > open[i]
+            _top := obUseBody ? math.max(open[i], close[i]) : high[i]
+            _bot := obUseBody ? math.min(open[i], close[i]) : low[i]
+    bearObTop := _top
+    bearObBot := _bot
+if confirmed and not na(bullObBot) and close < bullObBot
+    bullObTop := na
+    bullObBot := na
+if confirmed and not na(bearObTop) and close > bearObTop
+    bearObTop := na
+    bearObBot := na
+
+nearBullFvg = not na(bullFvgTop) and low <= bullFvgTop + atr * poiNearAtr and high >= bullFvgBot - atr * 0.10
+nearBearFvg = not na(bearFvgBot) and high >= bearFvgBot - atr * poiNearAtr and low <= bearFvgTop + atr * 0.10
+nearBullOb = not na(bullObTop) and low <= bullObTop + atr * poiNearAtr and high >= bullObBot - atr * 0.10
+nearBearOb = not na(bearObBot) and high >= bearObBot - atr * poiNearAtr and low <= bearObTop + atr * 0.10
+nearBullPoi = nearBullFvg or nearBullOb
+nearBearPoi = nearBearFvg or nearBearOb
+
+// ============================================================================
+// SWEEP MEMORY
+// ============================================================================
+newBuySideSweep = newBslSweep or newAsiaHighSweep or newPdhSweep or newPwhSweep
+newSellSideSweep = newSslSweep or newAsiaLowSweep or newPdlSweep or newPwlSweep
+var int lastBuySweepBar = na
+var int lastSellSweepBar = na
+if newBuySideSweep
+    lastBuySweepBar := bar_index
+if newSellSideSweep
+    lastSellSweepBar := bar_index
+
+// ============================================================================
+// NEAREST LIQUIDITY AND ORIGINAL LOGISTIC PROXY
+// ============================================================================
+float nearestBslTarget = na
+if not bslConsumed and not na(lastHigh) and lastHigh > close
+    nearestBslTarget := lastHigh
+if not asiaHighConsumed and not na(asiaHigh) and asiaHigh > close and (na(nearestBslTarget) or asiaHigh < nearestBslTarget)
+    nearestBslTarget := asiaHigh
+if not pdhConsumed and pdh > close and (na(nearestBslTarget) or pdh < nearestBslTarget)
+    nearestBslTarget := pdh
+if not pwhConsumed and pwh > close and (na(nearestBslTarget) or pwh < nearestBslTarget)
+    nearestBslTarget := pwh
+
+float nearestSslTarget = na
+if not sslConsumed and not na(lastLow) and lastLow < close
+    nearestSslTarget := lastLow
+if not asiaLowConsumed and not na(asiaLow) and asiaLow < close and (na(nearestSslTarget) or asiaLow > nearestSslTarget)
+    nearestSslTarget := asiaLow
+if not pdlConsumed and pdl < close and (na(nearestSslTarget) or pdl > nearestSslTarget)
+    nearestSslTarget := pdl
+if not pwlConsumed and pwl < close and (na(nearestSslTarget) or pwl > nearestSslTarget)
+    nearestSslTarget := pwl
+
+upperRejectionCandle = upperWick >= math.max(body * 0.75, atr * 0.10) and close <= high - barRange * 0.35
+lowerRejectionCandle = lowerWick >= math.max(body * 0.75, atr * 0.10) and close >= low + barRange * 0.35
+upperLiquidityRejection = upperRejectionCandle and not na(nearestBslTarget) and high >= nearestBslTarget - atr * 0.25 and close < nearestBslTarget
+lowerLiquidityRejection = lowerRejectionCandle and not na(nearestSslTarget) and low <= nearestSslTarget + atr * 0.25 and close > nearestSslTarget
+
+bslDistance = not na(nearestBslTarget) ? nearestBslTarget - close : na
+sslDistance = not na(nearestSslTarget) ? close - nearestSslTarget : na
+hasTwoSidedLiquidity = not na(bslDistance) and not na(sslDistance) and bslDistance > syminfo.mintick and sslDistance > syminfo.mintick
+
+distanceLocation = hasTwoSidedLiquidity ? sslDistance / (bslDistance + sslDistance) : 0.50
+htfDirection = (htfBullConfirmed ? 1.0 : 0.0) - (htfBearConfirmed ? 1.0 : 0.0)
+structureDirection = (structureBull ? 1.0 : 0.0) - (structureBear ? 1.0 : 0.0)
+emaDirection = (emaBull ? 1.0 : 0.0) - (emaBear ? 1.0 : 0.0)
+priceDirection = (priceBull ? 1.0 : 0.0) - (priceBear ? 1.0 : 0.0)
+sweepDirection = (not na(lastSellSweepBar) and bar_index - lastSellSweepBar <= 48 ? 1.0 : 0.0) - (not na(lastBuySweepBar) and bar_index - lastBuySweepBar <= 48 ? 1.0 : 0.0)
+rangeDirection = (inDiscount ? 1.0 : 0.0) - (inPremium ? 1.0 : 0.0)
+eventDirection = (mssBull or bosBull ? 1.0 : 0.0) - (mssBear or bosBear ? 1.0 : 0.0)
+bodyAtr = atr > 0 ? math.max(-2.0, math.min(2.0, (close - open) / atr)) : 0.0
+emaSlopeAtr = atr > 0 and not na(ema1[3]) ? math.max(-2.0, math.min(2.0, (ema1 - ema1[3]) / atr)) : 0.0
+rejectionDirection = (lowerLiquidityRejection ? 1.0 : 0.0) - (upperLiquidityRejection ? 1.0 : 0.0)
+predictionLogit = 5.0 * (distanceLocation - 0.50) + 0.40 * htfDirection + 0.50 * structureDirection + 0.40 * emaDirection + 0.20 * priceDirection + 0.60 * sweepDirection + 0.25 * rangeDirection + 0.30 * eventDirection + 0.25 * emaSlopeAtr + 0.15 * bodyAtr + 0.40 * rejectionDirection
+rawBslProbability = hasTwoSidedLiquidity ? 100.0 / (1.0 + math.exp(-predictionLogit)) : 50.0
+bslDrawPercent = int(math.round(math.max(1.0, math.min(99.0, rawBslProbability))))
+sslDrawPercent = 100 - bslDrawPercent
+
+// ============================================================================
+// VALIDATED DIRECTION FORECAST COPY
+// ============================================================================
+forecastM5 = timeframe.isminutes and timeframe.multiplier == 5
+forecastM15 = timeframe.isminutes and timeframe.multiplier == 15
+forecastH1 = timeframe.isminutes and timeframe.multiplier == 60
+forecastSupported = forecastM5 or forecastM15 or forecastH1
+pdRangeSize = math.max(pdHigh - pdLow, syminfo.mintick)
+pdRangePosition = (close - pdLow) / pdRangeSize
+directionMomentum3Atr = atr > 0 and not na(close[3]) ? (close - close[3]) / atr : 0.0
+
+m5BullForecastTrigger = forecastM5 and mssBull and marketBullConfirmed and priceBull
+m5BearForecastTrigger = forecastM5 and mssBear and marketBearConfirmed and priceBear
+m15BullForecastTrigger = forecastM15 and bullBreak and htfBullConfirmed and pdRangePosition < 0.45
+m15BearForecastTrigger = forecastM15 and bearBreak and htfBearConfirmed and pdRangePosition > 0.55
+h1BullForecastTrigger = forecastH1 and bullBreak and htfBullConfirmed and priceBull and directionMomentum3Atr > 0.0 and directionMomentum3Atr < 2.50
+
+forecastCandidateDir = (m5BullForecastTrigger or m15BullForecastTrigger or h1BullForecastTrigger) ? 1 : (m5BearForecastTrigger or m15BearForecastTrigger) ? -1 : 0
+forecastHorizonBars = forecastM5 ? 288 : forecastM15 ? 192 : forecastH1 ? 72 : 0
+forecastCooldownBars = forecastM5 ? 144 : forecastM15 ? 96 : forecastH1 ? 36 : 0
+var int forecastDir = 0
+var int forecastStartBar = na
+var int forecastExpiryBar = na
+forecastExpired = forecastDir != 0 and not na(forecastExpiryBar) and bar_index > forecastExpiryBar
+forecastInvalidated = (forecastDir == 1 and bearBreak) or (forecastDir == -1 and bullBreak)
+if forecastExpired or forecastInvalidated or not forecastSupported
+    forecastDir := 0
+    forecastStartBar := na
+    forecastExpiryBar := na
+canRefreshForecast = na(forecastStartBar) or forecastCandidateDir != forecastDir or bar_index - forecastStartBar >= forecastCooldownBars
+if confirmed and forecastSupported and forecastCandidateDir != 0 and canRefreshForecast
+    forecastDir := forecastCandidateDir
+    forecastStartBar := bar_index
+    forecastExpiryBar := bar_index + forecastHorizonBars
+forecastText = not forecastSupported ? "UNSUPPORTED" : forecastDir == 1 ? "BULLISH" : forecastDir == -1 ? "BEARISH" : "NO CLEAR DIRECTION"
+
+// ============================================================================
+// ENTRY MAP PROFILE — RETAINED FROM THE INDICATOR
+// ============================================================================
+isM5Auto = timeframe.isminutes and timeframe.multiplier <= 5
+isM15Auto = timeframe.isminutes and timeframe.multiplier > 5 and timeframe.multiplier <= 30
+isH1Auto = timeframe.isminutes and timeframe.multiplier > 30 and timeframe.multiplier <= 60
+profileM5 = entryProfile == "M5" or (entryProfile == "Auto" and isM5Auto)
+profileM15 = entryProfile == "M15" or (entryProfile == "Auto" and isM15Auto)
+profileH1 = entryProfile == "H1" or (entryProfile == "Auto" and isH1Auto)
+profileSupported = profileM5 or profileM15 or profileH1
+profileExpiryBars = profileM5 ? 48 : profileM15 ? 36 : 36
+profileTp1R = profileM5 ? 0.50 : profileM15 ? 0.35 : 0.30
+profileTp2R = profileM5 ? 1.25 : 1.75
+calibratedSlAtrPad = profileM5 ? 0.20 : profileM15 ? 0.10 : 0.25
+effectiveSlAtrPad = useCalibratedSl ? calibratedSlAtrPad : manualSlAtrPad
+profileSweepMemory = profileM5 ? 36 : profileM15 ? 12 : 18
+profileNeedsPoi = profileM5
+entryRecentBuySweep = not na(lastBuySweepBar) and bar_index - lastBuySweepBar <= profileSweepMemory
+entryRecentSellSweep = not na(lastSellSweepBar) and bar_index - lastSellSweepBar <= profileSweepMemory
+profileSessionValid = profileH1 ? inNY : validSession
+profileBullCandle = profileM5 ? close > open : profileM15 ? close >= low + barRange * 0.70 : close > open
+profileBearCandle = profileM5 ? close < open : profileM15 ? close <= high - barRange * 0.70 : close < open
+profileBullProbability = not profileM5 or bslDrawPercent >= 80
+profileBearProbability = not profileM5 or sslDrawPercent >= 80
+profileBullRejectionOk = not upperLiquidityRejection
+profileBearRejectionOk = not lowerLiquidityRejection
+profileEmaDistanceOk = not profileH1 or math.abs(close - ema1) <= atr * 2.0
+forecastLongOk = not requireForecast or forecastDir == 1
+forecastShortOk = not requireForecast or forecastDir == -1
+
+longFilter = profileSessionValid and htfBullConfirmed and emaBull and entryRecentSellSweep and mappingDir == 1 and (not profileNeedsPoi or nearBullPoi) and profileBullCandle and profileBullProbability and profileBullRejectionOk and profileEmaDistanceOk and forecastLongOk
+shortFilter = profileSessionValid and htfBearConfirmed and emaBear and entryRecentBuySweep and mappingDir == -1 and (not profileNeedsPoi or nearBearPoi) and profileBearCandle and profileBearProbability and profileBearRejectionOk and profileEmaDistanceOk and forecastShortOk
+
+rawLongStop = not na(lastLow) ? math.min(low, lastLow) - atr * effectiveSlAtrPad : na
+rawShortStop = not na(lastHigh) ? math.max(high, lastHigh) + atr * effectiveSlAtrPad : na
+rawLongRisk = not na(rawLongStop) ? close - rawLongStop : na
+rawShortRisk = not na(rawShortStop) ? rawShortStop - close : na
+longRiskOk = not na(rawLongRisk) and rawLongRisk > syminfo.mintick and rawLongRisk <= atr * maxRiskAtr
+shortRiskOk = not na(rawShortRisk) and rawShortRisk > syminfo.mintick and rawShortRisk <= atr * maxRiskAtr
+
+flatAndReady = strategy.position_size == 0
+newLongSetup = confirmed and inDateRange and profileSupported and flatAndReady and mssBull and longFilter and longRiskOk
+newShortSetup = confirmed and inDateRange and profileSupported and flatAndReady and mssBear and shortFilter and shortRiskOk
+
+// ============================================================================
+// STRATEGY ORDER ENGINE
+// ============================================================================
+var int pendingDir = 0
+var float pendingStop = na
+var float pendingAtr = na
+var int pendingSignalBar = na
+
+var int tradeDir = 0
+var float tradeEntry = na
+var float tradeStop = na
+var float tradeTp1 = na
+var float tradeTp2 = na
+var float initialPositionSize = na
+var int tradeEntryBar = na
+var bool breakevenArmed = false
+var string lifecycle = "WAITING"
+
+if newLongSetup and not newShortSetup
+    pendingDir := 1
+    pendingStop := rawLongStop
+    pendingAtr := atr
+    pendingSignalBar := bar_index
+    lifecycle := "LONG SIGNAL — NEXT BAR ENTRY"
+    strategy.entry("LONG", strategy.long, qty=f_qty(rawLongRisk), comment="MSS LONG")
+
+if newShortSetup and not newLongSetup
+    pendingDir := -1
+    pendingStop := rawShortStop
+    pendingAtr := atr
+    pendingSignalBar := bar_index
+    lifecycle := "SHORT SIGNAL — NEXT BAR ENTRY"
+    strategy.entry("SHORT", strategy.short, qty=f_qty(rawShortRisk), comment="MSS SHORT")
+
+positionOpened = strategy.position_size != 0 and strategy.position_size[1] == 0
+if positionOpened
+    tradeDir := strategy.position_size > 0 ? 1 : -1
+    tradeEntry := strategy.position_avg_price
+    tradeStop := pendingStop
+    actualRisk = tradeDir == 1 ? tradeEntry - tradeStop : tradeStop - tradeEntry
+    gapRiskOk = not na(actualRisk) and actualRisk > syminfo.mintick and actualRisk <= pendingAtr * maxRiskAtr
+    if gapRiskOk
+        tradeTp1 := tradeEntry + tradeDir * actualRisk * profileTp1R
+        tradeTp2 := tradeEntry + tradeDir * actualRisk * profileTp2R
+        initialPositionSize := math.abs(strategy.position_size)
+        tradeEntryBar := bar_index
+        breakevenArmed := false
+        lifecycle := tradeDir == 1 ? "LONG ACTIVE" : "SHORT ACTIVE"
+    else
+        lifecycle := "GAP RISK INVALID — CLOSE"
+        if tradeDir == 1
+            strategy.close("LONG", comment="Invalid gap risk")
+        else
+            strategy.close("SHORT", comment="Invalid gap risk")
+    pendingDir := 0
+    pendingStop := na
+    pendingAtr := na
+    pendingSignalBar := na
+
+positionReduced = strategy.position_size != 0 and not na(initialPositionSize) and math.abs(strategy.position_size) < initialPositionSize * 0.999999
+if positionReduced and not breakevenArmed
+    breakevenArmed := true
+    lifecycle := "TP1 HIT / BE"
+
+if strategy.position_size > 0 and tradeDir == 1 and not na(tradeStop)
+    activeStop = breakevenArmed ? tradeEntry : tradeStop
+    strategy.exit("LONG TP1", from_entry="LONG", stop=tradeStop, limit=tradeTp1, qty_percent=tp1ClosePct, comment_profit="TP1", comment_loss="SL")
+    strategy.exit("LONG TP2", from_entry="LONG", stop=activeStop, limit=tradeTp2, qty_percent=100.0 - tp1ClosePct, comment_profit="TP2", comment_loss=breakevenArmed ? "BE" : "SL")
+
+if strategy.position_size < 0 and tradeDir == -1 and not na(tradeStop)
+    activeStop = breakevenArmed ? tradeEntry : tradeStop
+    strategy.exit("SHORT TP1", from_entry="SHORT", stop=tradeStop, limit=tradeTp1, qty_percent=tp1ClosePct, comment_profit="TP1", comment_loss="SL")
+    strategy.exit("SHORT TP2", from_entry="SHORT", stop=activeStop, limit=tradeTp2, qty_percent=100.0 - tp1ClosePct, comment_profit="TP2", comment_loss=breakevenArmed ? "BE" : "SL")
+
+if closeAtExpiry and strategy.position_size != 0 and not na(tradeEntryBar) and bar_index - tradeEntryBar >= profileExpiryBars
+    lifecycle := "EXPIRED"
+    if tradeDir == 1
+        strategy.close("LONG", comment="EXPIRED")
+    else
+        strategy.close("SHORT", comment="EXPIRED")
+
+positionClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+if positionClosed
+    lifecycle := breakevenArmed ? "POSITION CLOSED AFTER TP1" : "POSITION CLOSED"
+    tradeDir := 0
+    tradeEntry := na
+    tradeStop := na
+    tradeTp1 := na
+    tradeTp2 := na
+    initialPositionSize := na
+    tradeEntryBar := na
+    breakevenArmed := false
+
+if not inDateRange and strategy.position_size != 0
+    strategy.close_all(comment="Outside date range")
+
+// ============================================================================
+// VISUALS
+// ============================================================================
+plot(showEma ? ema1 : na, "EMA 21", color=color.new(color.aqua, 0), linewidth=1)
+plot(showEma ? ema2 : na, "EMA 34", color=color.new(color.orange, 0), linewidth=1)
+plot(showEma ? ema3 : na, "EMA 90", color=color.new(color.fuchsia, 0), linewidth=2)
+plot(showAsia and not inAsia ? asiaHigh : na, "Asia High", color=color.new(color.purple, asiaHighConsumed ? 75 : 10), style=plot.style_linebr)
+plot(showAsia and not inAsia ? asiaLow : na, "Asia Low", color=color.new(color.purple, asiaLowConsumed ? 75 : 10), style=plot.style_linebr)
+plot(showPrevDay ? pdh : na, "PDH", color=color.new(color.orange, pdhConsumed ? 80 : 25), style=plot.style_linebr)
+plot(showPrevDay ? pdl : na, "PDL", color=color.new(color.blue, pdlConsumed ? 80 : 25), style=plot.style_linebr)
+plot(showPrevWeek ? pwh : na, "PWH", color=color.new(color.fuchsia, pwhConsumed ? 85 : 35), style=plot.style_linebr)
+plot(showPrevWeek ? pwl : na, "PWL", color=color.new(color.aqua, pwlConsumed ? 85 : 35), style=plot.style_linebr)
+plot(pdEq, "PD Equilibrium", color=color.new(color.gray, 75), style=plot.style_linebr)
+
+plot(strategy.position_size != 0 ? tradeEntry : na, "Strategy Entry", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+plot(strategy.position_size != 0 ? (breakevenArmed ? tradeEntry : tradeStop) : na, "Active Stop", color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+plot(strategy.position_size != 0 ? tradeTp1 : na, "TP1", color=color.new(color.aqua, 0), linewidth=1, style=plot.style_linebr)
+plot(strategy.position_size != 0 ? tradeTp2 : na, "TP2", color=color.new(color.lime, 0), linewidth=2, style=plot.style_linebr)
+
+plotshape(newLongSetup, title="LONG Setup", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), text="LONG\nNEXT", textcolor=color.white, size=size.tiny)
+plotshape(newShortSetup, title="SHORT Setup", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SHORT\nNEXT", textcolor=color.white, size=size.tiny)
+
+bgcolor(mappingDir == 1 ? color.new(color.green, 94) : mappingDir == -1 ? color.new(color.red, 94) : na)
+
+profileText = profileM5 ? "M5" : profileM15 ? "M15" : profileH1 ? "H1" : "UNSUPPORTED"
+mapText = mappingDir == 1 ? "BULLISH" : mappingDir == -1 ? "BEARISH" : "WAIT"
+
+var table dash = table.new(position.bottom_right, 2, 12, bgcolor=color.new(color.black, 10), border_width=1, border_color=color.new(color.gray, 60))
+if showResearchDashboard and barstate.islast
+    table.clear(dash, 0, 0, 1, 11)
+    table.cell(dash, 0, 0, "AMY ICT STRATEGY", text_color=color.white, bgcolor=color.new(color.navy, 10), text_size=size.small)
+    table.cell(dash, 1, 0, profileText, text_color=color.white, bgcolor=color.new(color.navy, 10), text_size=size.small)
+    table.cell(dash, 0, 1, "Mapping", text_color=color.silver)
+    table.cell(dash, 1, 1, mapText, text_color=mappingDir == 1 ? color.lime : mappingDir == -1 ? color.red : color.yellow)
+    table.cell(dash, 0, 2, "Market State", text_color=color.silver)
+    table.cell(dash, 1, 2, marketState, text_color=marketBullConfirmed ? color.lime : marketBearConfirmed ? color.red : color.yellow)
+    table.cell(dash, 0, 3, "Forecast", text_color=color.silver)
+    table.cell(dash, 1, 3, forecastText, text_color=forecastDir == 1 ? color.lime : forecastDir == -1 ? color.red : color.yellow)
+    table.cell(dash, 0, 4, "Session", text_color=color.silver)
+    table.cell(dash, 1, 4, sessionText, text_color=profileSessionValid ? color.lime : color.gray)
+    table.cell(dash, 0, 5, "Sweep Memory", text_color=color.silver)
+    table.cell(dash, 1, 5, "SSL " + f_bool(entryRecentSellSweep) + " | BSL " + f_bool(entryRecentBuySweep), text_color=color.white)
+    table.cell(dash, 0, 6, "POI", text_color=color.silver)
+    table.cell(dash, 1, 6, "Bull " + f_bool(nearBullPoi) + " | Bear " + f_bool(nearBearPoi), text_color=color.white)
+    table.cell(dash, 0, 7, "Liquidity %", text_color=color.silver)
+    table.cell(dash, 1, 7, "BSL " + str.tostring(bslDrawPercent) + " | SSL " + str.tostring(sslDrawPercent), text_color=bslDrawPercent >= liquidityDirectionThreshold ? color.lime : sslDrawPercent >= liquidityDirectionThreshold ? color.red : color.yellow)
+    table.cell(dash, 0, 8, "Lifecycle", text_color=color.silver)
+    table.cell(dash, 1, 8, lifecycle, text_color=color.white)
+    table.cell(dash, 0, 9, "Entry / Stop", text_color=color.silver)
+    table.cell(dash, 1, 9, f_price(tradeEntry) + " / " + f_price(breakevenArmed ? tradeEntry : tradeStop), text_color=color.white)
+    table.cell(dash, 0, 10, "TP1 / TP2", text_color=color.silver)
+    table.cell(dash, 1, 10, f_price(tradeTp1) + " / " + f_price(tradeTp2), text_color=color.white)
+    table.cell(dash, 0, 11, "Size Mode", text_color=color.silver)
+    table.cell(dash, 1, 11, orderMode, text_color=color.white)
+else if barstate.islast
+    table.clear(dash, 0, 0, 1, 11)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+alertcondition(newLongSetup, title="AMY ICT Strategy LONG", message="AMY ICT NextGen Strategy LONG setup confirmed; market entry is scheduled for the next bar.")
+alertcondition(newShortSetup, title="AMY ICT Strategy SHORT", message="AMY ICT NextGen Strategy SHORT setup confirmed; market entry is scheduled for the next bar.")
