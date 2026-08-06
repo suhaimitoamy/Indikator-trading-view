@@ -1,0 +1,46 @@
+name: One-time Fix NextGen Strategy
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-time-fix-nextgen-strategy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'chore: trigger Pine timestamp fix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fix Pine constant timestamps
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('AMY_ICT_NextGen_Strategy_Research.pine')
+          text = path.read_text(encoding='utf-8')
+
+          old_start = 'startDate = input.time(timestamp(2019, 1, 1, 0, 0), "Backtest Start", group=grpTest)'
+          new_start = 'startDate = input.time(1546272000000, "Backtest Start", group=grpTest)  // 2019-01-01 00:00 WITA'
+          old_end = 'endDate = input.time(timestamp(2030, 12, 31, 23, 59), "Backtest End", group=grpTest)'
+          new_end = 'endDate = input.time(1924963140000, "Backtest End", group=grpTest)  // 2030-12-31 23:59 WITA'
+
+          if old_start not in text or old_end not in text:
+              raise SystemExit('Expected timestamp lines were not found; no file was changed.')
+
+          text = text.replace(old_start, new_start, 1)
+          text = text.replace(old_end, new_end, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AMY_ICT_NextGen_Strategy_Research.pine
+          git commit -m "fix: use constant WITA timestamps in Pine strategy"
+          git push
