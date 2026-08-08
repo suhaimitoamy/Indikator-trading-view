@@ -1,0 +1,266 @@
+name: Amy SMC X Round 4 Best-Of Rollback
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/amy-smc-x-round4-rollback-best.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Retain only Round 4 improvements
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-X.pine')
+          s = p.read_text()
+
+          def repl(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'{label} block not found')
+              s = s.replace(old, new, 1)
+
+          # Dealing Range: Round 4 improved M5 but reduced M15. Keep stricter profile on M5 only.
+          repl("bool amyDRLowerTF = not na(amyCurrentTfSec) and amyCurrentTfSec <= 900",
+               "bool amyDRLowerTF = timeframe.period == '5'",
+               'DR timeframe')
+
+          # Liquidity qualifiers: Round 4 improved M15 only; M5/H1 keep previous best qualifier.
+          old = """bool amyEventHTFBullOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH
+bool amyEventHTFBearOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH
+bool amySweepBearStructureOK = internalTrend.bias != BULLISH and (swingTrend.bias == BEARISH or amyEventHTFBearOK)
+bool amySweepBullStructureOK = internalTrend.bias != BEARISH and (swingTrend.bias == BULLISH or amyEventHTFBullOK)
+bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20 and amySweepBearStructureOK
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20 and amySweepBullStructureOK
+bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion and internalTrend.bias == BULLISH and amyEventHTFBullOK
+bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion and internalTrend.bias == BEARISH and amyEventHTFBearOK
+"""
+          new = """bool amyEventHTFBullOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH
+bool amyEventHTFBearOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH
+bool amyLiquidityRound4TF = timeframe.period == '15'
+bool amySweepBearStructureOK = internalTrend.bias != BULLISH and (swingTrend.bias == BEARISH or amyEventHTFBearOK)
+bool amySweepBullStructureOK = internalTrend.bias != BEARISH and (swingTrend.bias == BULLISH or amyEventHTFBullOK)
+bool amyQualifiedBSLSweepBase = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedSSLSweepBase = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedBSLValidBreakBase = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion
+bool amyQualifiedSSLValidBreakBase = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion
+bool amyQualifiedBSLSweep = amyQualifiedBSLSweepBase and (not amyLiquidityRound4TF or amySweepBearStructureOK)
+bool amyQualifiedSSLSweep = amyQualifiedSSLSweepBase and (not amyLiquidityRound4TF or amySweepBullStructureOK)
+bool amyQualifiedBSLValidBreak = amyQualifiedBSLValidBreakBase and (not amyLiquidityRound4TF or (internalTrend.bias == BULLISH and amyEventHTFBullOK))
+bool amyQualifiedSSLValidBreak = amyQualifiedSSLValidBreakBase and (not amyLiquidityRound4TF or (internalTrend.bias == BEARISH and amyEventHTFBearOK))
+"""
+          repl(old, new, 'liquidity qualifier')
+
+          # BOS/CHoCH Round 4 was worse on every tested TF. Restore Round 3 directional layer.
+          old = """// Directional qualification is stricter than the frozen OTE/Fib base qualifier.
+bool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and internalTrend.bias == BULLISH and amyEventHTFBullOK
+bool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and internalTrend.bias == BEARISH and amyEventHTFBearOK
+bool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH and internalTrend.bias == BULLISH and (amyEventHTFBullOK or amySSLSweep)
+bool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH and internalTrend.bias == BEARISH and (amyEventHTFBearOK or amyBSLSweep)
+"""
+          new = """// Round 3 directional qualification retained after Round 4 retest.
+// OTE/Fib still use the frozen base qualifier above.
+bool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and amyEventHTFBullOK
+bool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and amyEventHTFBearOK
+bool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH
+bool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH
+"""
+          repl(old, new, 'BOS CHoCH')
+
+          # FVG/OB context labels were not retained because the replay did not reproduce the historical raw lifecycle counts closely enough.
+          old = """            string gapName = gap.bias == BULLISH ? 'Bullish FVG' : 'Bearish FVG'
+            bool gapContextAligned = gap.bias == swingTrend.bias and internalTrend.bias != -gap.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == gap.bias)
+            string gapText = gapName + (gapContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\\n' + amyPrice(gap.top) + ' — ' + amyPrice(gap.bottom)
+            color gapTextColor = gapContextAligned ? (gap.bias == BULLISH ? GREEN : RED) : GRAY
+"""
+          new = """            string gapName = gap.bias == BULLISH ? 'Bullish FVG' : 'Bearish FVG'
+            string gapText = gapName + '\\n' + amyPrice(gap.top) + ' — ' + amyPrice(gap.bottom)
+            color gapTextColor = gap.bias == BULLISH ? GREEN : RED
+"""
+          repl(old, new, 'FVG label')
+
+          old = """            string obName = currentOB.bias == BULLISH ? 'Bullish Internal OB' : 'Bearish Internal OB'
+            bool obContextAligned = currentOB.bias == swingTrend.bias and internalTrend.bias != -currentOB.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == currentOB.bias)
+            string obText = obName + (obContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = obContextAligned ? (currentOB.bias == BULLISH ? GREEN : RED) : GRAY
+"""
+          new = """            string obName = currentOB.bias == BULLISH ? 'Bullish Internal OB' : 'Bearish Internal OB'
+            string obText = obName + '\\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = currentOB.bias == BULLISH ? GREEN : RED
+"""
+          repl(old, new, 'internal OB label')
+
+          old = """            string obName = currentOB.bias == BULLISH ? 'Bullish Swing OB' : 'Bearish Swing OB'
+            bool obContextAligned = currentOB.bias == swingTrend.bias and internalTrend.bias != -currentOB.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == currentOB.bias)
+            string obText = obName + (obContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = obContextAligned ? (currentOB.bias == BULLISH ? GREEN : RED) : GRAY
+"""
+          new = """            string obName = currentOB.bias == BULLISH ? 'Bullish Swing OB' : 'Bearish Swing OB'
+            string obText = obName + '\\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = currentOB.bias == BULLISH ? GREEN : RED
+"""
+          repl(old, new, 'swing OB label')
+
+          # Pattern: M5 Round 4 was worse, while M15/H1 improved. Retain best profile per tested TF.
+          old = """int amyPatternCandidate = amyPatternBiasActive
+int amyPatternVotes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias == amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias == amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias == amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive == amyPatternCandidate ? 1 : 0)
+int amyPatternOpposes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternCandidate ? 1 : 0)
+bool amyPatternReversal = amyLastPattern == 'Morning Star' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Hammer' or amyLastPattern == 'Shooting Star' or amyLastPattern == 'Bullish Pin Bar' or amyLastPattern == 'Bearish Pin Bar'
+bool amyPatternLocalBoth = amyPatternCandidate != 0 and amyCurrentSwingBias == amyPatternCandidate and amyCurrentInternalBias == amyPatternCandidate
+bool amyPatternLiquidityConfirm = amyPatternCandidate != 0 and amyLiquidityBiasActive == amyPatternCandidate
+bool amyPatternBearPriority = amyLastPattern == 'Bearish Engulfing' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Bearish Pin Bar'
+bool amyPatternBullish = amyPatternCandidate == BULLISH
+int amyPatternRequiredVotes = amyPatternBearPriority ? 2 : 3
+bool amyPatternConflictOK = amyPatternBearPriority ? amyPatternOpposes <= 1 : amyPatternOpposes == 0
+bool amyPatternBullExtra = not amyPatternBullish or amyPatternLiquidityConfirm or amyPatternLocalBoth
+bool amyPatternReversalExtra = not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth
+bool amyPatternContextQualified = amyPatternCandidate != 0 and amyPatternVotes >= amyPatternRequiredVotes and amyPatternConflictOK and amyPatternBullExtra and amyPatternReversalExtra
+amyPatternBiasActive := amyPatternContextQualified ? amyPatternCandidate : 0
+"""
+          new = """int amyPatternCandidate = amyPatternBiasActive
+int amyPatternVotes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias == amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias == amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias == amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive == amyPatternCandidate ? 1 : 0)
+int amyPatternOpposes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternCandidate ? 1 : 0)
+bool amyPatternReversal = amyLastPattern == 'Morning Star' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Hammer' or amyLastPattern == 'Shooting Star' or amyLastPattern == 'Bullish Pin Bar' or amyLastPattern == 'Bearish Pin Bar'
+bool amyPatternLocalBoth = amyPatternCandidate != 0 and amyCurrentSwingBias == amyPatternCandidate and amyCurrentInternalBias == amyPatternCandidate
+bool amyPatternLiquidityConfirm = amyPatternCandidate != 0 and amyLiquidityBiasActive == amyPatternCandidate
+bool amyPatternRound4TF = timeframe.period == '15' or timeframe.period == '60'
+bool amyPatternContextQualified = false
+if amyPatternCandidate != 0
+    if not amyPatternRound4TF
+        amyPatternContextQualified := amyPatternVotes >= 2 and amyPatternOpposes <= 1 and (not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth)
+    else
+        bool amyPatternBearPriority = amyLastPattern == 'Bearish Engulfing' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Bearish Pin Bar'
+        bool amyPatternBullish = amyPatternCandidate == BULLISH
+        int amyPatternRequiredVotes = amyPatternBearPriority ? 2 : 3
+        bool amyPatternConflictOK = amyPatternBearPriority ? amyPatternOpposes <= 1 : amyPatternOpposes == 0
+        bool amyPatternBullExtra = not amyPatternBullish or amyPatternLiquidityConfirm or amyPatternLocalBoth
+        bool amyPatternReversalExtra = not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth
+        amyPatternContextQualified := amyPatternVotes >= amyPatternRequiredVotes and amyPatternConflictOK and amyPatternBullExtra and amyPatternReversalExtra
+amyPatternBiasActive := amyPatternContextQualified ? amyPatternCandidate : 0
+"""
+          repl(old, new, 'pattern')
+
+          # Target + invalidation + confidence Round 4 were worse. Restore Round 3 behavior.
+          old = """float amyProtectedLow = not na(amyProtectedStrongLow) and amyProtectedStrongLow < close ? amyProtectedStrongLow : not na(swingLow.currentLevel) and swingLow.currentLevel < close ? swingLow.currentLevel : na
+float amyProtectedHigh = not na(amyProtectedStrongHigh) and amyProtectedStrongHigh > close ? amyProtectedStrongHigh : not na(swingHigh.currentLevel) and swingHigh.currentLevel > close ? swingHigh.currentLevel : na
+"""
+          new = """float amyProtectedLow = not na(swingLow.currentLevel) and swingLow.currentLevel < close ? swingLow.currentLevel : na
+float amyProtectedHigh = not na(swingHigh.currentLevel) and swingHigh.currentLevel > close ? swingHigh.currentLevel : na
+"""
+          repl(old, new, 'invalidation')
+
+          old = """int amyTargetCoreVotes = (amySafeHTFBias == amyNextDirection ? 1 : 0) + (amyCurrentSwingBias == amyNextDirection ? 1 : 0) + (amyCurrentInternalBias == amyNextDirection ? 1 : 0) + (amyLiquidityBiasActive == amyNextDirection ? 1 : 0)
+int amyTargetCoreOpposes = (amySafeHTFBias != 0 and amySafeHTFBias == -amyNextDirection ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyNextDirection ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyNextDirection ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyNextDirection ? 1 : 0)
+bool amyTargetHistoryOK = amyHistoryBias == 0 or amyHistoryBias == amyNextDirection
+bool amyTargetEligible = amyTargetCoreVotes >= 3 and amyTargetCoreOpposes <= 1 and amyTargetHistoryOK
+float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0
+// Keep anti-leak protection but avoid pushing the structural target unnecessarily far away.
+float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)
+float amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)
+float amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)
+float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)
+float amyBearTargetBase = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, amyBearTargetRef)
+float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh.currentLevel > amyBullTargetRef ? internalHigh.currentLevel : na
+float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
+float amyTargetCandidate = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
+float amyTarget = amyTargetEligible ? amyTargetCandidate : na
+"""
+          new = """float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0
+// Round 3 target retained: anti-leak stays active without the Round 4 over-filtering gate.
+float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)
+float amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)
+float amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)
+float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)
+float amyBearTargetBase = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, amyBearTargetRef)
+float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh.currentLevel > amyBullTargetRef ? internalHigh.currentLevel : na
+float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
+float amyTarget = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
+"""
+          repl(old, new, 'target')
+
+          old = """// Conservative calibration: prevent the weak 80-85 bucket from being reached casually.
+int amyConfidenceAvailable = 0
+int amyConfidenceAgree = 0
+int amyConfidenceOppose = 0
+if amySafeHTFBias != 0
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amySafeHTFBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amySafeHTFBias == -amyNextDirection ? 1 : 0
+if amyCurrentSwingBias != 0
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyCurrentSwingBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyCurrentSwingBias == -amyNextDirection ? 1 : 0
+if amyCurrentInternalBias != 0
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyCurrentInternalBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyCurrentInternalBias == -amyNextDirection ? 1 : 0
+if amyLiquidityBiasActive != 0
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyLiquidityBiasActive == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyLiquidityBiasActive == -amyNextDirection ? 1 : 0
+float amyConfidenceRaw = 45.0 + amyConfidenceAgree * 8.0 - amyConfidenceOppose * 10.0
+if amyHistoryBias != 0
+    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5.0 : -6.0
+if math.abs(amyNextRaw) < 18
+    amyConfidenceRaw -= 5.0
+if na(amyTarget)
+    amyConfidenceRaw -= 4.0
+bool amyConfidenceUnanimous = amyConfidenceAvailable >= 4 and amyConfidenceAgree == amyConfidenceAvailable and amyConfidenceOppose == 0 and (amyHistoryBias == 0 or amyHistoryBias == amyNextDirection) and not na(amyTarget)
+float amyConfidenceCap = amyConfidenceUnanimous ? 82.0 : 79.0
+int amyConfidence = int(math.round(math.max(35.0, math.min(amyConfidenceCap, amyConfidenceRaw))))
+"""
+          new = """// Round 3 confidence retained after Round 4 calibration reduced resolved accuracy.
+float amyConfidenceRaw = 50.0
+if amySafeHTFBias != 0
+    amyConfidenceRaw += amySafeHTFBias == amyNextDirection ? 8 : -8
+if amyCurrentSwingBias != 0
+    amyConfidenceRaw += amyCurrentSwingBias == amyNextDirection ? 10 : -10
+if amyCurrentInternalBias != 0
+    amyConfidenceRaw += amyCurrentInternalBias == amyNextDirection ? 6 : -6
+if amyLiquidityBiasActive != 0
+    amyConfidenceRaw += amyLiquidityBiasActive == amyNextDirection ? 6 : -6
+if amyHistoryBias != 0
+    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5 : -5
+if math.abs(amyNextRaw) < 18
+    amyConfidenceRaw -= 5
+int amyConfidence = int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw))))
+"""
+          repl(old, new, 'confidence')
+
+          # Higher-extension confidence flag did not improve M15 and reduced the eligible M5 subset. Restore previous display.
+          s = s.replace("var bool amyxExtendedEligible = false\n", "", 1)
+          s = s.replace("    amyxExtendedEligible := amyxImpulseDisplacement and amyxImpulseBody >= amyxImpulseAtr * 0.60 and amyxImpulseBodyRatio >= 0.60 and amyCurrentInternalBias == BULLISH and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH)\n", "", 1)
+          s = s.replace("    amyxExtendedEligible := amyxImpulseDisplacement and amyxImpulseBody >= amyxImpulseAtr * 0.60 and amyxImpulseBodyRatio >= 0.60 and amyCurrentInternalBias == BEARISH and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH)\n", "", 1)
+          s = s.replace("    amyxExtendedEligible := false\n", "", 1)
+          s = s.replace("color.new(amyxExtendedEligible ? amyxLegColor : GRAY, 15)", "color.new(amyxLegColor, 15)")
+          s = s.replace("amyxExtendedEligible ? amyxLegColor : GRAY", "amyxLegColor")
+          s = s.replace("(amyxExtendedEligible ? 'TP2 1.618  ' : 'TP2 1.618 LOW CONF  ') + amyPrice(amyxFib1618)", "'TP2 1.618  ' + amyPrice(amyxFib1618)")
+          s = s.replace("(amyxExtendedEligible ? 'MAX ' : 'MAX LOW CONF ') + amyxFibMaxInput + '  ' + amyPrice(amyxFibMax)", "'MAX ' + amyxFibMaxInput + '  ' + amyPrice(amyxFibMax)")
+
+          # Safety: passed checkpoints must remain present.
+          assert 'PASSED CHECKPOINT — OTE→1.272 M15: 85.71% (6/7)' in s
+          assert 'PASSED CHECKPOINT — Fib 1.272: M5 70.27% (26/37), M15 81.82% (9/11)' in s
+          assert 'amyPassedDRPremiumRatio = 0.65' in s and 'amyPassedDRDiscountRatio = 0.35' in s
+          assert 'amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15' in s
+          p.write_text(s)
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-X.pine
+          git diff --cached --check
+          test "$(git diff --cached --name-only | tr -d '\r')" = "Amy-SMC-X.pine"
+          git commit -m 'Retain best Round 4 Amy SMC X component profiles'
+          git push
