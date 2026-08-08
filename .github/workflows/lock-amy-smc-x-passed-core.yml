@@ -1,0 +1,58 @@
+name: Lock Amy SMC X Passed Core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lock-amy-smc-x-passed-core.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Isolate passed core logic
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-X.pine')
+          s = p.read_text()
+
+          old = """int amyCurrentSwingBias = swingTrend.bias\nint amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing\n\n// Structure is the foundation; short-lived pattern/liquidity only refine it.\nfloat amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyLiquidityBiasActive * 15 + amyDealingBias * 10 + amyPatternBiasActive * 10\n"""
+          new = """int amyCurrentSwingBias = swingTrend.bias\nint amyCurrentInternalBias = internalTrend.bias\nint amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing\n\n// PASSED CORE — Jun-Jul 2026 backtest checkpoint.\n// Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.\n// Dealing Range and Pattern remain visible/contextual but do not influence the accepted core until their own logic passes.\nfloat amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15\n"""
+          if old not in s:
+              raise SystemExit('Final Bias block not found')
+          s = s.replace(old, new, 1)
+
+          old = """int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0\nfloat amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyLiquidityBiasActive * 15 + amyDealingBias * 8 + amyPatternBiasActive * 7\nfloat amyNextRaw = amyHistoryScore * 0.55 + amyContextScore\n"""
+          new = """int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0\n// Next Move uses only accepted directional inputs. Event History remains the short-term refinement layer.\nfloat amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15\nfloat amyNextRaw = amyHistoryScore * 0.55 + amyContextScore\n"""
+          if old not in s:
+              raise SystemExit('Next Move block not found')
+          s = s.replace(old, new, 1)
+
+          old = """// Confidence measures agreement, not just absolute score magnitude.\nfloat amyConfidenceRaw = 50.0\nif amySafeHTFBias != 0\n    amyConfidenceRaw += amySafeHTFBias == amyNextDirection ? 8 : -8\nif amyCurrentSwingBias != 0\n    amyConfidenceRaw += amyCurrentSwingBias == amyNextDirection ? 10 : -10\nif amyLiquidityBiasActive != 0\n    amyConfidenceRaw += amyLiquidityBiasActive == amyNextDirection ? 6 : -6\nif amyDealingBias != 0\n    amyConfidenceRaw += amyDealingBias == amyNextDirection ? 4 : -4\nif amyPatternBiasActive != 0\n    amyConfidenceRaw += amyPatternBiasActive == amyNextDirection ? 3 : -3\nif amyHistoryBias != 0\n    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5 : -5\nif math.abs(amyNextRaw) < 18\n    amyConfidenceRaw -= 5\nint amyConfidence = int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw))))\n"""
+          new = """// Confidence measures agreement across accepted components only.\nfloat amyConfidenceRaw = 50.0\nif amySafeHTFBias != 0\n    amyConfidenceRaw += amySafeHTFBias == amyNextDirection ? 8 : -8\nif amyCurrentSwingBias != 0\n    amyConfidenceRaw += amyCurrentSwingBias == amyNextDirection ? 10 : -10\nif amyCurrentInternalBias != 0\n    amyConfidenceRaw += amyCurrentInternalBias == amyNextDirection ? 6 : -6\nif amyLiquidityBiasActive != 0\n    amyConfidenceRaw += amyLiquidityBiasActive == amyNextDirection ? 6 : -6\nif amyHistoryBias != 0\n    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5 : -5\nif math.abs(amyNextRaw) < 18\n    amyConfidenceRaw -= 5\nint amyConfidence = int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw))))\n"""
+          if old not in s:
+              raise SystemExit('Confidence block not found')
+          s = s.replace(old, new, 1)
+
+          # Scope guard: failed components must remain excluded from accepted directional outputs.
+          assert 'amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15' in s
+          assert 'amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15' in s
+          score_window = s[s.index('float amyFinalScore'):s.index('var table amyDashboard')]
+          assert 'amyDealingBias *' not in score_window
+          assert 'amyPatternBiasActive *' not in score_window
+
+          p.write_text(s)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-X.pine
+          git diff --cached --check
+          git commit -m 'Isolate Amy SMC X passed core logic'
+          git push
