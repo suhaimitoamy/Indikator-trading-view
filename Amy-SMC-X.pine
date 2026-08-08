@@ -1094,10 +1094,13 @@ else
     amyLiquidityDisplay := '-'
 
 int amyCurrentSwingBias = swingTrend.bias
+int amyCurrentInternalBias = internalTrend.bias
 int amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing
 
-// Structure is the foundation; short-lived pattern/liquidity only refine it.
-float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyLiquidityBiasActive * 15 + amyDealingBias * 10 + amyPatternBiasActive * 10
+// PASSED CORE — Jun-Jul 2026 backtest checkpoint.
+// Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.
+// Dealing Range and Pattern remain visible/contextual but do not influence the accepted core until their own logic passes.
+float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15
 int amyFinalBias = BULLISH
 if amyFinalScore > 0
     amyFinalBias := BULLISH
@@ -1129,7 +1132,8 @@ if amyEventCount > 0
         amyHistoryScore += eventDirection * eventStrength * ageWeight * orderWeight
 
 int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0
-float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyLiquidityBiasActive * 15 + amyDealingBias * 8 + amyPatternBiasActive * 7
+// Next Move uses only accepted directional inputs. Event History remains the short-term refinement layer.
+float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15
 float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
 int amyNextDirection = BULLISH
 if amyNextRaw > 0
@@ -1143,18 +1147,16 @@ string amyNextMove = amyNextDirection == BULLISH ? 'UP' : 'DOWN'
 float amyTarget = amyNextDirection == BULLISH ? amyForwardBSL : amyForwardSSL
 string amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'
 
-// Confidence measures agreement, not just absolute score magnitude.
+// Confidence measures agreement across accepted components only.
 float amyConfidenceRaw = 50.0
 if amySafeHTFBias != 0
     amyConfidenceRaw += amySafeHTFBias == amyNextDirection ? 8 : -8
 if amyCurrentSwingBias != 0
     amyConfidenceRaw += amyCurrentSwingBias == amyNextDirection ? 10 : -10
+if amyCurrentInternalBias != 0
+    amyConfidenceRaw += amyCurrentInternalBias == amyNextDirection ? 6 : -6
 if amyLiquidityBiasActive != 0
     amyConfidenceRaw += amyLiquidityBiasActive == amyNextDirection ? 6 : -6
-if amyDealingBias != 0
-    amyConfidenceRaw += amyDealingBias == amyNextDirection ? 4 : -4
-if amyPatternBiasActive != 0
-    amyConfidenceRaw += amyPatternBiasActive == amyNextDirection ? 3 : -3
 if amyHistoryBias != 0
     amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5 : -5
 if math.abs(amyNextRaw) < 18
