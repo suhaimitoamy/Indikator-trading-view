@@ -21,189 +21,39 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           p = Path('Amy-SMC-X.pine')
           s = p.read_text()
 
-          start_marker = "//---------------------------------------------------------------------------------------------------------------------}\n// AMD — Accumulation / Manipulation / Distribution\n//---------------------------------------------------------------------------------------------------------------------{\n"
-          end_marker = "\n//---------------------------------------------------------------------------------------------------------------------}\n// FIBONACCI EXTENSION — TP1 / TP2 / MAX\n//---------------------------------------------------------------------------------------------------------------------{\n"
+          s = s.replace("var int amyxAMDManipBar = na\nvar box amyxAMDBox = na", "var int amyxAMDManipBar = na\nvar int amyxAMDDistBar = na\nvar box amyxAMDBox = na\nvar label amyxAMDManLabel = na\nvar label amyxAMDDistLabel = na", 1)
 
-          if start_marker not in s or end_marker not in s:
-              raise SystemExit('AMD block markers not found')
+          old = "            amyxAMDStartBar := bar_index - amyxAMDLength\n            amyxAMDManipBar := na\n            if not na(amyxAMDBox)\n                box.delete(amyxAMDBox)\n            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 72), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)"
+          new = "            amyxAMDStartBar := bar_index - amyxAMDLength\n            amyxAMDManipBar := na\n            amyxAMDDistBar := na\n            if not na(amyxAMDBox)\n                box.delete(amyxAMDBox)\n            if not na(amyxAMDManLabel)\n                label.delete(amyxAMDManLabel)\n            if not na(amyxAMDDistLabel)\n                label.delete(amyxAMDDistLabel)\n            amyxAMDManLabel := na\n            amyxAMDDistLabel := na\n            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 65), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)"
+          if old not in s:
+              raise SystemExit('ACC start block not found')
+          s = s.replace(old, new, 1)
 
-          before, rest = s.split(start_marker, 1)
-          old_amd, after = rest.split(end_marker, 1)
+          s = s.replace("            amyAddChartLabel(bar_index, high + amyOffset * 3.0, 'MAN', true, RED)", "            if na(amyxAMDManLabel)\n                amyxAMDManLabel := label.new(bar_index, high + amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_down, textcolor = RED, size = size.tiny)", 1)
+          s = s.replace("            amyAddChartLabel(bar_index, low - amyOffset * 3.0, 'MAN', false, GREEN)", "            if na(amyxAMDManLabel)\n                amyxAMDManLabel := label.new(bar_index, low - amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_up, textcolor = GREEN, size = size.tiny)", 1)
 
-          new_amd = r'''
-float amyxAMDAtr = ta.atr(14)
-float amyxAMDCandidateHigh = ta.highest(high[1], amyxAMDLength)
-float amyxAMDCandidateLow = ta.lowest(low[1], amyxAMDLength)
-float amyxAMDCandidateRange = amyxAMDCandidateHigh - amyxAMDCandidateLow
-bool amyxAMDAccumCandidate = bar_index > amyxAMDLength and not na(amyxAMDAtr) and amyxAMDCandidateRange > 0 and amyxAMDCandidateRange <= amyxAMDAtr * amyxAMDRangeATR
+          old = "        if amyxBullDistribution\n            amyxAMDDistEvent := true\n            amyAddChartLabel(bar_index, high + amyOffset * 3.0, 'DIST', true, GREEN)\n            amyxAMDState := 0\n        else if amyxBearDistribution\n            amyxAMDDistEvent := true\n            amyAddChartLabel(bar_index, low - amyOffset * 3.0, 'DIST', false, RED)\n            amyxAMDState := 0\n        else if amyxBullInvalid or amyxBearInvalid or (not na(amyxAMDManipBar) and bar_index - amyxAMDManipBar > amyxAMDExpiry)\n            amyxAMDState := 0"
+          new = "        if amyxBullDistribution\n            amyxAMDDistEvent := true\n            amyxAMDDistBar := bar_index\n            if na(amyxAMDDistLabel)\n                amyxAMDDistLabel := label.new(bar_index, high + amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_down, textcolor = GREEN, size = size.tiny)\n            amyxAMDState := 3\n        else if amyxBearDistribution\n            amyxAMDDistEvent := true\n            amyxAMDDistBar := bar_index\n            if na(amyxAMDDistLabel)\n                amyxAMDDistLabel := label.new(bar_index, low - amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_up, textcolor = RED, size = size.tiny)\n            amyxAMDState := 3\n        else if amyxBullInvalid or amyxBearInvalid or (not na(amyxAMDManipBar) and bar_index - amyxAMDManipBar > amyxAMDExpiry)\n            amyxAMDState := 0\n            if not na(amyxAMDBox)\n                box.delete(amyxAMDBox)\n                amyxAMDBox := na\n            if not na(amyxAMDManLabel)\n                label.delete(amyxAMDManLabel)\n                amyxAMDManLabel := na"
+          if old not in s:
+              raise SystemExit('DIST block not found')
+          s = s.replace(old, new, 1)
 
-// Strict lifecycle:
-// 0 = waiting for ACC
-// 1 = ACC active, waiting for one MAN
-// 2 = MAN confirmed, waiting for DIST
-// 3 = completed ACC -> MAN -> DIST cycle
-var int amyxAMDState = 0
-var int amyxAMDDirection = 0
-var float amyxAMDHigh = na
-var float amyxAMDLow = na
-var int amyxAMDStartBar = na
-var int amyxAMDManipBar = na
-var int amyxAMDDistBar = na
-var box amyxAMDBox = na
-var label amyxAMDManLabel = na
-var label amyxAMDDistLabel = na
+          marker = "\nif not amyxShowAMD and barstate.islast\n"
+          state3 = "\n    else if amyxAMDState == 3\n        // Completed cycle stays visible as exactly ACC -> MAN -> DIST.\n        if not na(amyxAMDBox) and not na(amyxAMDDistBar)\n            box.set_right(amyxAMDBox, amyxAMDDistBar)\n        if not na(amyxAMDDistBar) and bar_index - amyxAMDDistBar >= 3\n            amyxAMDState := 0\n"
+          if marker not in s:
+              raise SystemExit('AMD off marker not found')
+          s = s.replace(marker, state3 + marker, 1)
 
-bool amyxAMDManipEvent = false
-bool amyxAMDDistEvent = false
+          old = "    if not na(amyxAMDBox)\n        box.delete(amyxAMDBox)\n        amyxAMDBox := na\n\n//---------------------------------------------------------------------------------------------------------------------}\n// FIBONACCI EXTENSION"
+          new = "    if not na(amyxAMDBox)\n        box.delete(amyxAMDBox)\n        amyxAMDBox := na\n    if not na(amyxAMDManLabel)\n        label.delete(amyxAMDManLabel)\n        amyxAMDManLabel := na\n    if not na(amyxAMDDistLabel)\n        label.delete(amyxAMDDistLabel)\n        amyxAMDDistLabel := na\n\n//---------------------------------------------------------------------------------------------------------------------}\n// FIBONACCI EXTENSION"
+          if old not in s:
+              raise SystemExit('AMD off cleanup block not found')
+          s = s.replace(old, new, 1)
 
-amyxStartNewAMD() =>
-    if not na(amyxAMDBox)
-        box.delete(amyxAMDBox)
-    if not na(amyxAMDManLabel)
-        label.delete(amyxAMDManLabel)
-    if not na(amyxAMDDistLabel)
-        label.delete(amyxAMDDistLabel)
-
-if barstate.isconfirmed and amyxShowAMD
-    if amyxAMDState == 0
-        if amyxAMDAccumCandidate
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-            if not na(amyxAMDManLabel)
-                label.delete(amyxAMDManLabel)
-            if not na(amyxAMDDistLabel)
-                label.delete(amyxAMDDistLabel)
-
-            amyxAMDBox := na
-            amyxAMDManLabel := na
-            amyxAMDDistLabel := na
-            amyxAMDState := 1
-            amyxAMDDirection := 0
-            amyxAMDHigh := amyxAMDCandidateHigh
-            amyxAMDLow := amyxAMDCandidateLow
-            amyxAMDStartBar := bar_index - amyxAMDLength
-            amyxAMDManipBar := na
-            amyxAMDDistBar := na
-            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 65), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
-
-    else if amyxAMDState == 1
-        if not na(amyxAMDBox)
-            box.set_right(amyxAMDBox, bar_index)
-
-        bool amyxSweepHigh = high > amyxAMDHigh and close < amyxAMDHigh
-        bool amyxSweepLow = low < amyxAMDLow and close > amyxAMDLow
-
-        if amyxSweepHigh and amyxSweepLow
-            float amyxUpperExcursion = high - amyxAMDHigh
-            float amyxLowerExcursion = amyxAMDLow - low
-            if amyxUpperExcursion >= amyxLowerExcursion
-                amyxSweepLow := false
-            else
-                amyxSweepHigh := false
-
-        if amyxSweepHigh
-            amyxAMDState := 2
-            amyxAMDDirection := BEARISH
-            amyxAMDManipBar := bar_index
-            amyxAMDManipEvent := true
-            if na(amyxAMDManLabel)
-                amyxAMDManLabel := label.new(bar_index, high + amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_down, textcolor = RED, size = size.tiny)
-
-        else if amyxSweepLow
-            amyxAMDState := 2
-            amyxAMDDirection := BULLISH
-            amyxAMDManipBar := bar_index
-            amyxAMDManipEvent := true
-            if na(amyxAMDManLabel)
-                amyxAMDManLabel := label.new(bar_index, low - amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_up, textcolor = GREEN, size = size.tiny)
-
-        else if bar_index - amyxAMDStartBar > amyxAMDExpiry
-            amyxAMDState := 0
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-                amyxAMDBox := na
-
-    else if amyxAMDState == 2
-        if not na(amyxAMDBox)
-            box.set_right(amyxAMDBox, bar_index)
-
-        bool amyxBullDistribution = amyxAMDDirection == BULLISH and close > amyxAMDHigh
-        bool amyxBearDistribution = amyxAMDDirection == BEARISH and close < amyxAMDLow
-        bool amyxBullInvalid = amyxAMDDirection == BULLISH and close < amyxAMDLow
-        bool amyxBearInvalid = amyxAMDDirection == BEARISH and close > amyxAMDHigh
-        bool amyxAMDExpiredAfterManip = not na(amyxAMDManipBar) and bar_index - amyxAMDManipBar > amyxAMDExpiry
-
-        if amyxBullDistribution
-            amyxAMDDistEvent := true
-            amyxAMDDistBar := bar_index
-            if na(amyxAMDDistLabel)
-                amyxAMDDistLabel := label.new(bar_index, high + amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_down, textcolor = GREEN, size = size.tiny)
-            amyxAMDState := 3
-
-        else if amyxBearDistribution
-            amyxAMDDistEvent := true
-            amyxAMDDistBar := bar_index
-            if na(amyxAMDDistLabel)
-                amyxAMDDistLabel := label.new(bar_index, low - amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_up, textcolor = RED, size = size.tiny)
-            amyxAMDState := 3
-
-        else if amyxBullInvalid or amyxBearInvalid or amyxAMDExpiredAfterManip
-            // Incomplete cycle is discarded so an orphan MAN never remains on chart.
-            amyxAMDState := 0
-            amyxAMDDirection := 0
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-                amyxAMDBox := na
-            if not na(amyxAMDManLabel)
-                label.delete(amyxAMDManLabel)
-                amyxAMDManLabel := na
-
-    else if amyxAMDState == 3
-        // Keep exactly one completed ACC -> MAN -> DIST cycle visible.
-        // Start a fresh cycle only after a short cooldown and a new valid accumulation.
-        if not na(amyxAMDBox)
-            box.set_right(amyxAMDBox, math.min(bar_index, nz(amyxAMDDistBar, bar_index)))
-
-        bool amyxAMDNewCycleReady = not na(amyxAMDDistBar) and bar_index - amyxAMDDistBar >= 3 and amyxAMDAccumCandidate
-        if amyxAMDNewCycleReady
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-            if not na(amyxAMDManLabel)
-                label.delete(amyxAMDManLabel)
-            if not na(amyxAMDDistLabel)
-                label.delete(amyxAMDDistLabel)
-
-            amyxAMDBox := na
-            amyxAMDManLabel := na
-            amyxAMDDistLabel := na
-            amyxAMDState := 1
-            amyxAMDDirection := 0
-            amyxAMDHigh := amyxAMDCandidateHigh
-            amyxAMDLow := amyxAMDCandidateLow
-            amyxAMDStartBar := bar_index - amyxAMDLength
-            amyxAMDManipBar := na
-            amyxAMDDistBar := na
-            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 65), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
-
-if not amyxShowAMD and barstate.islast
-    amyxAMDState := 0
-    amyxAMDDirection := 0
-    if not na(amyxAMDBox)
-        box.delete(amyxAMDBox)
-        amyxAMDBox := na
-    if not na(amyxAMDManLabel)
-        label.delete(amyxAMDManLabel)
-        amyxAMDManLabel := na
-    if not na(amyxAMDDistLabel)
-        label.delete(amyxAMDDistLabel)
-        amyxAMDDistLabel := na
-'''.lstrip('\n')
-
-          p.write_text(before + start_marker + new_amd + end_marker + after)
+          p.write_text(s)
           PY
 
           git config user.name "github-actions[bot]"
