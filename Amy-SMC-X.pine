@@ -924,15 +924,24 @@ float amyEventBodyRatio = amyEventRange > 0 ? amyEventBody / amyEventRange : 0.0
 bool amyEventDisplacement = not na(amyEventAtr) and amyEventBody >= amyEventAtr * 0.35 and amyEventBodyRatio >= 0.55
 float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08
 float amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05
+string amyHTF = amyAutoHTF()
+int amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)
 bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
 bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
 bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion
 bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion
 
-bool amyQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
-bool amyQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swingBearishBOS and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion
-bool amyQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
-bool amyQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion
+// Base structure qualification is frozen for OTE/Fibonacci because that layer already improved in the previous retest.
+bool amyBaseQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
+bool amyBaseQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swingBearishBOS and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion
+bool amyBaseQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
+bool amyBaseQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion
+
+// Directional BOS gets one extra confirmation from the accepted HTF Swing. CHoCH keeps the previous rule.
+bool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH)
+bool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH)
+bool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH
+bool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH
 
 if amyBSLSweep
     amyLastSweptHigh := amyBSL
@@ -1106,9 +1115,6 @@ amyNearestBelow6(float a, float b, float c, float d, float e, float f, float ref
         result := f
     result
 
-string amyHTF = amyAutoHTF()
-int amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)
-
 var float amyDRTop = na
 var float amyDRBottom = na
 var int amyDRBias = 0
@@ -1181,10 +1187,13 @@ else
 int amyCurrentSwingBias = swingTrend.bias
 int amyCurrentInternalBias = internalTrend.bias
 int amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing
-bool amyPatternHTFConflict = amyPatternBiasActive != 0 and amySafeHTFBias != 0 and amyPatternBiasActive != amySafeHTFBias
-bool amyPatternStrongLocal = amyPatternBiasActive != 0 and amyPatternBiasActive == amyCurrentSwingBias and amyPatternBiasActive == amyCurrentInternalBias
-bool amyPatternLocationAligned = amyPatternBiasActive == BULLISH ? amyDealingRange != 'PREMIUM' : amyPatternBiasActive == BEARISH ? amyDealingRange != 'DISCOUNT' : false
-amyPatternBiasActive := amyPatternBiasActive != 0 and amyPatternLocationAligned and (not amyPatternHTFConflict or amyPatternStrongLocal) ? amyPatternBiasActive : 0
+int amyPatternVotes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias == amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive == amyPatternBiasActive ? 1 : 0)
+int amyPatternOpposes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternBiasActive ? 1 : 0)
+bool amyPatternReversal = amyLastPattern == 'Morning Star' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Hammer' or amyLastPattern == 'Shooting Star' or amyLastPattern == 'Bullish Pin Bar' or amyLastPattern == 'Bearish Pin Bar'
+bool amyPatternLocalBoth = amyPatternBiasActive != 0 and amyCurrentSwingBias == amyPatternBiasActive and amyCurrentInternalBias == amyPatternBiasActive
+bool amyPatternLiquidityConfirm = amyPatternBiasActive != 0 and amyLiquidityBiasActive == amyPatternBiasActive
+bool amyPatternContextQualified = amyPatternBiasActive != 0 and amyPatternVotes >= 2 and amyPatternOpposes <= 1 and (not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth)
+amyPatternBiasActive := amyPatternContextQualified ? amyPatternBiasActive : 0
 
 // PASSED CORE — Jun-Jul 2026 backtest checkpoint.
 // Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.
@@ -1236,8 +1245,15 @@ else
 
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : 'DOWN'
 float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0
-float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.50, amyTargetRiskDistance * 0.75)
-float amyTarget = amyNextDirection == BULLISH ? amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, close + amyTargetMinDistance) : amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, close - amyTargetMinDistance)
+// Keep anti-leak protection but avoid pushing the structural target unnecessarily far away.
+float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)
+float amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)
+float amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)
+float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)
+float amyBearTargetBase = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, amyBearTargetRef)
+float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh.currentLevel > amyBullTargetRef ? internalHigh.currentLevel : na
+float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
+float amyTarget = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
 string amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'
 
 // Confidence measures agreement across accepted components only.
@@ -1344,8 +1360,8 @@ float amyxImpulseRange = high - low
 float amyxImpulseBody = math.abs(close - open)
 float amyxImpulseBodyRatio = amyxImpulseRange > 0 ? amyxImpulseBody / amyxImpulseRange : 0.0
 bool amyxImpulseDisplacement = not na(amyxImpulseAtr) and amyxImpulseBody >= amyxImpulseAtr * 0.45 and amyxImpulseBodyRatio >= 0.55
-bool amyxBullStructureEvent = (amyQualifiedSwingBullBOS or amyQualifiedSwingBullCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH) and amyCurrentInternalBias != BEARISH and close >= high - amyxImpulseRange * 0.25
-bool amyxBearStructureEvent = (amyQualifiedSwingBearBOS or amyQualifiedSwingBearCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH) and amyCurrentInternalBias != BULLISH and close <= low + amyxImpulseRange * 0.25
+bool amyxBullStructureEvent = (amyBaseQualifiedSwingBullBOS or amyBaseQualifiedSwingBullCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH) and amyCurrentInternalBias != BEARISH and close >= high - amyxImpulseRange * 0.25
+bool amyxBearStructureEvent = (amyBaseQualifiedSwingBearBOS or amyBaseQualifiedSwingBearCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH) and amyCurrentInternalBias != BULLISH and close <= low + amyxImpulseRange * 0.25
 
 if amyxBullStructureEvent and not na(swingLow.currentLevel)
     amyxLockedBottom := swingLow.currentLevel
