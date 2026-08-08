@@ -924,10 +924,8 @@ float amyEventBodyRatio = amyEventRange > 0 ? amyEventBody / amyEventRange : 0.0
 bool amyEventDisplacement = not na(amyEventAtr) and amyEventBody >= amyEventAtr * 0.35 and amyEventBodyRatio >= 0.55
 float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08
 float amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05
-bool amyBearishRejection = close < open or close <= math.avg(high, low)
-bool amyBullishRejection = close > open or close >= math.avg(high, low)
-bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and amyBearishRejection
-bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and amyBullishRejection
+bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
 bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion
 bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion
 
