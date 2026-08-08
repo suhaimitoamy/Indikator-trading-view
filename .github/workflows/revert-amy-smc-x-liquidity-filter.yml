@@ -1,0 +1,44 @@
+name: Restore Amy SMC X Liquidity Filter
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/revert-amy-smc-x-liquidity-filter.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Restore better-performing sweep qualification
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('Amy-SMC-X.pine')
+          s=p.read_text()
+          old="""bool amyBearishRejection = close < open or close <= math.avg(high, low)
+bool amyBullishRejection = close > open or close >= math.avg(high, low)
+bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and amyBearishRejection
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and amyBullishRejection
+"""
+          new="""bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
+"""
+          if old not in s:
+              raise SystemExit('current sweep qualification block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - name: Commit indicator
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-X.pine
+          git diff --cached --check
+          git commit -m 'Restore better Amy SMC X liquidity qualification'
+          git push
