@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=5
-indicator('Amy SMC X', 'Amy SMC X', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('Amy SMC Y', 'Amy SMC Y', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
@@ -668,6 +668,11 @@ alertcondition(currentAlerts.bullishFairValueGap,       'Bullish FVG',          
 alertcondition(currentAlerts.bearishFairValueGap,       'Bearish FVG',                  'Bearish FVG formed')
 
 //---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC Y DEVELOPMENT COPY
+// Baseline: finalized Amy SMC X after the 2010–2026 full-history validation.
+// NON-PREDICTIVE LOCK: structure/context modules that already perform their descriptive/functional jobs are inherited unchanged.
+// Development scope for Amy SMC Y is the predictive layer unless the user explicitly changes that rule.
+
 // AMY SMC ADD-ON
 // Dashboard + Chart Context
 //---------------------------------------------------------------------------------------------------------------------{
@@ -1406,7 +1411,7 @@ alertcondition(amyQualifiedBSLValidBreak or amyQualifiedSSLValidBreak, 'Valid Br
 alertcondition(barstate.isconfirmed and amyPatternBiasActive != 0, 'Candlestick Pattern', 'Context-qualified candlestick pattern detected')
 
 //---------------------------------------------------------------------------------------------------------------------}
-// AMY SMC X — INDEPENDENT CHART MODULES
+// AMY SMC Y — INDEPENDENT CHART MODULES
 // OTE / Fibonacci Extension
 //---------------------------------------------------------------------------------------------------------------------{
 
