@@ -1,0 +1,37 @@
+name: Amy SMC Y Round 4 Best-Of Fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/amy-smc-y-round4-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply Round 4 best-of fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          x_before="$(git hash-object Amy-SMC-X.pine)"
+          original_before="$(git hash-object Amy-SMC.pine)"
+          python .github/scripts/amy_smc_y_round4_fix.py
+          test "$(git hash-object Amy-SMC-X.pine)" = "$x_before"
+          test "$(git hash-object Amy-SMC.pine)" = "$original_before"
+          git add Amy-SMC-Y.pine
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | tr -d '\r')"
+          test "$changed" = 'Amy-SMC-Y.pine'
+          git commit -m 'Retain best Amy SMC Y round 4 CHoCH profile'
+          git push
