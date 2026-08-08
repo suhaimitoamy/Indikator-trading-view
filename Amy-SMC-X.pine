@@ -1254,9 +1254,11 @@ if amyPatternCandidate != 0
 bool amyPatternNameAllowed = amyRound5M5 ? (amyLastPattern == 'Morning Star' or amyLastPattern == 'Bullish Pin Bar') : amyRound5M15 ? amyLastPattern != 'Bearish Engulfing' : amyRound5H1 ? (amyLastPattern != 'Bearish Engulfing' and amyLastPattern != 'Evening Star') : true
 amyPatternBiasActive := amyPatternContextQualified and amyPatternNameAllowed ? amyPatternCandidate : 0
 
-// PASSED CORE — Jun-Jul 2026 backtest checkpoint.
-// Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.
-// Dealing Range and Pattern remain visible/contextual but do not influence the accepted core until their own logic passes.
+// FINAL ALL-PASSED CHECKPOINT — all accepted Amy SMC X modules are consolidated in this file.
+// Final Bias keeps the already-passed core weights (HTF Swing, Swing Structure, Internal Structure, Liquidity Context).
+// Pattern / qualified CHoCH / qualified Valid Break stay as independent confirmation layers instead of being double-counted
+// into Final Bias, because their evidence is derived from the same underlying structure/liquidity state. Their best passed
+// filters remain active for chart labels, alerts and downstream Target qualification.
 float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15
 int amyFinalBias = BULLISH
 if amyFinalScore > 0
@@ -1291,7 +1293,8 @@ if amyEventCount > 0
         amyHistoryScore += eventDirection * eventStrength * ageWeight * orderWeight
 
 int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0
-// Next Move uses only accepted directional inputs. Event History remains the short-term refinement layer.
+// FINAL ALL-PASSED NEXT MOVE — preserve the passed directional core and Event History refinement.
+// Newly passed predictive modules remain corroboration layers, preventing correlated signals from being counted twice.
 float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15
 float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
 int amyNextDirection = BULLISH
@@ -1387,6 +1390,12 @@ if barstate.islast
         for dashboardRow = 0 to 15
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
+
+// FINAL CONSOLIDATION LOCK
+// Passed modules present in Amy SMC X: Internal/Swing/HTF structure, Liquidity Context, Event History, Next Move,
+// Final Bias, EQH/EQL, Weak/Strong H-L, Daily/Weekly/Monthly H-L, Dealing Range, FVG, Order Block, Invalidation,
+// Confidence, OTE, Fibonacci Extension, Pattern, qualified BOS/CHoCH, qualified Sweep/Valid Break, and Target.
+// Future tuning must not overwrite a better passed profile with a worse result.
 
 alertcondition(amyQualifiedBSLSweep or amyQualifiedSSLSweep, 'Liquidity Sweep', 'Qualified liquidity sweep detected')
 alertcondition(amyQualifiedBSLValidBreak or amyQualifiedSSLValidBreak, 'Valid Break', 'Qualified structure/liquidity break detected')
