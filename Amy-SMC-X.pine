@@ -678,8 +678,8 @@ AMY_CHART_GROUP = 'Amy Chart'
 amyShowDashboard     = input.bool(true, 'Show Dashboard', group = AMY_DASH_GROUP)
 amyShowEvents        = input.bool(true, 'Sweep / Valid Break', group = AMY_CHART_GROUP)
 amyShowPatterns      = input.bool(true, 'Candlestick Patterns', group = AMY_CHART_GROUP)
-amyShowBoxPrices     = input.bool(true, 'FVG / OB Prices', group = AMY_CHART_GROUP)
-amyShowLevelPrices   = input.bool(true, 'EQH/EQL + Strong/Weak Prices', group = AMY_CHART_GROUP)
+amyShowBoxPrices     = input.bool(false, 'FVG / OB Prices', group = AMY_CHART_GROUP)
+amyShowLevelPrices   = input.bool(false, 'EQH/EQL + Strong/Weak Prices', group = AMY_CHART_GROUP)
 
 amyPrice(float value) =>
     na(value) ? '-' : str.tostring(value, format.mintick)
@@ -836,7 +836,7 @@ var array<label> amyChartLabels = array.new<label>()
 amyAddChartLabel(int labelIndex, float labelPrice, string labelText, bool above, color labelColor) =>
     label newLabel = label.new(labelIndex, labelPrice, labelText, xloc = xloc.bar_index, yloc = yloc.price, color = color.new(labelColor, 83), style = above ? label.style_label_down : label.style_label_up, textcolor = labelColor, size = size.tiny)
     array.push(amyChartLabels, newLabel)
-    if array.size(amyChartLabels) > 80
+    if array.size(amyChartLabels) > 3
         label.delete(array.shift(amyChartLabels))
 
 [amyPatternNow, amyPatternDirNow] = amyDetectPattern()
@@ -1141,7 +1141,7 @@ AMYX_AMD_GROUP = 'Amy AMD'
 AMYX_FIB_GROUP = 'Amy Fibonacci Extension'
 
 amyxShowOTE       = input.bool(true, 'Show OTE', group = AMYX_OTE_GROUP)
-amyxOTEExtendBars = input.int(20, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_OTE_GROUP)
+amyxOTEExtendBars = input.int(12, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_OTE_GROUP)
 
 amyxShowAMD       = input.bool(true, 'Show AMD', group = AMYX_AMD_GROUP)
 amyxAMDLength     = input.int(12, 'Accumulation Bars', minval = 5, maxval = 50, group = AMYX_AMD_GROUP)
@@ -1149,7 +1149,7 @@ amyxAMDRangeATR   = input.float(3.0, 'Max Range × ATR', minval = 1.0, maxval = 
 amyxAMDExpiry     = input.int(36, 'Cycle Expiry Bars', minval = 10, maxval = 150, group = AMYX_AMD_GROUP)
 
 amyxShowFib       = input.bool(true, 'Show Fibonacci Extension', group = AMYX_FIB_GROUP)
-amyxFibExtendBars = input.int(20, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_FIB_GROUP)
+amyxFibExtendBars = input.int(12, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_FIB_GROUP)
 amyxFibMaxInput   = input.string('2.000', 'Max Extension', options = ['2.000', '2.618'], group = AMYX_FIB_GROUP)
 
 float amyxSwingTop = swingHigh.currentLevel
@@ -1250,7 +1250,7 @@ if barstate.isconfirmed and amyxShowAMD
             amyxAMDManipBar := na
             if not na(amyxAMDBox)
                 box.delete(amyxAMDBox)
-            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 92), border_color = color.new(BLUE, 55), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 72), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
     else if amyxAMDState == 1
         if not na(amyxAMDBox)
             box.set_right(amyxAMDBox, bar_index)
