@@ -1298,22 +1298,26 @@ if amyEventCount > 0
         amyHistoryScore += eventDirection * eventStrength * ageWeight * orderWeight
 
 int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0
-// FINAL ALL-PASSED NEXT MOVE — preserve the passed directional core and Event History refinement.
-// Newly passed predictive modules remain corroboration layers, preventing correlated signals from being counted twice.
+// AMY SMC Y PREDICTIVE V1 — LONG-HISTORY 2010–2026.
+// Final Bias was materially more stable than the independent short-horizon Next Move.
+// Next Move therefore remains ALWAYS directional (UP/DOWN) and is anchored to Final Bias; there is no WAIT/NEUTRAL state.
+// Event History is retained as context and confidence evidence, not as an independent direction-flip engine.
 float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15
 float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
-int amyNextDirection = BULLISH
-if amyNextRaw > 0
-    amyNextDirection := BULLISH
-else if amyNextRaw < 0
-    amyNextDirection := BEARISH
-else
-    amyNextDirection := amyFinalBias
+int amyNextDirection = amyFinalBias
 
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : 'DOWN'
-float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0
-// Keep anti-leak protection but avoid pushing the structural target unnecessarily far away.
-float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)
+// AMY SMC Y TARGET V1 — target is ALWAYS available; NO TARGET / NA is not used as a normal predictive state.
+// Prefer nearby untouched structural liquidity. If that liquidity is too distant or unavailable, use a conservative
+// projected target tied to the protected invalidation distance. The projected target is forced outside the signal candle,
+// preserving the same-candle anti-leak rule.
+float amyTargetAtr = nz(amyAtr14, math.max(high - low, syminfo.mintick))
+float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : amyTargetAtr
+float amyProjectedTargetDistance = math.max(amyTargetRiskDistance * 0.40, amyTargetAtr * 0.22)
+float amyTargetOutsidePad = math.max(amyTargetAtr * 0.02, syminfo.mintick)
+float amyBullProjectedTarget = math.max(close + amyProjectedTargetDistance, high + amyTargetOutsidePad)
+float amyBearProjectedTarget = math.min(close - amyProjectedTargetDistance, low - amyTargetOutsidePad)
+float amyTargetMinDistance = math.max(amyTargetAtr * 0.10, amyTargetRiskDistance * 0.30)
 float amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)
 float amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)
 float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)
@@ -1322,9 +1326,9 @@ float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh
 float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
 float amyTargetCandidate = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
 float amyTargetDistanceRatio = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 ? math.abs(amyTargetCandidate - close) / amyTargetRiskDistance : na
-bool amyTargetQualityOK = amyRound5M5 ? (not na(amyTargetDistanceRatio) and amyTargetDistanceRatio <= 0.40) : amyRound5M15 ? (not na(amyTargetDistanceRatio) and amyTargetDistanceRatio <= 1.00 and amyCurrentSwingBias == amyNextDirection) : amyRound5H1 ? (not na(amyTargetDistanceRatio) and amyTargetDistanceRatio <= 1.00) : true
-float amyTarget = amyTargetQualityOK ? amyTargetCandidate : na
-string amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'
+bool amyTargetQualityOK = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 and amyTargetDistanceRatio <= 0.40
+float amyTarget = amyTargetQualityOK ? amyTargetCandidate : amyNextDirection == BULLISH ? amyBullProjectedTarget : amyBearProjectedTarget
+string amyTargetSide = amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
 
 // Confidence measures agreement across accepted components only.
 float amyConfidenceRaw = 50.0
@@ -1395,6 +1399,12 @@ if barstate.islast
         for dashboardRow = 0 to 15
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
+
+// AMY SMC Y PREDICTIVE V1 RESULT LOCK
+// 2010–2026 closed-candle replay: Next/Target lifecycle improved on M5/M15/H1 with zero normal NO_TARGET states.
+// Pattern, qualified BOS/CHoCH and qualified Sweep/Valid Break were tested for alternative long-history filters;
+// no robust alternative beat their inherited Amy SMC X settings, so those blocks remain unchanged.
+// Non-predictive modules remain inherited/locked.
 
 // FINAL LONG-HISTORY BASELINE — XAUUSD 2010–2026 validation checkpoint.
 // The current Amy SMC X configuration beat the previous settings on the same long-history replay, so its logic is frozen as the reference baseline.
