@@ -1,0 +1,38 @@
+name: Amy SMC Y Predictive Round 3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/amy-smc-y-round3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  round3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply Amy SMC Y Round 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          x_before="$(git hash-object Amy-SMC-X.pine)"
+          original_before="$(git hash-object Amy-SMC.pine)"
+          python .github/scripts/amy_smc_y_round3.py
+          test "$(git hash-object Amy-SMC-X.pine)" = "$x_before"
+          test "$(git hash-object Amy-SMC.pine)" = "$original_before"
+          git add Amy-SMC-Y.pine
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | tr -d '\r')"
+          printf '%s\n' "$changed"
+          test "$changed" = 'Amy-SMC-Y.pine'
+          git commit -m 'Improve Amy SMC Y predictive round 3'
+          git push
