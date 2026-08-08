@@ -1234,7 +1234,10 @@ var float amyxAMDHigh = na
 var float amyxAMDLow = na
 var int amyxAMDStartBar = na
 var int amyxAMDManipBar = na
+var int amyxAMDDistBar = na
 var box amyxAMDBox = na
+var label amyxAMDManLabel = na
+var label amyxAMDDistLabel = na
 
 bool amyxAMDManipEvent = false
 bool amyxAMDDistEvent = false
@@ -1248,9 +1251,16 @@ if barstate.isconfirmed and amyxShowAMD
             amyxAMDLow := amyxAMDCandidateLow
             amyxAMDStartBar := bar_index - amyxAMDLength
             amyxAMDManipBar := na
+            amyxAMDDistBar := na
             if not na(amyxAMDBox)
                 box.delete(amyxAMDBox)
-            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 72), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+            if not na(amyxAMDManLabel)
+                label.delete(amyxAMDManLabel)
+            if not na(amyxAMDDistLabel)
+                label.delete(amyxAMDDistLabel)
+            amyxAMDManLabel := na
+            amyxAMDDistLabel := na
+            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 65), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
     else if amyxAMDState == 1
         if not na(amyxAMDBox)
             box.set_right(amyxAMDBox, bar_index)
@@ -1271,13 +1281,15 @@ if barstate.isconfirmed and amyxShowAMD
             amyxAMDDirection := BEARISH
             amyxAMDManipBar := bar_index
             amyxAMDManipEvent := true
-            amyAddChartLabel(bar_index, high + amyOffset * 3.0, 'MAN', true, RED)
+            if na(amyxAMDManLabel)
+                amyxAMDManLabel := label.new(bar_index, high + amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_down, textcolor = RED, size = size.tiny)
         else if amyxSweepLow
             amyxAMDState := 2
             amyxAMDDirection := BULLISH
             amyxAMDManipBar := bar_index
             amyxAMDManipEvent := true
-            amyAddChartLabel(bar_index, low - amyOffset * 3.0, 'MAN', false, GREEN)
+            if na(amyxAMDManLabel)
+                amyxAMDManLabel := label.new(bar_index, low - amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_up, textcolor = GREEN, size = size.tiny)
         else if bar_index - amyxAMDStartBar > amyxAMDExpiry
             amyxAMDState := 0
             if not na(amyxAMDBox)
@@ -1294,13 +1306,30 @@ if barstate.isconfirmed and amyxShowAMD
 
         if amyxBullDistribution
             amyxAMDDistEvent := true
-            amyAddChartLabel(bar_index, high + amyOffset * 3.0, 'DIST', true, GREEN)
-            amyxAMDState := 0
+            amyxAMDDistBar := bar_index
+            if na(amyxAMDDistLabel)
+                amyxAMDDistLabel := label.new(bar_index, high + amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_down, textcolor = GREEN, size = size.tiny)
+            amyxAMDState := 3
         else if amyxBearDistribution
             amyxAMDDistEvent := true
-            amyAddChartLabel(bar_index, low - amyOffset * 3.0, 'DIST', false, RED)
-            amyxAMDState := 0
+            amyxAMDDistBar := bar_index
+            if na(amyxAMDDistLabel)
+                amyxAMDDistLabel := label.new(bar_index, low - amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_up, textcolor = RED, size = size.tiny)
+            amyxAMDState := 3
         else if amyxBullInvalid or amyxBearInvalid or (not na(amyxAMDManipBar) and bar_index - amyxAMDManipBar > amyxAMDExpiry)
+            amyxAMDState := 0
+            if not na(amyxAMDBox)
+                box.delete(amyxAMDBox)
+                amyxAMDBox := na
+            if not na(amyxAMDManLabel)
+                label.delete(amyxAMDManLabel)
+                amyxAMDManLabel := na
+
+    else if amyxAMDState == 3
+        // Completed cycle stays visible as exactly ACC -> MAN -> DIST.
+        if not na(amyxAMDBox) and not na(amyxAMDDistBar)
+            box.set_right(amyxAMDBox, amyxAMDDistBar)
+        if not na(amyxAMDDistBar) and bar_index - amyxAMDDistBar >= 3
             amyxAMDState := 0
 
 if not amyxShowAMD and barstate.islast
@@ -1309,6 +1338,12 @@ if not amyxShowAMD and barstate.islast
     if not na(amyxAMDBox)
         box.delete(amyxAMDBox)
         amyxAMDBox := na
+    if not na(amyxAMDManLabel)
+        label.delete(amyxAMDManLabel)
+        amyxAMDManLabel := na
+    if not na(amyxAMDDistLabel)
+        label.delete(amyxAMDDistLabel)
+        amyxAMDDistLabel := na
 
 //---------------------------------------------------------------------------------------------------------------------}
 // FIBONACCI EXTENSION — TP1 / TP2 / MAX
