@@ -1400,7 +1400,7 @@ if barstate.isconfirmed and amyxShowAMD
             box.set_right(amyxAMDBox, bar_index)
 
         float amyxAMDMinExcursion = math.max(amyxAMDAtr * 0.12, syminfo.mintick * 3)
-        float amyxAMDInsideMargin = amyxAMDCandidateRange * 0.05
+        float amyxAMDInsideMargin = (amyxAMDHigh - amyxAMDLow) * 0.05
         bool amyxSweepHigh = high >= amyxAMDHigh + amyxAMDMinExcursion and close <= amyxAMDHigh - amyxAMDInsideMargin
         bool amyxSweepLow = low <= amyxAMDLow - amyxAMDMinExcursion and close >= amyxAMDLow + amyxAMDInsideMargin
 
