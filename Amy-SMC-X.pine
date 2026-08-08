@@ -842,17 +842,35 @@ amyAddChartLabel(int labelIndex, float labelPrice, string labelText, bool above,
 [amyPatternNow, amyPatternDirNow] = amyDetectPattern()
 var string amyLastPattern = 'NONE'
 var int amyLastPatternDir = 0
+var int amyLastPatternBar = na
+var float amyLastPatternY = na
+var bool amyLastPatternAbove = false
+var color amyLastPatternColor = GRAY
+var label amyLatestPatternLabel = na
 float amyAtr14 = ta.atr(14)
 float amyOffset = math.max(nz(amyAtr14, high - low) * 0.30, syminfo.mintick * 10)
 
 if barstate.isconfirmed and amyPatternNow != 'NONE'
     amyLastPattern := amyPatternNow
     amyLastPatternDir := amyPatternDirNow
-    if amyShowPatterns
-        bool patternAbove = amyPatternDirNow <= 0
-        float patternY = patternAbove ? high + amyOffset * 2.0 : low - amyOffset * 2.0
-        color patternColor = amyPatternDirNow == BULLISH ? GREEN : amyPatternDirNow == BEARISH ? RED : GRAY
-        amyAddChartLabel(bar_index, patternY, amyPatternNow, patternAbove, patternColor)
+    amyLastPatternBar := bar_index
+    amyLastPatternAbove := amyPatternDirNow <= 0
+    amyLastPatternY := amyLastPatternAbove ? high + amyOffset * 2.0 : low - amyOffset * 2.0
+    amyLastPatternColor := amyPatternDirNow == BULLISH ? GREEN : amyPatternDirNow == BEARISH ? RED : GRAY
+
+if barstate.islast
+    if amyShowPatterns and not na(amyLastPatternBar) and amyLastPattern != 'NONE'
+        if na(amyLatestPatternLabel)
+            amyLatestPatternLabel := label.new(amyLastPatternBar, amyLastPatternY, amyLastPattern, xloc = xloc.bar_index, yloc = yloc.price, color = color.new(amyLastPatternColor, 83), style = amyLastPatternAbove ? label.style_label_down : label.style_label_up, textcolor = amyLastPatternColor, size = size.tiny)
+        else
+            label.set_xy(amyLatestPatternLabel, amyLastPatternBar, amyLastPatternY)
+            label.set_text(amyLatestPatternLabel, amyLastPattern)
+            label.set_color(amyLatestPatternLabel, color.new(amyLastPatternColor, 83))
+            label.set_textcolor(amyLatestPatternLabel, amyLastPatternColor)
+            label.set_style(amyLatestPatternLabel, amyLastPatternAbove ? label.style_label_down : label.style_label_up)
+    else if not na(amyLatestPatternLabel)
+        label.delete(amyLatestPatternLabel)
+        amyLatestPatternLabel := na
 
 var float amyLastSweptHigh = na
 var float amyLastSweptLow  = na
@@ -1055,7 +1073,7 @@ float amyMaxScore = 137.5
 float amyConfidenceRaw = 50 + math.min(50, math.abs(amyNextRaw) / amyMaxScore * 50)
 int amyConfidence = int(math.round(amyConfidenceRaw))
 
-var table amyDashboard = table.new(position.top_right, 2, 16, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
+var table amyDashboard = table.new(position.bottom_right, 2, 16, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
 
 if barstate.isfirst
     table.merge_cells(amyDashboard, 0, 0, 1, 0)
