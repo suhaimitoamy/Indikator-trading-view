@@ -926,10 +926,14 @@ float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08
 float amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05
 string amyHTF = amyAutoHTF()
 int amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)
-bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
-bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
-bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion
-bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion
+bool amyEventHTFBullOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH
+bool amyEventHTFBearOK = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH
+bool amySweepBearStructureOK = internalTrend.bias != BULLISH and (swingTrend.bias == BEARISH or amyEventHTFBearOK)
+bool amySweepBullStructureOK = internalTrend.bias != BEARISH and (swingTrend.bias == BULLISH or amyEventHTFBullOK)
+bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20 and amySweepBearStructureOK
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20 and amySweepBullStructureOK
+bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion and internalTrend.bias == BULLISH and amyEventHTFBullOK
+bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion and internalTrend.bias == BEARISH and amyEventHTFBearOK
 
 // Base structure qualification is frozen for OTE/Fibonacci because that layer already improved in the previous retest.
 bool amyBaseQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
@@ -937,11 +941,24 @@ bool amyBaseQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swing
 bool amyBaseQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion
 bool amyBaseQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion
 
-// Directional BOS gets one extra confirmation from the accepted HTF Swing. CHoCH keeps the previous rule.
-bool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH)
-bool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH)
-bool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH
-bool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH
+// Directional qualification is stricter than the frozen OTE/Fib base qualifier.
+bool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and internalTrend.bias == BULLISH and amyEventHTFBullOK
+bool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and internalTrend.bias == BEARISH and amyEventHTFBearOK
+bool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH and internalTrend.bias == BULLISH and (amyEventHTFBullOK or amySSLSweep)
+bool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH and internalTrend.bias == BEARISH and (amyEventHTFBearOK or amyBSLSweep)
+
+// Amy protected strong levels are promoted only after a qualified structural break.
+var float amyProtectedStrongHigh = na
+var float amyProtectedStrongLow = na
+var int amyProtectedStrongHighBar = na
+var int amyProtectedStrongLowBar = na
+if barstate.isconfirmed
+    if (amyBaseQualifiedSwingBullBOS or amyBaseQualifiedSwingBullCHoCH) and not na(swingLow.currentLevel)
+        amyProtectedStrongLow := swingLow.currentLevel
+        amyProtectedStrongLowBar := swingLow.barIndex
+    if (amyBaseQualifiedSwingBearBOS or amyBaseQualifiedSwingBearCHoCH) and not na(swingHigh.currentLevel)
+        amyProtectedStrongHigh := swingHigh.currentLevel
+        amyProtectedStrongHighBar := swingHigh.barIndex
 
 if amyBSLSweep
     amyLastSweptHigh := amyBSL
@@ -1007,8 +1024,9 @@ if amyShowBoxPrices and showFairValueGapsInput and (barstate.islastconfirmedhist
     if array.size(fairValueGaps) > 0
         for [index, gap] in fairValueGaps
             string gapName = gap.bias == BULLISH ? 'Bullish FVG' : 'Bearish FVG'
-            string gapText = gapName + '\n' + amyPrice(gap.top) + ' — ' + amyPrice(gap.bottom)
-            color gapTextColor = gap.bias == BULLISH ? GREEN : RED
+            bool gapContextAligned = gap.bias == swingTrend.bias and internalTrend.bias != -gap.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == gap.bias)
+            string gapText = gapName + (gapContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\n' + amyPrice(gap.top) + ' — ' + amyPrice(gap.bottom)
+            color gapTextColor = gapContextAligned ? (gap.bias == BULLISH ? GREEN : RED) : GRAY
             box.set_text(gap.topBox, gapText)
             box.set_text_color(gap.topBox, gapTextColor)
             box.set_text_size(gap.topBox, size.tiny)
@@ -1023,8 +1041,9 @@ if amyShowBoxPrices and showInternalOrderBlocksInput and (barstate.islastconfirm
             orderBlock currentOB = array.get(internalOrderBlocks, index)
             box currentBox = array.get(internalOrderBlocksBoxes, index)
             string obName = currentOB.bias == BULLISH ? 'Bullish Internal OB' : 'Bearish Internal OB'
-            string obText = obName + '\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
-            color obTextColor = currentOB.bias == BULLISH ? GREEN : RED
+            bool obContextAligned = currentOB.bias == swingTrend.bias and internalTrend.bias != -currentOB.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == currentOB.bias)
+            string obText = obName + (obContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = obContextAligned ? (currentOB.bias == BULLISH ? GREEN : RED) : GRAY
             box.set_text(currentBox, obText)
             box.set_text_color(currentBox, obTextColor)
             box.set_text_size(currentBox, size.tiny)
@@ -1038,8 +1057,9 @@ if amyShowBoxPrices and showSwingOrderBlocksInput and (barstate.islastconfirmedh
             orderBlock currentOB = array.get(swingOrderBlocks, index)
             box currentBox = array.get(swingOrderBlocksBoxes, index)
             string obName = currentOB.bias == BULLISH ? 'Bullish Swing OB' : 'Bearish Swing OB'
-            string obText = obName + '\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
-            color obTextColor = currentOB.bias == BULLISH ? GREEN : RED
+            bool obContextAligned = currentOB.bias == swingTrend.bias and internalTrend.bias != -currentOB.bias and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == currentOB.bias)
+            string obText = obName + (obContextAligned ? ' ALIGNED' : ' CONTEXT WEAK') + '\n' + amyPrice(currentOB.barHigh) + ' — ' + amyPrice(currentOB.barLow)
+            color obTextColor = obContextAligned ? (currentOB.bias == BULLISH ? GREEN : RED) : GRAY
             box.set_text(currentBox, obText)
             box.set_text_color(currentBox, obTextColor)
             box.set_text_size(currentBox, size.tiny)
@@ -1050,12 +1070,20 @@ if amyShowLevelPrices and showHighLowSwingsInput and barstate.islast
     if array.size(label.all) > 0
         for currentLabel in label.all
             string currentText = label.get_text(currentLabel)
-            if currentText == 'Strong High'
-                label.set_text(currentLabel, 'Strong High ' + amyPrice(trailing.top))
+            if str.contains(currentText, 'Strong High')
+                if not na(amyProtectedStrongHigh) and not na(amyProtectedStrongHighBar)
+                    label.set_xy(currentLabel, amyProtectedStrongHighBar, amyProtectedStrongHigh)
+                    label.set_text(currentLabel, 'Strong High ' + amyPrice(amyProtectedStrongHigh))
+                else
+                    label.set_text(currentLabel, 'Strong High ' + amyPrice(trailing.top))
             else if currentText == 'Weak High'
                 label.set_text(currentLabel, 'Weak High ' + amyPrice(trailing.top))
-            else if currentText == 'Strong Low'
-                label.set_text(currentLabel, 'Strong Low ' + amyPrice(trailing.bottom))
+            else if str.contains(currentText, 'Strong Low')
+                if not na(amyProtectedStrongLow) and not na(amyProtectedStrongLowBar)
+                    label.set_xy(currentLabel, amyProtectedStrongLowBar, amyProtectedStrongLow)
+                    label.set_text(currentLabel, 'Strong Low ' + amyPrice(amyProtectedStrongLow))
+                else
+                    label.set_text(currentLabel, 'Strong Low ' + amyPrice(trailing.bottom))
             else if currentText == 'Weak Low'
                 label.set_text(currentLabel, 'Weak Low ' + amyPrice(trailing.bottom))
 
@@ -1147,8 +1175,15 @@ float amyPassedDRPremiumRatio = 0.65
 float amyPassedDRDiscountRatio = 0.35
 float amyPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRPremiumRatio : na
 float amyDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRDiscountRatio : na
-bool amyDRBullContext = amyDRBias == BULLISH and swingTrend.bias == BULLISH and internalTrend.bias != BEARISH
-bool amyDRBearContext = amyDRBias == BEARISH and swingTrend.bias == BEARISH and internalTrend.bias != BULLISH
+// H1 65/35 profile is PASSED. Only lower timeframes get stricter context.
+float amyCurrentTfSec = timeframe.in_seconds()
+bool amyDRLowerTF = not na(amyCurrentTfSec) and amyCurrentTfSec <= 900
+bool amyDRBullHTFConfirm = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH
+bool amyDRBearHTFConfirm = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH
+bool amyDRBullContextBase = amyDRBias == BULLISH and swingTrend.bias == BULLISH and internalTrend.bias != BEARISH
+bool amyDRBearContextBase = amyDRBias == BEARISH and swingTrend.bias == BEARISH and internalTrend.bias != BULLISH
+bool amyDRBullContext = amyDRBullContextBase and (not amyDRLowerTF or (internalTrend.bias == BULLISH and amyDRBullHTFConfirm))
+bool amyDRBearContext = amyDRBearContextBase and (not amyDRLowerTF or (internalTrend.bias == BEARISH and amyDRBearHTFConfirm))
 string amyDealingRange = 'EQUILIBRIUM'
 int amyDealingBias = 0
 if amyDRValid
@@ -1190,13 +1225,20 @@ else
 int amyCurrentSwingBias = swingTrend.bias
 int amyCurrentInternalBias = internalTrend.bias
 int amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing
-int amyPatternVotes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias == amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive == amyPatternBiasActive ? 1 : 0)
-int amyPatternOpposes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternBiasActive ? 1 : 0)
+int amyPatternCandidate = amyPatternBiasActive
+int amyPatternVotes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias == amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias == amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias == amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive == amyPatternCandidate ? 1 : 0)
+int amyPatternOpposes = amyPatternCandidate == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternCandidate ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternCandidate ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternCandidate ? 1 : 0)
 bool amyPatternReversal = amyLastPattern == 'Morning Star' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Hammer' or amyLastPattern == 'Shooting Star' or amyLastPattern == 'Bullish Pin Bar' or amyLastPattern == 'Bearish Pin Bar'
-bool amyPatternLocalBoth = amyPatternBiasActive != 0 and amyCurrentSwingBias == amyPatternBiasActive and amyCurrentInternalBias == amyPatternBiasActive
-bool amyPatternLiquidityConfirm = amyPatternBiasActive != 0 and amyLiquidityBiasActive == amyPatternBiasActive
-bool amyPatternContextQualified = amyPatternBiasActive != 0 and amyPatternVotes >= 2 and amyPatternOpposes <= 1 and (not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth)
-amyPatternBiasActive := amyPatternContextQualified ? amyPatternBiasActive : 0
+bool amyPatternLocalBoth = amyPatternCandidate != 0 and amyCurrentSwingBias == amyPatternCandidate and amyCurrentInternalBias == amyPatternCandidate
+bool amyPatternLiquidityConfirm = amyPatternCandidate != 0 and amyLiquidityBiasActive == amyPatternCandidate
+bool amyPatternBearPriority = amyLastPattern == 'Bearish Engulfing' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Bearish Pin Bar'
+bool amyPatternBullish = amyPatternCandidate == BULLISH
+int amyPatternRequiredVotes = amyPatternBearPriority ? 2 : 3
+bool amyPatternConflictOK = amyPatternBearPriority ? amyPatternOpposes <= 1 : amyPatternOpposes == 0
+bool amyPatternBullExtra = not amyPatternBullish or amyPatternLiquidityConfirm or amyPatternLocalBoth
+bool amyPatternReversalExtra = not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth
+bool amyPatternContextQualified = amyPatternCandidate != 0 and amyPatternVotes >= amyPatternRequiredVotes and amyPatternConflictOK and amyPatternBullExtra and amyPatternReversalExtra
+amyPatternBiasActive := amyPatternContextQualified ? amyPatternCandidate : 0
 
 // PASSED CORE — Jun-Jul 2026 backtest checkpoint.
 // Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.
@@ -1215,8 +1257,8 @@ else
     amyFinalBias := close >= open ? BULLISH : BEARISH
 
 string amyFinalBiasText = amyFinalBias == BULLISH ? 'BULLISH' : 'BEARISH'
-float amyProtectedLow = not na(swingLow.currentLevel) and swingLow.currentLevel < close ? swingLow.currentLevel : na
-float amyProtectedHigh = not na(swingHigh.currentLevel) and swingHigh.currentLevel > close ? swingHigh.currentLevel : na
+float amyProtectedLow = not na(amyProtectedStrongLow) and amyProtectedStrongLow < close ? amyProtectedStrongLow : not na(swingLow.currentLevel) and swingLow.currentLevel < close ? swingLow.currentLevel : na
+float amyProtectedHigh = not na(amyProtectedStrongHigh) and amyProtectedStrongHigh > close ? amyProtectedStrongHigh : not na(swingHigh.currentLevel) and swingHigh.currentLevel > close ? swingHigh.currentLevel : na
 float amyBullInvalidation = not na(amyProtectedLow) ? amyProtectedLow : amyNearestBelow(trailing.bottom, amyRecentLow, internalLow.currentLevel, na, close)
 float amyBearInvalidation = not na(amyProtectedHigh) ? amyProtectedHigh : amyNearestAbove(trailing.top, amyRecentHigh, internalHigh.currentLevel, na, close)
 float amyInvalidation = amyFinalBias == BULLISH ? amyBullInvalidation : amyBearInvalidation
@@ -1247,6 +1289,10 @@ else
     amyNextDirection := amyFinalBias
 
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : 'DOWN'
+int amyTargetCoreVotes = (amySafeHTFBias == amyNextDirection ? 1 : 0) + (amyCurrentSwingBias == amyNextDirection ? 1 : 0) + (amyCurrentInternalBias == amyNextDirection ? 1 : 0) + (amyLiquidityBiasActive == amyNextDirection ? 1 : 0)
+int amyTargetCoreOpposes = (amySafeHTFBias != 0 and amySafeHTFBias == -amyNextDirection ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyNextDirection ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyNextDirection ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyNextDirection ? 1 : 0)
+bool amyTargetHistoryOK = amyHistoryBias == 0 or amyHistoryBias == amyNextDirection
+bool amyTargetEligible = amyTargetCoreVotes >= 3 and amyTargetCoreOpposes <= 1 and amyTargetHistoryOK
 float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0
 // Keep anti-leak protection but avoid pushing the structural target unnecessarily far away.
 float amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)
@@ -1256,24 +1302,40 @@ float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, 
 float amyBearTargetBase = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, amyBearTargetRef)
 float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh.currentLevel > amyBullTargetRef ? internalHigh.currentLevel : na
 float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
-float amyTarget = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
+float amyTargetCandidate = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
+float amyTarget = amyTargetEligible ? amyTargetCandidate : na
 string amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'
 
-// Confidence measures agreement across accepted components only.
-float amyConfidenceRaw = 50.0
+// Conservative calibration: prevent the weak 80-85 bucket from being reached casually.
+int amyConfidenceAvailable = 0
+int amyConfidenceAgree = 0
+int amyConfidenceOppose = 0
 if amySafeHTFBias != 0
-    amyConfidenceRaw += amySafeHTFBias == amyNextDirection ? 8 : -8
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amySafeHTFBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amySafeHTFBias == -amyNextDirection ? 1 : 0
 if amyCurrentSwingBias != 0
-    amyConfidenceRaw += amyCurrentSwingBias == amyNextDirection ? 10 : -10
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyCurrentSwingBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyCurrentSwingBias == -amyNextDirection ? 1 : 0
 if amyCurrentInternalBias != 0
-    amyConfidenceRaw += amyCurrentInternalBias == amyNextDirection ? 6 : -6
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyCurrentInternalBias == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyCurrentInternalBias == -amyNextDirection ? 1 : 0
 if amyLiquidityBiasActive != 0
-    amyConfidenceRaw += amyLiquidityBiasActive == amyNextDirection ? 6 : -6
+    amyConfidenceAvailable += 1
+    amyConfidenceAgree += amyLiquidityBiasActive == amyNextDirection ? 1 : 0
+    amyConfidenceOppose += amyLiquidityBiasActive == -amyNextDirection ? 1 : 0
+float amyConfidenceRaw = 45.0 + amyConfidenceAgree * 8.0 - amyConfidenceOppose * 10.0
 if amyHistoryBias != 0
-    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5 : -5
+    amyConfidenceRaw += amyHistoryBias == amyNextDirection ? 5.0 : -6.0
 if math.abs(amyNextRaw) < 18
-    amyConfidenceRaw -= 5
-int amyConfidence = int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw))))
+    amyConfidenceRaw -= 5.0
+if na(amyTarget)
+    amyConfidenceRaw -= 4.0
+bool amyConfidenceUnanimous = amyConfidenceAvailable >= 4 and amyConfidenceAgree == amyConfidenceAvailable and amyConfidenceOppose == 0 and (amyHistoryBias == 0 or amyHistoryBias == amyNextDirection) and not na(amyTarget)
+float amyConfidenceCap = amyConfidenceUnanimous ? 82.0 : 79.0
+int amyConfidence = int(math.round(math.max(35.0, math.min(amyConfidenceCap, amyConfidenceRaw))))
 
 var table amyDashboard = table.new(position.bottom_right, 2, 16, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
 
@@ -1357,6 +1419,7 @@ var float amyxLockedBottom = na
 var int amyxLockedBias = 0
 var int amyxLockedStartBar = na
 var int amyxLockedEndBar = na
+var bool amyxExtendedEligible = false
 
 float amyxImpulseAtr = ta.atr(14)
 float amyxImpulseRange = high - low
@@ -1372,12 +1435,14 @@ if amyxBullStructureEvent and not na(swingLow.currentLevel)
     amyxLockedBias := BULLISH
     amyxLockedStartBar := swingLow.barIndex
     amyxLockedEndBar := bar_index
+    amyxExtendedEligible := amyxImpulseDisplacement and amyxImpulseBody >= amyxImpulseAtr * 0.60 and amyxImpulseBodyRatio >= 0.60 and amyCurrentInternalBias == BULLISH and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH)
 else if amyxBearStructureEvent and not na(swingHigh.currentLevel)
     amyxLockedTop := swingHigh.currentLevel
     amyxLockedBottom := math.min(low, nz(swingLow.currentLevel, low))
     amyxLockedBias := BEARISH
     amyxLockedStartBar := swingHigh.barIndex
     amyxLockedEndBar := bar_index
+    amyxExtendedEligible := amyxImpulseDisplacement and amyxImpulseBody >= amyxImpulseAtr * 0.60 and amyxImpulseBodyRatio >= 0.60 and amyCurrentInternalBias == BEARISH and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH)
 
 bool amyxLockedInvalid = amyxLockedBias == BULLISH ? (not na(amyxLockedBottom) and close < amyxLockedBottom) : amyxLockedBias == BEARISH ? (not na(amyxLockedTop) and close > amyxLockedTop) : false
 if barstate.isconfirmed and amyxLockedInvalid
@@ -1386,6 +1451,7 @@ if barstate.isconfirmed and amyxLockedInvalid
     amyxLockedBias := 0
     amyxLockedStartBar := na
     amyxLockedEndBar := na
+    amyxExtendedEligible := false
 
 float amyxSwingTop = amyxLockedTop
 float amyxSwingBottom = amyxLockedBottom
@@ -1493,8 +1559,8 @@ if barstate.islast
     if amyxShowFib and amyxRangeValid
         if na(amyxFibLine1)
             amyxFibLine1 := line.new(amyxFibLeft, amyxFib1272, amyxFibRight, amyxFib1272, xloc = xloc.bar_index, color = color.new(amyxLegColor, 30), style = line.style_dashed)
-            amyxFibLine2 := line.new(amyxFibLeft, amyxFib1618, amyxFibRight, amyxFib1618, xloc = xloc.bar_index, color = color.new(amyxLegColor, 15), style = line.style_dashed)
-            amyxFibLine3 := line.new(amyxFibLeft, amyxFibMax, amyxFibRight, amyxFibMax, xloc = xloc.bar_index, color = amyxLegColor, style = line.style_solid)
+            amyxFibLine2 := line.new(amyxFibLeft, amyxFib1618, amyxFibRight, amyxFib1618, xloc = xloc.bar_index, color = color.new(amyxExtendedEligible ? amyxLegColor : GRAY, 15), style = line.style_dashed)
+            amyxFibLine3 := line.new(amyxFibLeft, amyxFibMax, amyxFibRight, amyxFibMax, xloc = xloc.bar_index, color = amyxExtendedEligible ? amyxLegColor : GRAY, style = line.style_solid)
             amyxFibLabel1 := label.new(amyxFibRight, amyxFib1272, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = color.new(amyxLegColor, 90), textcolor = amyxLegColor, size = size.tiny)
             amyxFibLabel2 := label.new(amyxFibRight, amyxFib1618, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = color.new(amyxLegColor, 90), textcolor = amyxLegColor, size = size.tiny)
             amyxFibLabel3 := label.new(amyxFibRight, amyxFibMax, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = color.new(amyxLegColor, 86), textcolor = amyxLegColor, size = size.tiny)
@@ -1506,18 +1572,18 @@ if barstate.islast
             line.set_xy1(amyxFibLine3, amyxFibLeft, amyxFibMax)
             line.set_xy2(amyxFibLine3, amyxFibRight, amyxFibMax)
             line.set_color(amyxFibLine1, color.new(amyxLegColor, 30))
-            line.set_color(amyxFibLine2, color.new(amyxLegColor, 15))
-            line.set_color(amyxFibLine3, amyxLegColor)
+            line.set_color(amyxFibLine2, color.new(amyxExtendedEligible ? amyxLegColor : GRAY, 15))
+            line.set_color(amyxFibLine3, amyxExtendedEligible ? amyxLegColor : GRAY)
             label.set_xy(amyxFibLabel1, amyxFibRight, amyxFib1272)
             label.set_xy(amyxFibLabel2, amyxFibRight, amyxFib1618)
             label.set_xy(amyxFibLabel3, amyxFibRight, amyxFibMax)
             label.set_textcolor(amyxFibLabel1, amyxLegColor)
-            label.set_textcolor(amyxFibLabel2, amyxLegColor)
-            label.set_textcolor(amyxFibLabel3, amyxLegColor)
+            label.set_textcolor(amyxFibLabel2, amyxExtendedEligible ? amyxLegColor : GRAY)
+            label.set_textcolor(amyxFibLabel3, amyxExtendedEligible ? amyxLegColor : GRAY)
 
         label.set_text(amyxFibLabel1, 'TP1 1.272  ' + amyPrice(amyxFib1272))
-        label.set_text(amyxFibLabel2, 'TP2 1.618  ' + amyPrice(amyxFib1618))
-        label.set_text(amyxFibLabel3, 'MAX ' + amyxFibMaxInput + '  ' + amyPrice(amyxFibMax))
+        label.set_text(amyxFibLabel2, (amyxExtendedEligible ? 'TP2 1.618  ' : 'TP2 1.618 LOW CONF  ') + amyPrice(amyxFib1618))
+        label.set_text(amyxFibLabel3, (amyxExtendedEligible ? 'MAX ' : 'MAX LOW CONF ') + amyxFibMaxInput + '  ' + amyPrice(amyxFibMax))
     else
         if not na(amyxFibLine1)
             line.delete(amyxFibLine1)
