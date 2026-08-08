@@ -26,7 +26,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python .github/scripts/create_amy_smc_y_from_final_x.py
           git add Amy-SMC-X.pine Amy-SMC-Y.pine
-          git diff --cached --check
+          # Amy SMC Y intentionally inherits the exact Pine formatting from X, including legacy whitespace.
+          # Only check the small X baseline-note edit for newly introduced whitespace problems.
+          git diff --cached --check -- Amy-SMC-X.pine
           changed="$(git diff --cached --name-only | tr -d '\r')"
           printf '%s\n' "$changed"
           test "$changed" = $'Amy-SMC-X.pine\nAmy-SMC-Y.pine'
