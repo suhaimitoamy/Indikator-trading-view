@@ -1142,8 +1142,11 @@ float amyRangeSpan = amyDRValid ? amyRangeTop - amyRangeBottom : na
 float amyRangeEQ = amyDRValid ? math.avg(amyRangeTop, amyRangeBottom) : na
 float amyEQUpper = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.525 : na
 float amyEQLower = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.475 : na
-float amyPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.65 : na
-float amyDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.35 : na
+// PASSED PROFILE — Dealing Range H1: 83.33% (5/6). Keep this 65/35 profile unchanged while lower-TF variants remain under tuning.
+float amyPassedDRPremiumRatio = 0.65
+float amyPassedDRDiscountRatio = 0.35
+float amyPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRPremiumRatio : na
+float amyDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRDiscountRatio : na
 bool amyDRBullContext = amyDRBias == BULLISH and swingTrend.bias == BULLISH and internalTrend.bias != BEARISH
 bool amyDRBearContext = amyDRBias == BEARISH and swingTrend.bias == BEARISH and internalTrend.bias != BULLISH
 string amyDealingRange = 'EQUILIBRIUM'
@@ -1392,6 +1395,7 @@ int amyxLegBias = amyxLockedBias == BEARISH ? BEARISH : BULLISH
 color amyxLegColor = amyxLegBias == BULLISH ? GREEN : RED
 
 //---------------------------------------------------------------------------------------------------------------------}
+// PASSED CHECKPOINT — OTE→1.272 M15: 85.71% (6/7). Preserve the current locked-leg/OTE profile.
 // OTE — 0.62 / 0.705 / 0.79
 //---------------------------------------------------------------------------------------------------------------------{
 
@@ -1455,21 +1459,23 @@ if amyxOTETouch
     amyxLastOTETouchLeg := amyxLockedEndBar
 
 //---------------------------------------------------------------------------------------------------------------------}
+// PASSED CHECKPOINT — Fib 1.272: M5 70.27% (26/37), M15 81.82% (9/11). Preserve TP1 ratio/profile.
 // FIBONACCI EXTENSION — TP1 / TP2 / MAX
 //---------------------------------------------------------------------------------------------------------------------{
 
 float amyxFibMaxRatio = amyxFibMaxInput == '2.618' ? 2.618 : 2.0
+float amyxPassedFibTP1Ratio = 1.272
 float amyxFib1272 = na
 float amyxFib1618 = na
 float amyxFibMax = na
 
 if amyxRangeValid
     if amyxLegBias == BULLISH
-        amyxFib1272 := amyxSwingBottom + amyxSwingRange * 1.272
+        amyxFib1272 := amyxSwingBottom + amyxSwingRange * amyxPassedFibTP1Ratio
         amyxFib1618 := amyxSwingBottom + amyxSwingRange * 1.618
         amyxFibMax := amyxSwingBottom + amyxSwingRange * amyxFibMaxRatio
     else
-        amyxFib1272 := amyxSwingTop - amyxSwingRange * 1.272
+        amyxFib1272 := amyxSwingTop - amyxSwingRange * amyxPassedFibTP1Ratio
         amyxFib1618 := amyxSwingTop - amyxSwingRange * 1.618
         amyxFibMax := amyxSwingTop - amyxSwingRange * amyxFibMaxRatio
 
