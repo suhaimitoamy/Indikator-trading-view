@@ -1,0 +1,70 @@
+name: Refine Amy SMC X Round 3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/refine-amy-smc-x-round3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply round 3 refinements
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-X.pine')
+          s = p.read_text()
+
+          def rep(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'{label} block not found')
+              s = s.replace(old, new, 1)
+
+          # Move HTF context earlier so BOS validation can use it without duplicating request.security.
+          htf_block = """string amyHTF = amyAutoHTF()\nint amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)\n\n"""
+          pos = s.find(htf_block)
+          if pos < 0:
+              raise SystemExit('HTF block not found')
+          s = s[:pos] + s[pos + len(htf_block):]
+
+          old_events = """float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08\nfloat amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05\nbool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20\nbool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20\nbool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion\nbool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion\n\nbool amyQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion\nbool amyQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swingBearishBOS and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion\nbool amyQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion\nbool amyQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion\n"""
+          new_events = """float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08\nfloat amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05\nstring amyHTF = amyAutoHTF()\nint amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)\nbool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20\nbool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20\nbool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion\nbool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion\n\n// Base structure qualification is frozen for OTE/Fibonacci because that layer already improved in the previous retest.\nbool amyBaseQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion\nbool amyBaseQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swingBearishBOS and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion\nbool amyBaseQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open and close >= swingHigh.currentLevel + amyMinBreakExcursion\nbool amyBaseQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open and close <= swingLow.currentLevel - amyMinBreakExcursion\n\n// Directional BOS gets one extra confirmation from the accepted HTF Swing. CHoCH keeps the previous rule.\nbool amyQualifiedSwingBullBOS = amyBaseQualifiedSwingBullBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH)\nbool amyQualifiedSwingBearBOS = amyBaseQualifiedSwingBearBOS and (na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH)\nbool amyQualifiedSwingBullCHoCH = amyBaseQualifiedSwingBullCHoCH\nbool amyQualifiedSwingBearCHoCH = amyBaseQualifiedSwingBearCHoCH\n"""
+          rep(old_events, new_events, 'qualified event')
+
+          old_pattern = """bool amyPatternHTFConflict = amyPatternBiasActive != 0 and amySafeHTFBias != 0 and amyPatternBiasActive != amySafeHTFBias\nbool amyPatternStrongLocal = amyPatternBiasActive != 0 and amyPatternBiasActive == amyCurrentSwingBias and amyPatternBiasActive == amyCurrentInternalBias\nbool amyPatternLocationAligned = amyPatternBiasActive == BULLISH ? amyDealingRange != 'PREMIUM' : amyPatternBiasActive == BEARISH ? amyDealingRange != 'DISCOUNT' : false\namyPatternBiasActive := amyPatternBiasActive != 0 and amyPatternLocationAligned and (not amyPatternHTFConflict or amyPatternStrongLocal) ? amyPatternBiasActive : 0\n"""
+          new_pattern = """int amyPatternVotes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias == amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias == amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive == amyPatternBiasActive ? 1 : 0)\nint amyPatternOpposes = amyPatternBiasActive == 0 ? 0 : (amySafeHTFBias != 0 and amySafeHTFBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentSwingBias != 0 and amyCurrentSwingBias == -amyPatternBiasActive ? 1 : 0) + (amyCurrentInternalBias != 0 and amyCurrentInternalBias == -amyPatternBiasActive ? 1 : 0) + (amyLiquidityBiasActive != 0 and amyLiquidityBiasActive == -amyPatternBiasActive ? 1 : 0)\nbool amyPatternReversal = amyLastPattern == 'Morning Star' or amyLastPattern == 'Evening Star' or amyLastPattern == 'Hammer' or amyLastPattern == 'Shooting Star' or amyLastPattern == 'Bullish Pin Bar' or amyLastPattern == 'Bearish Pin Bar'\nbool amyPatternLocalBoth = amyPatternBiasActive != 0 and amyCurrentSwingBias == amyPatternBiasActive and amyCurrentInternalBias == amyPatternBiasActive\nbool amyPatternLiquidityConfirm = amyPatternBiasActive != 0 and amyLiquidityBiasActive == amyPatternBiasActive\nbool amyPatternContextQualified = amyPatternBiasActive != 0 and amyPatternVotes >= 2 and amyPatternOpposes <= 1 and (not amyPatternReversal or amyPatternLiquidityConfirm or amyPatternLocalBoth)\namyPatternBiasActive := amyPatternContextQualified ? amyPatternBiasActive : 0\n"""
+          rep(old_pattern, new_pattern, 'pattern context')
+
+          old_target = """float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0\nfloat amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.50, amyTargetRiskDistance * 0.75)\nfloat amyTarget = amyNextDirection == BULLISH ? amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, close + amyTargetMinDistance) : amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, close - amyTargetMinDistance)\nstring amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'\n"""
+          new_target = """float amyTargetRiskDistance = not na(amyInvalidation) ? math.abs(close - amyInvalidation) : 0.0\n// Keep anti-leak protection but avoid pushing the structural target unnecessarily far away.\nfloat amyTargetMinDistance = math.max(nz(amyAtr14, ta.atr(14)) * 0.10, amyTargetRiskDistance * 0.30)\nfloat amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)\nfloat amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)\nfloat amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)\nfloat amyBearTargetBase = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, amyBearTargetRef)\nfloat amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh.currentLevel > amyBullTargetRef ? internalHigh.currentLevel : na\nfloat amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na\nfloat amyTarget = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)\nstring amyTargetSide = amyNextDirection == BULLISH ? 'BSL' : 'SSL'\n"""
+          rep(old_target, new_target, 'target')
+
+          old_ote = """bool amyxBullStructureEvent = (amyQualifiedSwingBullBOS or amyQualifiedSwingBullCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH) and amyCurrentInternalBias != BEARISH and close >= high - amyxImpulseRange * 0.25\nbool amyxBearStructureEvent = (amyQualifiedSwingBearBOS or amyQualifiedSwingBearCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH) and amyCurrentInternalBias != BULLISH and close <= low + amyxImpulseRange * 0.25\n"""
+          new_ote = """bool amyxBullStructureEvent = (amyBaseQualifiedSwingBullBOS or amyBaseQualifiedSwingBullCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BULLISH) and amyCurrentInternalBias != BEARISH and close >= high - amyxImpulseRange * 0.25\nbool amyxBearStructureEvent = (amyBaseQualifiedSwingBearBOS or amyBaseQualifiedSwingBearCHoCH) and (amySafeHTFBias == 0 or amySafeHTFBias == BEARISH) and amyCurrentInternalBias != BULLISH and close <= low + amyxImpulseRange * 0.25\n"""
+          rep(old_ote, new_ote, 'OTE/Fib preservation')
+
+          # Passed core must remain untouched.
+          assert 'float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15' in s
+          assert 'float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15' in s
+          assert s.count('string amyHTF = amyAutoHTF()') == 1
+
+          p.write_text(s)
+          PY
+      - name: Commit indicator
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-X.pine
+          git diff --cached --check
+          git commit -m 'Refine Amy SMC X weak components round 3'
+          git push
