@@ -878,7 +878,8 @@ if barstate.isconfirmed and amyPatternNow != 'NONE'
 
 int amyPatternAge = na(amyLastPatternBar) ? 1000000 : bar_index - amyLastPatternBar
 bool amyPatternActive = amyLastPattern != 'NONE' and amyPatternAge <= amyPatternMaxAge
-int amyPatternBiasActive = amyPatternActive ? amyLastPatternDir : 0
+bool amyPatternStructureAligned = amyLastPatternDir != 0 and amyLastPatternDir == swingTrend.bias and amyLastPatternDir == internalTrend.bias
+int amyPatternBiasActive = amyPatternActive and amyPatternStructureAligned ? amyLastPatternDir : 0
 string amyPatternDisplay = amyPatternActive ? amyLastPattern : 'NONE'
 
 if barstate.islast
@@ -914,6 +915,23 @@ bool amySSLSweep = barstate.isconfirmed and amyLowAvailable and low < amySSL and
 bool amyBSLValidBreak = barstate.isconfirmed and amyHighAvailable and close > amyBSL and close[1] <= amyBSL and (na(amyLastBrokenHigh) or amyLastBrokenHigh != amyBSL)
 bool amySSLValidBreak = barstate.isconfirmed and amyLowAvailable and close < amySSL and close[1] >= amySSL and (na(amyLastBrokenLow) or amyLastBrokenLow != amySSL)
 
+float amyEventAtr = ta.atr(14)
+float amyEventRange = high - low
+float amyEventBody = math.abs(close - open)
+float amyEventBodyRatio = amyEventRange > 0 ? amyEventBody / amyEventRange : 0.0
+bool amyEventDisplacement = not na(amyEventAtr) and amyEventBody >= amyEventAtr * 0.35 and amyEventBodyRatio >= 0.55
+float amyMinSweepExcursion = nz(amyEventAtr, 0.0) * 0.08
+float amyMinBreakExcursion = nz(amyEventAtr, 0.0) * 0.05
+bool amyQualifiedBSLSweep = amyBSLSweep and high >= amyBSL + amyMinSweepExcursion and close >= amyBSL - nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedSSLSweep = amySSLSweep and low <= amySSL - amyMinSweepExcursion and close <= amySSL + nz(amyEventAtr, 0.0) * 0.20
+bool amyQualifiedBSLValidBreak = amyBSLValidBreak and amyEventDisplacement and close > open and close >= amyBSL + amyMinBreakExcursion
+bool amyQualifiedSSLValidBreak = amySSLValidBreak and amyEventDisplacement and close < open and close <= amySSL - amyMinBreakExcursion
+
+bool amyQualifiedSwingBullBOS = barstate.isconfirmed and currentAlerts.swingBullishBOS and amyEventDisplacement and close > open
+bool amyQualifiedSwingBearBOS = barstate.isconfirmed and currentAlerts.swingBearishBOS and amyEventDisplacement and close < open
+bool amyQualifiedSwingBullCHoCH = barstate.isconfirmed and currentAlerts.swingBullishCHoCH and amyEventDisplacement and close > open
+bool amyQualifiedSwingBearCHoCH = barstate.isconfirmed and currentAlerts.swingBearishCHoCH and amyEventDisplacement and close < open
+
 if amyBSLSweep
     amyLastSweptHigh := amyBSL
     amyLastLiquiditySide := 'BSL'
@@ -921,7 +939,7 @@ if amyBSLSweep
     amyLastLiquidityBias := BEARISH
     amyLastLiquidityBar := bar_index
     amyAddEvent('BSL SWEEP', amyBSL, BEARISH, 30)
-    if amyShowEvents
+    if amyShowEvents and amyQualifiedBSLSweep
         amyAddChartLabel(bar_index, high + amyOffset, 'SWEEP', true, RED)
 
 if amySSLSweep
@@ -931,7 +949,7 @@ if amySSLSweep
     amyLastLiquidityBias := BULLISH
     amyLastLiquidityBar := bar_index
     amyAddEvent('SSL SWEEP', amySSL, BULLISH, 30)
-    if amyShowEvents
+    if amyShowEvents and amyQualifiedSSLSweep
         amyAddChartLabel(bar_index, low - amyOffset, 'SWEEP', false, GREEN)
 
 if amyBSLValidBreak
@@ -941,7 +959,7 @@ if amyBSLValidBreak
     amyLastLiquidityBias := BULLISH
     amyLastLiquidityBar := bar_index
     amyAddEvent('BSL VALID BREAK', amyBSL, BULLISH, 35)
-    if amyShowEvents
+    if amyShowEvents and amyQualifiedBSLValidBreak
         amyAddChartLabel(bar_index, high + amyOffset, 'VALID BREAK', true, GREEN)
 
 if amySSLValidBreak
@@ -951,7 +969,7 @@ if amySSLValidBreak
     amyLastLiquidityBias := BEARISH
     amyLastLiquidityBar := bar_index
     amyAddEvent('SSL VALID BREAK', amySSL, BEARISH, 35)
-    if amyShowEvents
+    if amyShowEvents and amyQualifiedSSLValidBreak
         amyAddChartLabel(bar_index, low - amyOffset, 'VALID BREAK', false, RED)
 
 if barstate.isconfirmed
@@ -1054,21 +1072,77 @@ amyNearestBelow(float a, float b, float c, float d, float reference) =>
         result := d
     result
 
+amyNearestAbove6(float a, float b, float c, float d, float e, float f, float reference) =>
+    float result = na
+    if not na(a) and a > reference
+        result := a
+    if not na(b) and b > reference and (na(result) or b < result)
+        result := b
+    if not na(c) and c > reference and (na(result) or c < result)
+        result := c
+    if not na(d) and d > reference and (na(result) or d < result)
+        result := d
+    if not na(e) and e > reference and (na(result) or e < result)
+        result := e
+    if not na(f) and f > reference and (na(result) or f < result)
+        result := f
+    result
+
+amyNearestBelow6(float a, float b, float c, float d, float e, float f, float reference) =>
+    float result = na
+    if not na(a) and a < reference
+        result := a
+    if not na(b) and b < reference and (na(result) or b > result)
+        result := b
+    if not na(c) and c < reference and (na(result) or c > result)
+        result := c
+    if not na(d) and d < reference and (na(result) or d > result)
+        result := d
+    if not na(e) and e < reference and (na(result) or e > result)
+        result := e
+    if not na(f) and f < reference and (na(result) or f > result)
+        result := f
+    result
+
 string amyHTF = amyAutoHTF()
 int amyHTFSwing = request.security(syminfo.tickerid, amyHTF, amyStructureBias(5)[1], lookahead = barmerge.lookahead_on)
 
-float amyRangeTop = trailing.top
-float amyRangeBottom = trailing.bottom
-float amyRangeEQ = not na(amyRangeTop) and not na(amyRangeBottom) ? math.avg(amyRangeTop, amyRangeBottom) : na
+var float amyDRTop = na
+var float amyDRBottom = na
+var int amyDRBias = 0
+
+bool amyDRBullEvent = barstate.isconfirmed and (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH)
+bool amyDRBearEvent = barstate.isconfirmed and (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH)
+
+if amyDRBullEvent and not na(swingLow.currentLevel)
+    amyDRBottom := swingLow.currentLevel
+    amyDRTop := math.max(high, nz(swingHigh.currentLevel, high))
+    amyDRBias := BULLISH
+else if amyDRBearEvent and not na(swingHigh.currentLevel)
+    amyDRTop := swingHigh.currentLevel
+    amyDRBottom := math.min(low, nz(swingLow.currentLevel, low))
+    amyDRBias := BEARISH
+else if na(amyDRTop) and not na(swingHigh.currentLevel) and not na(swingLow.currentLevel) and swingHigh.currentLevel > swingLow.currentLevel
+    amyDRTop := swingHigh.currentLevel
+    amyDRBottom := swingLow.currentLevel
+    amyDRBias := swingTrend.bias
+
+bool amyDRValid = not na(amyDRTop) and not na(amyDRBottom) and amyDRTop > amyDRBottom
+float amyRangeTop = amyDRValid ? amyDRTop : na
+float amyRangeBottom = amyDRValid ? amyDRBottom : na
+float amyRangeSpan = amyDRValid ? amyRangeTop - amyRangeBottom : na
+float amyRangeEQ = amyDRValid ? math.avg(amyRangeTop, amyRangeBottom) : na
+float amyEQUpper = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.525 : na
+float amyEQLower = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.475 : na
 string amyDealingRange = 'EQUILIBRIUM'
 int amyDealingBias = 0
-if not na(amyRangeEQ)
-    if close > amyRangeEQ
+if amyDRValid
+    if close > amyEQUpper
         amyDealingRange := 'PREMIUM'
-        amyDealingBias := BEARISH
-    else if close < amyRangeEQ
+        amyDealingBias := amyDRBias == BEARISH ? BEARISH : 0
+    else if close < amyEQLower
         amyDealingRange := 'DISCOUNT'
-        amyDealingBias := BULLISH
+        amyDealingBias := amyDRBias == BULLISH ? BULLISH : 0
 
 int amyLiquidityAge = na(amyLastLiquidityBar) ? 1000000 : bar_index - amyLastLiquidityBar
 bool amyLiquidityActive = amyLiquidityAge <= 12
@@ -1076,8 +1150,12 @@ int amyLiquidityBiasActive = amyLiquidityActive ? amyLastLiquidityBias : 0
 
 float amyRecentHigh = ta.highest(high[1], 50)
 float amyRecentLow = ta.lowest(low[1], 50)
-float amyForwardBSL = amyNearestAbove(swingHigh.currentLevel, equalHigh.currentLevel, internalHigh.currentLevel, amyRecentHigh, close)
-float amyForwardSSL = amyNearestBelow(swingLow.currentLevel, equalLow.currentLevel, internalLow.currentLevel, amyRecentLow, close)
+[amyPDH, amyPDL] = request.security(syminfo.tickerid, 'D', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[amyPWH, amyPWL] = request.security(syminfo.tickerid, 'W', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+float amyWeakHigh = swingTrend.bias == BULLISH ? trailing.top : na
+float amyWeakLow = swingTrend.bias == BEARISH ? trailing.bottom : na
+float amyForwardBSL = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, close)
+float amyForwardSSL = amyNearestBelow6(equalLow.currentLevel, amyWeakLow, amyPDL, amyPWL, swingLow.currentLevel, amyRecentLow, close)
 
 string amyLiquidityDisplay = ''
 if amyLiquidityActive and amyLastLiquiditySide != '' and not na(amyLastLiquidityLevel)
@@ -1096,6 +1174,9 @@ else
 int amyCurrentSwingBias = swingTrend.bias
 int amyCurrentInternalBias = internalTrend.bias
 int amySafeHTFBias = na(amyHTFSwing) ? 0 : amyHTFSwing
+bool amyPatternHTFAligned = amyPatternBiasActive != 0 and (amySafeHTFBias == 0 or amyPatternBiasActive == amySafeHTFBias)
+bool amyPatternLocationAligned = amyPatternBiasActive == BULLISH ? amyDealingRange != 'PREMIUM' : amyPatternBiasActive == BEARISH ? amyDealingRange != 'DISCOUNT' : false
+amyPatternBiasActive := amyPatternBiasActive != 0 and amyPatternHTFAligned and amyPatternLocationAligned ? amyPatternBiasActive : 0
 
 // PASSED CORE — Jun-Jul 2026 backtest checkpoint.
 // Final Bias is driven only by components already accepted: HTF Swing, Swing Structure, Internal Structure, and Liquidity Context.
@@ -1114,8 +1195,10 @@ else
     amyFinalBias := close >= open ? BULLISH : BEARISH
 
 string amyFinalBiasText = amyFinalBias == BULLISH ? 'BULLISH' : 'BEARISH'
-float amyBullInvalidation = amyNearestBelow(swingLow.currentLevel, trailing.bottom, amyRecentLow, internalLow.currentLevel, close)
-float amyBearInvalidation = amyNearestAbove(swingHigh.currentLevel, trailing.top, amyRecentHigh, internalHigh.currentLevel, close)
+float amyProtectedLow = not na(swingLow.currentLevel) and swingLow.currentLevel < close ? swingLow.currentLevel : na
+float amyProtectedHigh = not na(swingHigh.currentLevel) and swingHigh.currentLevel > close ? swingHigh.currentLevel : na
+float amyBullInvalidation = not na(amyProtectedLow) ? amyProtectedLow : amyNearestBelow(trailing.bottom, amyRecentLow, internalLow.currentLevel, na, close)
+float amyBearInvalidation = not na(amyProtectedHigh) ? amyProtectedHigh : amyNearestAbove(trailing.top, amyRecentHigh, internalHigh.currentLevel, na, close)
 float amyInvalidation = amyFinalBias == BULLISH ? amyBullInvalidation : amyBearInvalidation
 
 float amyHistoryScore = 0.0
@@ -1217,9 +1300,9 @@ if barstate.islast
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
 
-alertcondition(amyBSLSweep or amySSLSweep, 'Liquidity Sweep', 'Liquidity sweep detected')
-alertcondition(amyBSLValidBreak or amySSLValidBreak, 'Valid Break', 'Valid structure/liquidity break detected')
-alertcondition(barstate.isconfirmed and amyPatternNow != 'NONE', 'Candlestick Pattern', 'Candlestick pattern detected')
+alertcondition(amyQualifiedBSLSweep or amyQualifiedSSLSweep, 'Liquidity Sweep', 'Qualified liquidity sweep detected')
+alertcondition(amyQualifiedBSLValidBreak or amyQualifiedSSLValidBreak, 'Valid Break', 'Qualified structure/liquidity break detected')
+alertcondition(barstate.isconfirmed and amyPatternBiasActive != 0, 'Candlestick Pattern', 'Context-qualified candlestick pattern detected')
 
 //---------------------------------------------------------------------------------------------------------------------}
 // AMY SMC X — INDEPENDENT CHART MODULES
@@ -1246,8 +1329,13 @@ var int amyxLockedBias = 0
 var int amyxLockedStartBar = na
 var int amyxLockedEndBar = na
 
-bool amyxBullStructureEvent = barstate.isconfirmed and (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH)
-bool amyxBearStructureEvent = barstate.isconfirmed and (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH)
+float amyxImpulseAtr = ta.atr(14)
+float amyxImpulseRange = high - low
+float amyxImpulseBody = math.abs(close - open)
+float amyxImpulseBodyRatio = amyxImpulseRange > 0 ? amyxImpulseBody / amyxImpulseRange : 0.0
+bool amyxImpulseDisplacement = not na(amyxImpulseAtr) and amyxImpulseBody >= amyxImpulseAtr * 0.45 and amyxImpulseBodyRatio >= 0.55
+bool amyxBullStructureEvent = barstate.isconfirmed and (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH) and amyxImpulseDisplacement and close > open and close >= high - amyxImpulseRange * 0.25
+bool amyxBearStructureEvent = barstate.isconfirmed and (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH) and amyxImpulseDisplacement and close < open and close <= low + amyxImpulseRange * 0.25
 
 if amyxBullStructureEvent and not na(swingLow.currentLevel)
     amyxLockedBottom := swingLow.currentLevel
@@ -1261,12 +1349,6 @@ else if amyxBearStructureEvent and not na(swingHigh.currentLevel)
     amyxLockedBias := BEARISH
     amyxLockedStartBar := swingHigh.barIndex
     amyxLockedEndBar := bar_index
-else if na(amyxLockedTop) and amyxRawRangeValid
-    amyxLockedTop := amyxRawSwingTop
-    amyxLockedBottom := amyxRawSwingBottom
-    amyxLockedBias := swingTrend.bias == BEARISH ? BEARISH : BULLISH
-    amyxLockedStartBar := amyxLockedBias == BULLISH ? swingLow.barIndex : swingHigh.barIndex
-    amyxLockedEndBar := amyxLockedBias == BULLISH ? swingHigh.barIndex : swingLow.barIndex
 
 bool amyxLockedInvalid = amyxLockedBias == BULLISH ? (not na(amyxLockedBottom) and close < amyxLockedBottom) : amyxLockedBias == BEARISH ? (not na(amyxLockedTop) and close > amyxLockedTop) : false
 if barstate.isconfirmed and amyxLockedInvalid
@@ -1340,7 +1422,11 @@ if barstate.islast
             line.delete(amyxOTE705Line)
             amyxOTE705Line := na
 
-bool amyxOTETouch = barstate.isconfirmed and amyxShowOTE and amyxRangeValid and high >= amyxOTEBottom and low <= amyxOTETop
+var int amyxLastOTETouchLeg = na
+bool amyxOTERawTouch = barstate.isconfirmed and amyxShowOTE and amyxRangeValid and high >= amyxOTEBottom and low <= amyxOTETop
+bool amyxOTETouch = amyxOTERawTouch and (na(amyxLastOTETouchLeg) or amyxLastOTETouchLeg != amyxLockedEndBar)
+if amyxOTETouch
+    amyxLastOTETouchLeg := amyxLockedEndBar
 
 //---------------------------------------------------------------------------------------------------------------------}
 // FIBONACCI EXTENSION — TP1 / TP2 / MAX
