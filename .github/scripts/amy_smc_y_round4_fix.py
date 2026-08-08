@@ -1,0 +1,12 @@
+from pathlib import Path
+p=Path('Amy-SMC-Y.pine')
+s=p.read_text()
+old="""bool amyQualifiedSwingBullCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BULLISH and amyEventBody >= amyEventAtr * 0.75 and amyEventBodyRatio >= 0.65 and amyBullCHoCHExcursionAtr >= 0.20) : amyRound5M15 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BULLISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBullCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBullCHoCH
+bool amyQualifiedSwingBearCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BEARISH and amyEventBody >= amyEventAtr * 0.75 and amyEventBodyRatio >= 0.65 and amyBearCHoCHExcursionAtr >= 0.20) : amyRound5M15 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BEARISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBearCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBearCHoCH
+"""
+new="""bool amyQualifiedSwingBullCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BULLISH and amyEventBodyRatio >= 0.65 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BULLISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBullCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBullCHoCH
+bool amyQualifiedSwingBearCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BEARISH and amyEventBodyRatio >= 0.65 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BEARISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBearCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBearCHoCH
+"""
+if old not in s: raise SystemExit('Round 4 CHoCH block not found')
+s=s.replace(old,new,1)
+p.write_text(s)
