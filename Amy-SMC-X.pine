@@ -1221,20 +1221,14 @@ alertcondition(barstate.isconfirmed and amyPatternNow != 'NONE', 'Candlestick Pa
 
 //---------------------------------------------------------------------------------------------------------------------}
 // AMY SMC X — INDEPENDENT CHART MODULES
-// OTE / AMD / Fibonacci Extension
+// OTE / Fibonacci Extension
 //---------------------------------------------------------------------------------------------------------------------{
 
 AMYX_OTE_GROUP = 'Amy OTE'
-AMYX_AMD_GROUP = 'Amy AMD'
 AMYX_FIB_GROUP = 'Amy Fibonacci Extension'
 
 amyxShowOTE       = input.bool(true, 'Show OTE', group = AMYX_OTE_GROUP)
 amyxOTEExtendBars = input.int(12, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_OTE_GROUP)
-
-amyxShowAMD       = input.bool(true, 'Show AMD', group = AMYX_AMD_GROUP)
-amyxAMDLength     = input.int(12, 'Accumulation Bars', minval = 5, maxval = 50, group = AMYX_AMD_GROUP)
-amyxAMDRangeATR   = input.float(1.75, 'Max Range × ATR', minval = 1.0, maxval = 8.0, step = 0.25, group = AMYX_AMD_GROUP)
-amyxAMDExpiry     = input.int(36, 'Cycle Expiry Bars', minval = 10, maxval = 150, group = AMYX_AMD_GROUP)
 
 amyxShowFib       = input.bool(true, 'Show Fibonacci Extension', group = AMYX_FIB_GROUP)
 amyxFibExtendBars = input.int(12, 'Extend Bars', minval = 5, maxval = 100, group = AMYX_FIB_GROUP)
@@ -1347,151 +1341,6 @@ if barstate.islast
 bool amyxOTETouch = barstate.isconfirmed and amyxShowOTE and amyxRangeValid and high >= amyxOTEBottom and low <= amyxOTETop
 
 //---------------------------------------------------------------------------------------------------------------------}
-// AMD — Accumulation / Manipulation / Distribution
-//---------------------------------------------------------------------------------------------------------------------{
-
-float amyxAMDAtr = ta.atr(14)
-float amyxAMDCandidateHigh = ta.highest(high[1], amyxAMDLength)
-float amyxAMDCandidateLow = ta.lowest(low[1], amyxAMDLength)
-float amyxAMDCandidateRange = amyxAMDCandidateHigh - amyxAMDCandidateLow
-float amyxAMDAvgRange = ta.sma(high - low, amyxAMDLength)[1]
-bool amyxAMDCompression = not na(amyxAMDAtr) and not na(amyxAMDAvgRange) and amyxAMDAvgRange <= amyxAMDAtr * 0.90
-bool amyxAMDAccumCandidate = bar_index > amyxAMDLength and amyxAMDCandidateRange > 0 and amyxAMDCandidateRange <= amyxAMDAtr * amyxAMDRangeATR and amyxAMDCompression
-bool amyxAMDStableAccum = amyxAMDAccumCandidate and amyxAMDAccumCandidate[1]
-
-var int amyxAMDState = 0
-var int amyxAMDDirection = 0
-var float amyxAMDHigh = na
-var float amyxAMDLow = na
-var int amyxAMDStartBar = na
-var int amyxAMDManipBar = na
-var int amyxAMDDistBar = na
-var int amyxAMDLastEndBar = na
-var box amyxAMDBox = na
-var label amyxAMDManLabel = na
-var label amyxAMDDistLabel = na
-
-bool amyxAMDManipEvent = false
-bool amyxAMDDistEvent = false
-
-if barstate.isconfirmed and amyxShowAMD
-    if amyxAMDState == 0
-        bool amyxAMDCooldownReady = na(amyxAMDLastEndBar) or bar_index - amyxAMDLastEndBar >= 5
-        if amyxAMDStableAccum and amyxAMDCooldownReady
-            amyxAMDState := 1
-            amyxAMDDirection := 0
-            amyxAMDHigh := amyxAMDCandidateHigh
-            amyxAMDLow := amyxAMDCandidateLow
-            amyxAMDStartBar := bar_index - amyxAMDLength
-            amyxAMDManipBar := na
-            amyxAMDDistBar := na
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-            if not na(amyxAMDManLabel)
-                label.delete(amyxAMDManLabel)
-            if not na(amyxAMDDistLabel)
-                label.delete(amyxAMDDistLabel)
-            amyxAMDManLabel := na
-            amyxAMDDistLabel := na
-            amyxAMDBox := box.new(amyxAMDStartBar, amyxAMDHigh, bar_index, amyxAMDLow, xloc = xloc.bar_index, bgcolor = color.new(BLUE, 96), border_color = color.new(BLUE, 65), text = 'ACC', text_color = BLUE, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
-
-    else if amyxAMDState == 1
-        if not na(amyxAMDBox)
-            box.set_right(amyxAMDBox, bar_index)
-
-        float amyxAMDMinExcursion = math.max(amyxAMDAtr * 0.12, syminfo.mintick * 3)
-        float amyxAMDInsideMargin = (amyxAMDHigh - amyxAMDLow) * 0.05
-        bool amyxSweepHigh = high >= amyxAMDHigh + amyxAMDMinExcursion and close <= amyxAMDHigh - amyxAMDInsideMargin
-        bool amyxSweepLow = low <= amyxAMDLow - amyxAMDMinExcursion and close >= amyxAMDLow + amyxAMDInsideMargin
-
-        if amyxSweepHigh and amyxSweepLow
-            float amyxUpperExcursion = high - amyxAMDHigh
-            float amyxLowerExcursion = amyxAMDLow - low
-            if amyxUpperExcursion >= amyxLowerExcursion
-                amyxSweepLow := false
-            else
-                amyxSweepHigh := false
-
-        if amyxSweepHigh
-            amyxAMDState := 2
-            amyxAMDDirection := BEARISH
-            amyxAMDManipBar := bar_index
-            amyxAMDManipEvent := true
-            if na(amyxAMDManLabel)
-                amyxAMDManLabel := label.new(bar_index, high + amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_down, textcolor = RED, size = size.tiny)
-        else if amyxSweepLow
-            amyxAMDState := 2
-            amyxAMDDirection := BULLISH
-            amyxAMDManipBar := bar_index
-            amyxAMDManipEvent := true
-            if na(amyxAMDManLabel)
-                amyxAMDManLabel := label.new(bar_index, low - amyOffset * 2.2, 'MAN', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_up, textcolor = GREEN, size = size.tiny)
-        else if bar_index - amyxAMDStartBar > amyxAMDExpiry
-            amyxAMDState := 0
-            amyxAMDLastEndBar := bar_index
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-                amyxAMDBox := na
-
-    else if amyxAMDState == 2
-        if not na(amyxAMDBox)
-            box.set_right(amyxAMDBox, bar_index)
-
-        float amyxAMDBarRange = math.max(high - low, syminfo.mintick)
-        float amyxAMDBody = math.abs(close - open)
-        bool amyxAMDDisplacement = amyxAMDBody >= amyxAMDAtr * 0.45 and amyxAMDBody / amyxAMDBarRange >= 0.55
-        float amyxAMDBreakMargin = amyxAMDAtr * 0.05
-        bool amyxBullDistribution = amyxAMDDirection == BULLISH and amyxAMDDisplacement and close >= amyxAMDHigh + amyxAMDBreakMargin
-        bool amyxBearDistribution = amyxAMDDirection == BEARISH and amyxAMDDisplacement and close <= amyxAMDLow - amyxAMDBreakMargin
-        bool amyxBullInvalid = amyxAMDDirection == BULLISH and close < amyxAMDLow
-        bool amyxBearInvalid = amyxAMDDirection == BEARISH and close > amyxAMDHigh
-        bool amyxAMDExpired = not na(amyxAMDManipBar) and bar_index - amyxAMDManipBar > amyxAMDExpiry
-
-        if amyxBullDistribution
-            amyxAMDDistEvent := true
-            amyxAMDDistBar := bar_index
-            amyxAMDLastEndBar := bar_index
-            if na(amyxAMDDistLabel)
-                amyxAMDDistLabel := label.new(bar_index, high + amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(GREEN, 84), style = label.style_label_down, textcolor = GREEN, size = size.tiny)
-            amyxAMDState := 3
-        else if amyxBearDistribution
-            amyxAMDDistEvent := true
-            amyxAMDDistBar := bar_index
-            amyxAMDLastEndBar := bar_index
-            if na(amyxAMDDistLabel)
-                amyxAMDDistLabel := label.new(bar_index, low - amyOffset * 2.2, 'DIST', xloc = xloc.bar_index, yloc = yloc.price, color = color.new(RED, 84), style = label.style_label_up, textcolor = RED, size = size.tiny)
-            amyxAMDState := 3
-        else if amyxBullInvalid or amyxBearInvalid or amyxAMDExpired
-            amyxAMDState := 0
-            amyxAMDDirection := 0
-            amyxAMDLastEndBar := bar_index
-            if not na(amyxAMDBox)
-                box.delete(amyxAMDBox)
-                amyxAMDBox := na
-            if not na(amyxAMDManLabel)
-                label.delete(amyxAMDManLabel)
-                amyxAMDManLabel := na
-
-    else if amyxAMDState == 3
-        if not na(amyxAMDBox) and not na(amyxAMDDistBar)
-            box.set_right(amyxAMDBox, amyxAMDDistBar)
-        if not na(amyxAMDDistBar) and bar_index - amyxAMDDistBar >= 3
-            amyxAMDState := 0
-
-if not amyxShowAMD and barstate.islast
-    amyxAMDState := 0
-    amyxAMDDirection := 0
-    if not na(amyxAMDBox)
-        box.delete(amyxAMDBox)
-        amyxAMDBox := na
-    if not na(amyxAMDManLabel)
-        label.delete(amyxAMDManLabel)
-        amyxAMDManLabel := na
-    if not na(amyxAMDDistLabel)
-        label.delete(amyxAMDDistLabel)
-        amyxAMDDistLabel := na
-
-//---------------------------------------------------------------------------------------------------------------------}
 // FIBONACCI EXTENSION — TP1 / TP2 / MAX
 //---------------------------------------------------------------------------------------------------------------------{
 
@@ -1566,7 +1415,5 @@ if barstate.islast
             amyxFibLabel3 := na
 
 alertcondition(amyxOTETouch, 'OTE Touch', 'Price entered the OTE zone')
-alertcondition(amyxAMDManipEvent, 'AMD Manipulation', 'AMD manipulation detected')
-alertcondition(amyxAMDDistEvent, 'AMD Distribution', 'AMD distribution detected')
 
 //---------------------------------------------------------------------------------------------------------------------}
