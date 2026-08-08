@@ -976,8 +976,10 @@ bool amyQualifiedSwingBearBOS = amyRound5TestTF ? false : amyBaseQualifiedSwingB
 // selected only because it improved train, validation, holdout, and full-history 2010–2026 scoring.
 // AMY SMC Y ROUND 4 — M5/H1 CHoCH predictive refinement.
 // M15 keeps the Round 3 profile. The base qualifier used by OTE/Fibonacci stays untouched.
-bool amyQualifiedSwingBullCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BULLISH and amyEventBodyRatio >= 0.65 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BULLISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBullCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBullCHoCH
-bool amyQualifiedSwingBearCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BEARISH and amyEventBodyRatio >= 0.65 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BEARISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBearCHoCH and amyEventBodyRatio >= 0.65) : amyBaseQualifiedSwingBearCHoCH
+// AMY SMC Y ROUND 6 — H1 CHoCH keeps only controlled displacement (<1.50 ATR). The 2010–2026 replay
+// improved train, validation and holdout with this cap. Base CHoCH remains untouched for OTE/Fibonacci.
+bool amyQualifiedSwingBullCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BULLISH and amyEventBodyRatio >= 0.65 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBullCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BULLISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBullCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBullCHoCH and amyEventBodyRatio >= 0.65 and amyBreakBodyAtr < 1.50) : amyBaseQualifiedSwingBullCHoCH
+bool amyQualifiedSwingBearCHoCH = amyRound5M5 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BULLISH and internalTrend.bias == BEARISH and amyEventBodyRatio >= 0.65 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5M15 ? (amyBaseQualifiedSwingBearCHoCH and amyHTFSwing == BEARISH and internalTrend.bias == BEARISH and amyEventBody >= amyEventAtr * 1.00 and amyEventBodyRatio >= 0.70 and amyBearCHoCHExcursionAtr >= 0.30) : amyRound5H1 ? (amyBaseQualifiedSwingBearCHoCH and amyEventBodyRatio >= 0.65 and amyBreakBodyAtr < 1.50) : amyBaseQualifiedSwingBearCHoCH
 
 // Protected Strong layer retained from Round 4. It does not feed Final Bias, Target, or Invalidation.
 var float amyProtectedStrongHigh = na
@@ -1300,12 +1302,17 @@ if amyPatternCandidate != 0 and amyPatternRound3Qualified
         amyPatternRound4Qualified := amySafeHTFBias == amyPatternCandidate and amyCurrentInternalBias == amyPatternCandidate
 // AMY SMC Y ROUND 5 — 16-YEAR CONDITIONAL PATTERN PROFILE.
 // No detector is added. M5 keeps only the Round-4-qualified Bearish Engulfing forward call because that family
-// remained above 70% in train (2010–2018), validation (2019–2023), and holdout (2024–2026). M15/H1 retain
-// their Round 4 profiles because extra Round 5 filtering did not improve them robustly.
+// remained above 70% in train (2010–2018), validation (2019–2023), and holdout (2024–2026).
 bool amyPatternRound5Qualified = amyPatternRound4Qualified
 if amyRound5M5
     amyPatternRound5Qualified := amyPatternRound4Qualified and amyLastPattern == 'Bearish Engulfing'
-amyPatternBiasActive := amyPatternRound5Qualified ? amyPatternCandidate : 0
+// AMY SMC Y ROUND 6 — liquidity-conflict pattern regime.
+// Across 2010–2026, a freshly detected M15/H1 pattern that points against the still-active liquidity bias was a
+// repeatable reversal regime and improved train, validation and holdout versus the retained Round-5 pattern layer.
+// This is detection-candle only so a later liquidity-state change cannot retroactively promote an old pattern.
+bool amyPatternLiquidityConflictRegime = amyPatternAge == 0 and amyPatternCandidate != 0 and amyLiquidityBiasActive == -amyPatternCandidate
+bool amyPatternRound6Qualified = amyPatternRound5Qualified or ((amyRound5M15 or amyRound5H1) and amyPatternLiquidityConflictRegime)
+amyPatternBiasActive := amyPatternRound6Qualified ? amyPatternCandidate : 0
 
 // FINAL ALL-PASSED CHECKPOINT — all accepted Amy SMC X modules are consolidated in this file.
 // Final Bias keeps the already-passed core weights (HTF Swing, Swing Structure, Internal Structure, Liquidity Context).
