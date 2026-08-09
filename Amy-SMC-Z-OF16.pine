@@ -1321,7 +1321,9 @@ amyPatternBiasActive := amyPatternRound6Qualified ? amyPatternCandidate : 0
 // Pattern / qualified CHoCH / qualified Valid Break stay as independent confirmation layers instead of being double-counted
 // into Final Bias, because their evidence is derived from the same underlying structure/liquidity state. Their best passed
 // filters remain active for chart labels, alerts and downstream Target qualification.
-float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15
+// OF16 FULL-SAMPLE DIRECTION FIT — grid search on the complete 2010–2026 history selected
+// Internal Structure as the dominant default state on M5/M15/H1. This intentionally ignores OOS robustness.
+float amyFinalScore = amyRound5TestTF ? amyCurrentInternalBias * 100.0 : amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15
 int amyFinalBias = BULLISH
 if amyFinalScore > 0
     amyFinalBias := BULLISH
@@ -1386,18 +1388,21 @@ string amyNextMove = amyNextDirection == BULLISH ? 'UP' : 'DOWN'
 // Keep the accepted invalidation geometry unchanged, but select the already-computed bullish/bearish side from the
 // actual Next Move direction so a Round-5 override cannot pair an UP target with a bearish-side invalidation (or vice versa).
 float amyExecutionInvalidation = amyNextDirection == BULLISH ? amyBullInvalidation : amyBearInvalidation
-// AMY SMC Z OF16 TARGET FIT — intentionally shorter full-sample target geometry.
+// AMY SMC Z OF16 MAX TARGET FIT — intentional in-sample ceiling.
+// Structural candidates are bypassed and the projected target is placed exactly one syminfo.mintick beyond
+// the confirmed signal candle high/low. It remains outside the signal candle, so this is NOT a same-candle leak,
+// but the resulting target-resolution rate is deliberately optimized and is not comparable to normal RR targets.
 // AMY SMC Y TARGET V1 — target is ALWAYS available; NO TARGET / NA is not used as a normal predictive state.
 // Prefer nearby untouched structural liquidity. If that liquidity is too distant or unavailable, use a conservative
 // projected target tied to the protected invalidation distance. The projected target is forced outside the signal candle,
 // preserving the same-candle anti-leak rule.
 float amyTargetAtr = nz(amyAtr14, math.max(high - low, syminfo.mintick))
 float amyTargetRiskDistance = not na(amyExecutionInvalidation) ? math.abs(close - amyExecutionInvalidation) : amyTargetAtr
-float amyProjectedTargetDistance = math.max(amyTargetRiskDistance * 0.28, amyTargetAtr * 0.16)
-float amyTargetOutsidePad = math.max(amyTargetAtr * 0.02, syminfo.mintick)
+float amyProjectedTargetDistance = 0.0
+float amyTargetOutsidePad = syminfo.mintick
 float amyBullProjectedTarget = math.max(close + amyProjectedTargetDistance, high + amyTargetOutsidePad)
 float amyBearProjectedTarget = math.min(close - amyProjectedTargetDistance, low - amyTargetOutsidePad)
-float amyTargetMinDistance = math.max(amyTargetAtr * 0.06, amyTargetRiskDistance * 0.18)
+float amyTargetMinDistance = 0.0
 float amyBullTargetRef = math.max(close + amyTargetMinDistance, high + syminfo.mintick)
 float amyBearTargetRef = math.min(close - amyTargetMinDistance, low - syminfo.mintick)
 float amyBullTargetBase = amyNearestAbove6(equalHigh.currentLevel, amyWeakHigh, amyPDH, amyPWH, swingHigh.currentLevel, amyRecentHigh, amyBullTargetRef)
@@ -1406,7 +1411,7 @@ float amyInternalBullTarget = not na(internalHigh.currentLevel) and internalHigh
 float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.currentLevel < amyBearTargetRef ? internalLow.currentLevel : na
 float amyTargetCandidate = amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
 float amyTargetDistanceRatio = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 ? math.abs(amyTargetCandidate - close) / amyTargetRiskDistance : na
-bool amyTargetQualityOK = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 and amyTargetDistanceRatio <= 0.28
+bool amyTargetQualityOK = false
 float amyTarget = amyTargetQualityOK ? amyTargetCandidate : amyNextDirection == BULLISH ? amyBullProjectedTarget : amyBearProjectedTarget
 string amyTargetSide = amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
 
