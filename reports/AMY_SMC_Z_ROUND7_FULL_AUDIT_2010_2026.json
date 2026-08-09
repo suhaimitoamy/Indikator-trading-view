@@ -1,0 +1,109 @@
+{
+  "indicator": "Amy-SMC-Z.pine",
+  "method": {
+    "type": "closed-candle Python/Pine-logic evidence consolidation + retained event-layer replay checkpoints",
+    "scoring": "2010-03-01 through 2026-07-31",
+    "splits": {
+      "train": "2010-2018",
+      "validation": "2019-2023",
+      "holdout": "2024-2026"
+    },
+    "rules": [
+      "No future leak/lookahead/repaint",
+      "Next Move always UP/DOWN",
+      "Target always available",
+      "Keep better baseline; rollback worse candidates",
+      "Do not promote descriptive modules into directional predictors without robust split evidence"
+    ]
+  },
+  "predictive": {
+    "pattern": {
+      "M5": {"train":{"n":102,"wr":74.5098},"validation":{"n":75,"wr":78.6667},"holdout":{"n":40,"wr":85.0},"all":{"n":217,"wr":77.8802}},
+      "M15": {"train":{"wr":59.52},"validation":{"wr":64.25},"holdout":{"wr":66.22},"all":{"n":3504,"wr":62.33}},
+      "H1": {"train":{"wr":67.11},"validation":{"wr":68.2},"holdout":{"wr":72.87},"all":{"n":924,"wr":68.61}}
+    },
+    "choch": {
+      "M5": {"train":{"n":436,"wr":43.1193},"validation":{"n":215,"wr":46.0465},"holdout":{"n":99,"wr":49.4949},"all":{"n":750,"wr":44.8}},
+      "M15": {"train":{"n":197,"wr":53.8071},"validation":{"n":106,"wr":60.3774},"holdout":{"n":69,"wr":57.971},"all":{"n":372,"wr":56.4516}},
+      "H1": {"train":{"wr":60.71},"validation":{"wr":70.0},"holdout":{"wr":73.33},"all":{"n":63,"wr":66.67}}
+    },
+    "valid_break": {
+      "M5": {"train":{"n":191,"wr":45.0262},"validation":{"n":65,"wr":58.4615},"holdout":{"n":36,"wr":55.5556},"all":{"n":292,"wr":49.3151}},
+      "M15": {"train":{"n":559,"wr":45.4383},"validation":{"n":314,"wr":48.7261},"holdout":{"n":150,"wr":53.3333},"all":{"n":1023,"wr":47.6051}},
+      "H1": {"train":{"n":170,"wr":52.3529},"validation":{"n":88,"wr":56.8182},"holdout":{"n":50,"wr":32.0},"all":{"n":308,"wr":50.3247}}
+    },
+    "sweep_continuation": {
+      "M5": {"train":{"n":2061,"wr":85.444},"validation":{"n":1173,"wr":88.0648},"holdout":{"n":608,"wr":87.0066},"all":{"n":3842,"wr":86.4914}},
+      "M15": {"train":{"n":694,"wr":85.0144},"validation":{"n":393,"wr":85.4962},"holdout":{"n":186,"wr":86.0215},"all":{"n":1273,"wr":85.3103}},
+      "H1": {"train":{"n":115,"wr":85.2174},"validation":{"n":84,"wr":89.2857},"holdout":{"n":52,"wr":92.3077},"all":{"n":251,"wr":88.0478}}
+    },
+    "m5_internal_transition": {"train":{"n":4003,"wr":72.2208},"validation":{"n":2419,"wr":74.907},"holdout":{"n":1065,"wr":73.0516},"all":{"n":7487,"wr":73.2069}},
+    "next_target": {
+      "M5": {"train":{"wr":67.0174},"validation":{"wr":68.0741},"holdout":{"wr":68.9048},"all":{"signals":34296,"wins":23135,"losses":11082,"wr":67.6126}},
+      "M15": {"train":{"wr":68.1836},"validation":{"wr":67.2381},"holdout":{"wr":67.3146},"all":{"signals":9105,"wins":6161,"losses":2929,"wr":67.7778}},
+      "H1": {"train":{"wr":70.1843},"validation":{"wr":67.5939},"holdout":{"wr":68.3575},"all":{"signals":2335,"wins":1607,"losses":720,"wr":69.0589}}
+    },
+    "final_bias_next_swing": {
+      "M5": {"train":{"n":17895,"wr":53.1769},"validation":{"n":9657,"wr":53.4224},"holdout":{"n":4974,"wr":53.4982},"all":{"n":32526,"wr":53.2989}},
+      "M15": {"train":{"n":5038,"wr":53.6919},"validation":{"n":2605,"wr":54.357},"holdout":{"n":1344,"wr":53.5714},"all":{"n":8987,"wr":53.8667}},
+      "H1": {"train":{"n":1168,"wr":53.8527},"validation":{"n":696,"wr":53.3046},"holdout":{"n":378,"wr":54.7619},"all":{"n":2242,"wr":53.8359}}
+    },
+    "dealing_range_directional": {
+      "M5": {"train":{"n":1071,"wr":38.9356},"validation":{"n":641,"wr":38.5335},"holdout":{"n":277,"wr":38.9892},"all":{"n":1989,"wr":38.8135}},
+      "M15": {"train":{"n":466,"wr":42.7039},"validation":{"n":296,"wr":32.0946},"holdout":{"n":170,"wr":32.9412},"all":{"n":932,"wr":37.5536}},
+      "H1": {"train":{"n":86,"wr":44.186},"validation":{"n":46,"wr":23.913},"holdout":{"n":38,"wr":39.4737},"all":{"n":170,"wr":37.6471}}
+    }
+  },
+  "functional": {
+    "invalidation_geometry": {
+      "M5":{"train":{"geometry_pct":100.0},"validation":{"geometry_pct":100.0},"holdout":{"geometry_pct":100.0},"all":{"geometry_pct":100.0}},
+      "M15":{"train":{"geometry_pct":100.0},"validation":{"geometry_pct":100.0},"holdout":{"geometry_pct":100.0},"all":{"geometry_pct":100.0}},
+      "H1":{"train":{"geometry_pct":100.0},"validation":{"geometry_pct":100.0},"holdout":{"geometry_pct":100.0},"all":{"geometry_pct":100.0}}
+    },
+    "eqh_taken": {
+      "M5":{"train":{"n":4636,"rate":76.7903},"validation":{"n":2468,"rate":77.8363},"holdout":{"n":1285,"rate":78.8327},"all":{"n":8389,"rate":77.4109}},
+      "M15":{"train":{"n":1599,"rate":78.2364},"validation":{"n":845,"rate":81.3018},"holdout":{"n":435,"rate":83.2184},"all":{"n":2879,"rate":79.8889}},
+      "H1":{"train":{"n":350,"rate":80.8571},"validation":{"n":173,"rate":86.1272},"holdout":{"n":90,"rate":87.7778},"all":{"n":613,"rate":83.3605}}
+    },
+    "eql_taken": {
+      "M5":{"train":{"n":4208,"rate":75.5941},"validation":{"n":2285,"rate":78.1182},"holdout":{"n":1143,"rate":77.4278},"all":{"n":7636,"rate":76.6239}},
+      "M15":{"train":{"n":1482,"rate":78.0702},"validation":{"n":785,"rate":78.5987},"holdout":{"n":342,"rate":78.3626},"all":{"n":2609,"rate":78.2675}},
+      "H1":{"train":{"n":303,"rate":78.8779},"validation":{"n":162,"rate":82.716},"holdout":{"n":73,"rate":75.3425},"all":{"n":538,"rate":79.5539}}
+    },
+    "m15_fvg_ob": {
+      "fvg":{"train":{"n":14392,"rate":98.527},"validation":{"n":7999,"rate":98.5123},"holdout":{"n":5206,"rate":97.0611},"all":{"n":27597,"rate":98.2462}},
+      "internal_ob":{"train":{"n":11096,"rate":97.1611},"validation":{"n":6046,"rate":97.9987},"holdout":{"n":3099,"rate":93.9981},"all":{"n":20241,"rate":96.927}},
+      "swing_ob":{"train":{"n":1532,"rate":92.8851},"validation":{"n":823,"rate":93.1956},"holdout":{"n":426,"rate":80.5164},"all":{"n":2781,"rate":91.0823}}
+    },
+    "m15_prior_levels": {
+      "D":{"train":{"n":2752,"rate":80.5959},"validation":{"n":1552,"rate":80.6701},"holdout":{"n":837,"rate":79.9283},"all":{"n":5141,"rate":80.5096}},
+      "W":{"train":{"n":462,"rate":88.5281},"validation":{"n":260,"rate":84.2308},"holdout":{"n":135,"rate":88.8889},"all":{"n":857,"rate":87.2812}},
+      "M":{"train":{"n":106,"rate":83.9623},"validation":{"n":60,"rate":88.3333},"holdout":{"n":31,"rate":70.9677},"all":{"n":197,"rate":83.2487}}
+    },
+    "fib_1_272": {
+      "M5":{"train":{"n":1775,"rate":69.9155},"validation":{"n":983,"rate":68.2604},"holdout":{"n":506,"rate":71.3439},"all":{"n":3264,"rate":69.6385}},
+      "M15":{"train":{"n":557,"rate":72.1724},"validation":{"n":362,"rate":65.1934},"holdout":{"n":184,"rate":73.913},"all":{"n":1103,"rate":70.1723}},
+      "H1":{"train":{"n":139,"rate":72.6619},"validation":{"n":72,"rate":61.1111},"holdout":{"n":43,"rate":60.4651},"all":{"n":254,"rate":67.3228}}
+    },
+    "ote_to_1_272": {
+      "M5":{"train":{"n":1034,"rate":29.4004},"validation":{"n":580,"rate":27.2414},"holdout":{"n":290,"rate":30.0},"all":{"n":1904,"rate":28.834}},
+      "M15":{"train":{"n":295,"rate":31.5254},"validation":{"n":189,"rate":25.3968},"holdout":{"n":94,"rate":39.3617},"all":{"n":578,"rate":30.7958}},
+      "H1":{"train":{"n":65,"rate":23.0769},"validation":{"n":37,"rate":24.3243},"holdout":{"n":23,"rate":13.0435},"all":{"n":125,"rate":21.6}}
+    }
+  },
+  "decisions": [
+    "KEEP Pattern M5 Round5 profile.",
+    "KEEP Pattern M15/H1 Round6 liquidity-conflict profiles; both improved train, validation, holdout.",
+    "KEEP H1 CHoCH Round6 cap; M5/M15 CHoCH remain inherited best-of and are not promoted further.",
+    "KEEP inverse-sweep continuation predictor on M5/M15/H1.",
+    "KEEP M5 internal-transition override.",
+    "KEEP Next Move/Target core from Round5; Round7 found no evidence requiring rollback.",
+    "KEEP invalidation, EQH/EQL, FVG/OB lifecycle, D/W/M levels as functional/descriptive modules.",
+    "Dealing Range remains descriptive only; do not feed it into Final Bias/Next Move.",
+    "Valid Break remains independent confirmation/label only; do not use as Next Move override.",
+    "OTE remains visualization/entry-location context, not a high-confidence predictor on full history.",
+    "Fib 1.272 remains a target reference; 1.618/2.000 should not be interpreted as comparable-probability targets.",
+    "Confidence remains a heuristic score, not a calibrated probability; no Round7 confidence rewrite accepted.",
+    "No Amy-SMC-Z logic patch accepted in Round7 baseline audit; preserving Z avoids regression."
+  ]
+}
