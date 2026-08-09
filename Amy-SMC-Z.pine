@@ -1387,9 +1387,25 @@ if barstate.isconfirmed
         amyRound9M5TradeDirection := amyRound9EntryConfirmed ? amyCurrentInternalBias : 0
 
 bool amyRound9M5TradeRegime = amyRound8M5TradeRegime and amyRound9M5TradeDirection != 0
+
+// AMY SMC Z ROUND 10 — QUALITY GRADE, NOT A CORE FILTER.
+// Train + validation selected a cleaner confirmed-transition subset: entry body 0.50–2.50 ATR,
+// body/range >= 0.30 and structural room < 8 ATR (Round 9 already enforces >= 3 ATR).
+// Its Target V1 lifecycle improved strongly, but holdout directional precision was lower by one historical hit.
+// Therefore Round 10 does NOT discard the retained Round-9 trades. It grades the cleaner subset A+ and keeps
+// the remaining already-valid Round-9 trades as A. Next Move, Target V1 and invalidation logic stay unchanged.
+float amyRound10EntryBodyAtr = not na(amyEventAtr) and amyEventAtr > 0 ? amyEventBody / amyEventAtr : na
+bool amyRound10EntryAPlusQualified = amyRound9EntryConfirmed and not na(amyRound10EntryBodyAtr) and amyRound10EntryBodyAtr >= 0.50 and amyRound10EntryBodyAtr < 2.50 and amyEventBodyRatio >= 0.30 and amyRound9EntryRiskAtr < 8.0
+var bool amyRound10M5APlus = false
+if barstate.isconfirmed
+    if not amyRound9M5TradeRegime
+        amyRound10M5APlus := false
+    else if amyRound9M5RegimeEntry
+        amyRound10M5APlus := amyRound10EntryAPlusQualified
+
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
-string amyRound9Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? 'TRADE • CONFIRMED' : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : 'R8 BASELINE'
+string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'TRADE • A+' : 'TRADE • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : 'R9 BASELINE'
 int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyFinalBias
 // H1 keeps the previously accepted confirmed-sweep-candle override. M15 remains the retained baseline.
 if amyRound5H1 and amySweepContinuationQualified
@@ -1471,7 +1487,7 @@ if barstate.islast
         table.cell(amyDashboard, 0, 9, 'Target', text_color = color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 1, 9, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
         table.cell(amyDashboard, 0, 10, 'Regime', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 10, amyRound9Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 10, amyRound10Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 0, 11, 'Confidence', text_color = color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 1, 11, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
         table.cell(amyDashboard, 0, 12, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
@@ -1494,11 +1510,12 @@ if barstate.islast
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
 
-// AMY SMC Z ROUND 9 RESULT LOCK
-// M5 execution now requires a confirmed Internal Transition entry candle plus >=3 ATR structural room to invalidation.
-// Rejected Round-8 transition entries remain WATCH/WAIT rather than forced predictions; Sweep remains WATCH context.
-// M15/H1 keep their retained baseline because Round-9 candle-confirmation gates worsened validation/holdout lifecycle.
-// Pattern, CHoCH, Valid Break and descriptive modules keep their accepted independent roles and are not double-counted.
+// AMY SMC Z ROUND 10 RESULT LOCK
+// Round 9 remains the execution baseline: confirmed Internal Transition + >=3 ATR structural room.
+// Round 10 adds only evidence-backed quality grading: A+ is the cleaner body/risk subset; A keeps every other
+// already-valid Round-9 trade. The A+ subset was NOT allowed to replace A because holdout directional precision
+// was lower by one historical hit despite materially better Target V1 lifecycle. This preserves the best-of rule.
+// M15/H1 and all previously strong descriptive modules remain unchanged.
 
 // FINAL LONG-HISTORY BASELINE — XAUUSD 2010–2026 validation checkpoint.
 // The current Amy SMC X configuration beat the previous settings on the same long-history replay, so its logic is frozen as the reference baseline.
