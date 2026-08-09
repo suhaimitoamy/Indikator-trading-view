@@ -1,0 +1,90 @@
+{
+  "indicator": "Amy-SMC-Z.pine",
+  "round": 8,
+  "period": "2010-03-01 through 2026-07-31",
+  "splits": {
+    "train": "2010-2018",
+    "validation": "2019-2023",
+    "holdout": "2024-2026"
+  },
+  "method": "closed-candle Python/Pine-logic replay; Target V1 unchanged; selective regime gating",
+  "accepted": {
+    "M5_internal_transition": {
+      "definition": "HTF = Swing = active Liquidity; Internal is opposite; prediction follows Internal",
+      "directional": {
+        "train": {"n": 901, "accuracy_pct": 75.3607103219},
+        "validation": {"n": 554, "accuracy_pct": 77.4368231047},
+        "holdout": {"n": 267, "accuracy_pct": 76.0299625468},
+        "all": {"n": 1722, "accuracy_pct": 76.1324041812},
+        "actionable_bar_coverage_pct": 0.6583298594
+      },
+      "target_v1_lifecycle": {
+        "train": {"signals": 891, "wins": 616, "losses": 273, "ambiguous": 2, "unresolved": 0, "wr_pct": 69.2913385827, "round7_pct": 67.0174146367},
+        "validation": {"signals": 550, "wins": 383, "losses": 164, "ambiguous": 3, "unresolved": 0, "wr_pct": 70.0182815356, "round7_pct": 68.0740888269},
+        "holdout": {"signals": 266, "wins": 189, "losses": 76, "ambiguous": 1, "unresolved": 0, "wr_pct": 71.3207547170, "round7_pct": 68.9047987616},
+        "all": {"signals": 1707, "wins": 1188, "losses": 513, "ambiguous": 6, "unresolved": 0, "wr_pct": 69.8412698413, "round7_pct": 67.6125902329}
+      }
+    }
+  },
+  "watch_only": {
+    "M5_sweep_continuation": {
+      "reason": "strong directional evidence, but combined target lifecycle is materially below Internal-Transition-only execution",
+      "sweep_plus_transition_test": {
+        "directional": {
+          "train": {"n": 2490, "accuracy_pct": 81.8072289157},
+          "validation": {"n": 1443, "accuracy_pct": 84.0609840610},
+          "holdout": {"n": 744, "accuracy_pct": 82.6612903226},
+          "all": {"n": 4677, "accuracy_pct": 82.6384434467}
+        },
+        "target_v1_lifecycle": {
+          "train": {"signals": 2475, "wins": 1660, "losses": 813, "ambiguous": 2, "wr_pct": 67.1249494541},
+          "validation": {"signals": 1437, "wins": 986, "losses": 447, "ambiguous": 4, "wr_pct": 68.8066992324},
+          "holdout": {"signals": 741, "wins": 510, "losses": 230, "ambiguous": 1, "wr_pct": 68.9189189189},
+          "all": {"signals": 4653, "wins": 3156, "losses": 1490, "ambiguous": 7, "wr_pct": 67.9294016358}
+        }
+      }
+    }
+  },
+  "rolled_back": {
+    "M15_rare_regime": {
+      "definition": "Swing = Internal; HTF = Liquidity opposite",
+      "directional": {
+        "train": {"n": 83, "accuracy_pct": 81.9277108434},
+        "validation": {"n": 29, "accuracy_pct": 79.3103448276},
+        "holdout": {"n": 8, "accuracy_pct": 100.0},
+        "all": {"n": 120, "accuracy_pct": 82.5}
+      },
+      "target_v1_lifecycle": {
+        "train": {"signals": 83, "wins": 66, "losses": 17, "ambiguous": 0, "wr_pct": 79.5180722892},
+        "validation": {"signals": 29, "wins": 22, "losses": 6, "ambiguous": 1, "wr_pct": 78.5714285714},
+        "holdout": {"signals": 8, "wins": 6, "losses": 2, "ambiguous": 0, "wr_pct": 75.0},
+        "all": {"signals": 120, "wins": 94, "losses": 25, "ambiguous": 1, "wr_pct": 78.9915966387}
+      },
+      "reason": "holdout N=8 is too small after an explicit anti-overfit exercise; preserve Round 7 until new unseen data exists"
+    },
+    "H1_sweep_gate": {
+      "directional": {
+        "train": {"n": 115, "accuracy_pct": 85.2173913043},
+        "validation": {"n": 84, "accuracy_pct": 89.2857142857},
+        "holdout": {"n": 53, "accuracy_pct": 92.4528301887},
+        "all": {"n": 252, "accuracy_pct": 88.0952380952}
+      },
+      "target_v1_lifecycle": {
+        "train": {"wr_pct": 66.9565217391},
+        "validation": {"wr_pct": 63.0952380952},
+        "holdout": {"wr_pct": 73.5849056604},
+        "all": {"wr_pct": 67.0634920635}
+      },
+      "round7_all_pct": 69.0588740868,
+      "reason": "target lifecycle worsened in train, validation and full history"
+    }
+  },
+  "implementation": {
+    "M5_trade_regime": "TRADE • TRANSITION",
+    "M5_watch_regime": "WATCH • SWEEP",
+    "M5_default": "WAIT",
+    "M15_H1": "R7 BASELINE",
+    "target_geometry_changed": false,
+    "descriptive_modules_changed": false
+  }
+}
