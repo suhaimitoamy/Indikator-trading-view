@@ -1,0 +1,70 @@
+name: Amy SMC A Walk-Forward Patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/amy-smc-a-walkforward-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Amy SMC A only
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-A.pine')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace("indicator('Amy SMC Z', 'Amy SMC Z'", "indicator('Amy SMC A', 'Amy SMC A'", 1)
+          s = s.replace('AMY SMC Z', 'AMY SMC A')
+
+          old = "bool amyRound9EntryConfirmed = amyRound9CandleConfirm and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0"
+          new = """// AMY SMC A WALK-FORWARD DEPLOYMENT GATE — selected using train 2018–2025 only.\n// 2026 Jan–Jul remains out-of-sample and was not used to select these thresholds.\n// Latest M5 train-only set: body ratio >= 0.30, body/ATR 0.35–2.50, structural room 3.0–8.0 ATR.\nbool amyWfM5ParamGate = amyEventBodyRatio >= 0.30 and amyBreakBodyAtr >= 0.35 and amyBreakBodyAtr < 2.50 and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0 and amyRound9EntryRiskAtr < 8.0\nbool amyRound9EntryConfirmed = amyRound9CandleConfirm and amyWfM5ParamGate"""
+          if old not in s:
+              raise SystemExit('Round9 entry line not found')
+          s = s.replace(old, new, 1)
+
+          old = "int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyFinalBias"
+          new = """// Walk-forward promotion status. M5 is provisional because most annual OOS windows have <30 signals.\n// M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.\nbool amyWfM5Provisional = true\nbool amyWfM15Approved = false\nbool amyWfH1Approved = false\nint amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyRound5M15 ? (amyWfM15Approved ? amyFinalBias : 0) : amyRound5H1 ? (amyWfH1Approved ? amyFinalBias : 0) : amyFinalBias"""
+          if old not in s:
+              raise SystemExit('NextDirection line not found')
+          s = s.replace(old, new, 1)
+
+          old = "if amyRound5H1 and amySweepContinuationQualified"
+          new = "if amyRound5H1 and amyWfH1Approved and amySweepContinuationQualified"
+          if old not in s:
+              raise SystemExit('H1 override line not found')
+          s = s.replace(old, new, 1)
+
+          old = "string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'TRADE • A+' : 'TRADE • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : 'R9 BASELINE'"
+          new = "string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'WF PROV • A+' : 'WF PROV • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'"
+          if old not in s:
+              raise SystemExit('Regime line not found')
+          s = s.replace(old, new, 1)
+
+          marker = "// AMY SMC A ROUND 10 RESULT LOCK"
+          if marker in s:
+              note = """// AMY SMC A WALK-FORWARD VALIDATION — 8-year rolling train / 1-year test, test 2012–2026.\n// Parameter selection is train-only. Test windows below 30 signals are LOW CONFIDENCE and never lock/unlock a rule.\n// Latest deployment training window: 2018–2025. M5 train expectancy +0.07795R (201 signals): PROVISIONAL.\n// M15 train expectancy -0.01619R (1742 signals): REJECT/WAIT. H1 train expectancy -0.04592R (131 signals): REJECT/WAIT.\n// 2026 Jan–Jul is OOS only: M5 18 signals (LOW), M15 149, H1 14 (LOW).\n// Full per-window table is stored in Google Drive / Data backtest / Amy SMC A Walk-Forward 2004-2026.\n\n"""
+              s = s.replace(marker, note + marker, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+          git diff --check
+          grep -q "indicator('Amy SMC A', 'Amy SMC A'" Amy-SMC-A.pine
+          grep -q "amyWfM5ParamGate" Amy-SMC-A.pine
+          grep -q "amyWfM15Approved = false" Amy-SMC-A.pine
+          grep -q "amyWfH1Approved = false" Amy-SMC-A.pine
+      - name: Commit Amy SMC A
+        shell: bash
+        run: |
+          git config user.name "suhaimitoamy"
+          git config user.email "34860608+suhaimitoamy@users.noreply.github.com"
+          git add Amy-SMC-A.pine
+          git commit -m "feat: apply walk-forward validation gate to Amy SMC A"
+          git push
