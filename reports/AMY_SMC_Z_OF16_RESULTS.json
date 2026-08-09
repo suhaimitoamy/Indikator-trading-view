@@ -1,0 +1,33 @@
+{
+  "indicator": "Amy-SMC-Z-OF16.pine",
+  "branch": "experiment/amy-smc-z-of16",
+  "period": "2010-03-01 through 2026-07-31",
+  "selection_mode": "intentional full-sample overfit; all observations treated as in-sample training",
+  "anti_lookahead": true,
+  "baseline_main_untouched": true,
+  "direction_fit": {
+    "baseline": {
+      "M5": {"accuracy_pct": 54.2009786371, "n": 33516},
+      "M15": {"accuracy_pct": 53.8666963392, "n": 8987},
+      "H1": {"accuracy_pct": 54.0399652476, "n": 2302}
+    },
+    "of16": {
+      "M5": {"accuracy_pct": 55.4656862745, "n": 32640},
+      "M15": {"accuracy_pct": 54.9329758713, "n": 11190},
+      "H1": {"accuracy_pct": 54.2986425339, "n": 2873}
+    },
+    "selected_default": "Internal Structure on M5/M15/H1",
+    "m15_sweep_override": true
+  },
+  "lifecycle_calibration": {
+    "reproduced_baseline_pct": {"M5": 67.5863099686, "M15": 67.7994428969, "H1": 69.0300130492},
+    "official_retained_baseline_pct": {"M5": 67.6125902329, "M15": 67.7777777778, "H1": 69.0588740868}
+  },
+  "of16_max_target_fit": {
+    "geometry": "one syminfo.mintick outside confirmed signal candle high/low; structural candidate bypassed",
+    "M5": {"wins":30285,"losses":2212,"ambiguous":146,"unresolved":1,"cases":32644,"resolved_accuracy_pct":93.1932178355,"median_target_to_invalidation":0.0325878333},
+    "M15": {"wins":10338,"losses":820,"ambiguous":33,"unresolved":0,"cases":11191,"resolved_accuracy_pct":92.6510127263,"median_target_to_invalidation":0.0394174970},
+    "H1": {"wins":2660,"losses":207,"ambiguous":10,"unresolved":0,"cases":2877,"resolved_accuracy_pct":92.7799093129,"median_target_to_invalidation":0.0438247012}
+  },
+  "warning": "The ~93% target-resolution is mainly target compression and is not a ~93% directional edge, 1:1 RR win rate, or unbiased future probability."
+}
