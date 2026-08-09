@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=5
-indicator('Amy SMC Y', 'Amy SMC Y', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('Amy SMC Z', 'Amy SMC Z', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
