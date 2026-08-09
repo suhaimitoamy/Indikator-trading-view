@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=5
-indicator('Amy SMC Z', 'Amy SMC Z', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('Amy SMC A', 'Amy SMC A', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
@@ -1357,13 +1357,13 @@ if amyEventCount > 0
         amyHistoryScore += eventDirection * eventStrength * ageWeight * orderWeight
 
 int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0
-// AMY SMC Z ROUND 8 — LONG-HISTORY CONTEXT.
+// AMY SMC A ROUND 8 — LONG-HISTORY CONTEXT.
 // Final Bias remains a continuous descriptive bias, while M5 Next Move is now selective and may WAIT outside
 // the validated execution regime. M15/H1 retain the accepted Round-7 directional behavior.
 // Event History stays context/confidence evidence and is not an independent direction-flip engine.
 float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15
 float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
-// AMY SMC Z ROUND 8 — REGIME-ADAPTIVE NEXT MOVE.
+// AMY SMC A ROUND 8 — REGIME-ADAPTIVE NEXT MOVE.
 // The 2010–2026 replay found that M5 Internal Transition is the only selective execution regime that improved
 // train, validation, holdout and full-history Target V1 lifecycle together. M5 therefore predicts only when that
 // regime is active; outside it the dashboard explicitly waits instead of forcing a low-quality UP/DOWN call.
@@ -1373,7 +1373,7 @@ float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
 bool amyM5InternalTransitionRegime = amyRound5M5 and amySafeHTFBias != 0 and amySafeHTFBias == amyCurrentSwingBias and amyLiquidityBiasActive == amyCurrentSwingBias and amyCurrentInternalBias == -amyCurrentSwingBias
 bool amyRound8M5TradeRegime = amyM5InternalTransitionRegime
 
-// AMY SMC Z ROUND 9 — CONFIRMED TRANSITION EXECUTION GATE.
+// AMY SMC A ROUND 9 — CONFIRMED TRANSITION EXECUTION GATE.
 // Round 8 proved the Internal Transition regime robustly, but not every transition entry had equal execution quality.
 // Round 9 keeps the regime only when the ENTRY candle closes in the new Internal direction and the protected
 // structural invalidation is at least 3 ATR away. This 3 ATR structural-room gate improved directional precision
@@ -1382,7 +1382,11 @@ bool amyRound9M5RegimeEntry = amyRound8M5TradeRegime and not amyRound8M5TradeReg
 float amyRound9EntryInvalidation = amyCurrentInternalBias == BULLISH ? amyBullInvalidation : amyCurrentInternalBias == BEARISH ? amyBearInvalidation : na
 float amyRound9EntryRiskAtr = not na(amyRound9EntryInvalidation) and not na(amyEventAtr) and amyEventAtr > 0 ? math.abs(close - amyRound9EntryInvalidation) / amyEventAtr : na
 bool amyRound9CandleConfirm = amyCurrentInternalBias == BULLISH ? close > open : amyCurrentInternalBias == BEARISH ? close < open : false
-bool amyRound9EntryConfirmed = amyRound9CandleConfirm and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0
+// AMY SMC A WALK-FORWARD DEPLOYMENT GATE — selected using train 2018–2025 only.
+// 2026 Jan–Jul remains out-of-sample and was not used to select these thresholds.
+// Latest M5 train-only set: body ratio >= 0.30, body/ATR 0.35–2.50, structural room 3.0–8.0 ATR.
+bool amyWfM5ParamGate = amyEventBodyRatio >= 0.30 and amyBreakBodyAtr >= 0.35 and amyBreakBodyAtr < 2.50 and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0 and amyRound9EntryRiskAtr < 8.0
+bool amyRound9EntryConfirmed = amyRound9CandleConfirm and amyWfM5ParamGate
 var int amyRound9M5TradeDirection = 0
 if barstate.isconfirmed
     if not amyRound8M5TradeRegime
@@ -1392,7 +1396,7 @@ if barstate.isconfirmed
 
 bool amyRound9M5TradeRegime = amyRound8M5TradeRegime and amyRound9M5TradeDirection != 0
 
-// AMY SMC Z ROUND 10 — QUALITY GRADE, NOT A CORE FILTER.
+// AMY SMC A ROUND 10 — QUALITY GRADE, NOT A CORE FILTER.
 // Train + validation selected a cleaner confirmed-transition subset: entry body 0.50–2.50 ATR,
 // body/range >= 0.30 and structural room < 8 ATR (Round 9 already enforces >= 3 ATR).
 // Its Target V1 lifecycle improved strongly, but holdout directional precision was lower by one historical hit.
@@ -1409,17 +1413,22 @@ if barstate.isconfirmed
 
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
-string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'TRADE • A+' : 'TRADE • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : 'R9 BASELINE'
-int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyFinalBias
+string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'WF PROV • A+' : 'WF PROV • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
+// Walk-forward promotion status. M5 is provisional because most annual OOS windows have <30 signals.
+// M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
+bool amyWfM5Provisional = true
+bool amyWfM15Approved = false
+bool amyWfH1Approved = false
+int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyRound5M15 ? (amyWfM15Approved ? amyFinalBias : 0) : amyRound5H1 ? (amyWfH1Approved ? amyFinalBias : 0) : amyFinalBias
 // H1 keeps the previously accepted confirmed-sweep-candle override. M15 remains the retained baseline.
-if amyRound5H1 and amySweepContinuationQualified
+if amyRound5H1 and amyWfH1Approved and amySweepContinuationQualified
     amyNextDirection := amySweepContinuationBias
 
 bool amyHasExecutionSignal = amyNextDirection != 0
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : amyNextDirection == BEARISH ? 'DOWN' : 'WAIT'
 // Select invalidation from the actual execution direction. WAIT has no synthetic invalidation/target.
 float amyExecutionInvalidation = amyNextDirection == BULLISH ? amyBullInvalidation : amyNextDirection == BEARISH ? amyBearInvalidation : na
-// AMY SMC Z ROUND 8 TARGET V1 — target is available whenever Next Move is actionable.
+// AMY SMC A ROUND 8 TARGET V1 — target is available whenever Next Move is actionable.
 // M5 WAIT/WATCH intentionally has no synthetic target. For actionable calls, prefer nearby untouched structural liquidity;
 // if that liquidity is too distant or unavailable, use the retained conservative projected fallback. The projected target
 // is forced outside the signal candle, preserving the same-candle anti-leak rule.
@@ -1514,7 +1523,14 @@ if barstate.islast
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
 
-// AMY SMC Z ROUND 10 RESULT LOCK
+// AMY SMC A WALK-FORWARD VALIDATION — 8-year rolling train / 1-year test, test 2012–2026.
+// Parameter selection is train-only. Test windows below 30 signals are LOW CONFIDENCE and never lock/unlock a rule.
+// Latest deployment training window: 2018–2025. M5 train expectancy +0.07795R (201 signals): PROVISIONAL.
+// M15 train expectancy -0.01619R (1742 signals): REJECT/WAIT. H1 train expectancy -0.04592R (131 signals): REJECT/WAIT.
+// 2026 Jan–Jul is OOS only: M5 18 signals (LOW), M15 149, H1 14 (LOW).
+// Full per-window table is stored in Google Drive / Data backtest / Amy SMC A Walk-Forward 2004-2026.
+
+// AMY SMC A ROUND 10 RESULT LOCK
 // Round 9 remains the execution baseline: confirmed Internal Transition + >=3 ATR structural room.
 // Round 10 adds only evidence-backed quality grading: A+ is the cleaner body/risk subset; A keeps every other
 // already-valid Round-9 trade. The A+ subset was NOT allowed to replace A because holdout directional precision
