@@ -1,0 +1,46 @@
+{
+  "indicator": "Amy-SMC-Z.pine",
+  "round": 10,
+  "implementation_commit": "6057e4909bc1f338a6891d74696f781c60a51efb",
+  "period": "2010-03-01 through 2026-07-31",
+  "timeframe": "M5",
+  "method": "closed-candle Python/Pine-logic replay on audited/repaired XAUUSD archives",
+  "splits": {
+    "train": "2010-2018",
+    "validation": "2019-2023",
+    "holdout": "2024-2026"
+  },
+  "calibration": {
+    "official_round9": {"entries": 781, "directional_pct": 82.84, "target_lifecycle_pct": 71.15},
+    "reproduced_round9": {"entries": 767, "directional_pct": 82.7900912647, "target_lifecycle_pct": 71.7079530639}
+  },
+  "round9_reproduced_by_split": {
+    "train": {"entries":405,"directional_pct":81.4814814815,"target_lifecycle_pct":70.6172839506,"wins":286,"losses":119},
+    "validation": {"entries":239,"directional_pct":84.9372384937,"target_lifecycle_pct":71.9665271967,"wins":172,"losses":67},
+    "holdout": {"entries":123,"directional_pct":82.9268292683,"target_lifecycle_pct":74.7967479675,"wins":92,"losses":31},
+    "full": {"entries":767,"directional_pct":82.7900912647,"target_lifecycle_pct":71.7079530639,"wins":550,"losses":217}
+  },
+  "a_plus_rule": {
+    "round9_required": true,
+    "body_atr_min": 0.50,
+    "body_atr_max_exclusive": 2.50,
+    "body_range_ratio_min": 0.30,
+    "risk_atr_min_inherited_round9": 3.0,
+    "risk_atr_max_exclusive": 8.0,
+    "target_geometry_changed": false
+  },
+  "a_plus_results": {
+    "train": {"entries":209,"directional_pct":83.7320574163,"target_lifecycle_pct":73.6842105263,"wins":154,"losses":55},
+    "validation": {"entries":117,"directional_pct":87.1794871795,"target_lifecycle_pct":75.2136752137,"wins":88,"losses":29},
+    "holdout": {"entries":58,"directional_pct":82.7586206897,"target_lifecycle_pct":79.3103448276,"wins":46,"losses":12},
+    "full": {"entries":384,"directional_pct":84.6354166667,"target_lifecycle_pct":75.0,"wins":288,"losses":96}
+  },
+  "decision": {
+    "replace_round9_with_a_plus_filter": "ROLLBACK",
+    "reason": "A+ holdout directional precision 82.76% was slightly below the protected Round-9 same-evaluator baseline 82.93%.",
+    "add_a_plus_quality_grade": "KEEP",
+    "keep_round9_a_trades": true,
+    "keep_m15_h1": true,
+    "keep_target_v1": true
+  }
+}
