@@ -1,0 +1,54 @@
+{
+  "indicator": "Amy-SMC-Z.pine",
+  "round": 9,
+  "implementation_commit": "3e5abe8878ac9420dc98e1a3c1927b07a7454bae",
+  "period": "2010-03-01 through 2026-07-31",
+  "splits": {"train":"2010-2018","validation":"2019-2023","holdout":"2024-2026"},
+  "accepted_gate": {
+    "parent_regime": "Round 8 M5 Internal Transition",
+    "entry_candle_must_follow_internal_direction": true,
+    "min_structural_invalidation_distance_atr": 3.0,
+    "target_geometry_changed": false,
+    "future_leak": false
+  },
+  "m5": {
+    "round8_apples_to_apples_directional": {
+      "train":75.0841750842,"validation":77.2727272727,"holdout":75.9398496241,"all":75.9226713533
+    },
+    "round9_directional": {
+      "train":{"n":414,"accuracy_pct":81.8840579710},
+      "validation":{"n":241,"accuracy_pct":84.6473029046},
+      "holdout":{"n":126,"accuracy_pct":82.5396825397},
+      "all":{"n":781,"accuracy_pct":82.8425096031}
+    },
+    "round8_lifecycle_pct": {"train":69.2913385827,"validation":70.0182815356,"holdout":71.3207547170,"all":69.8412698413},
+    "round9_lifecycle": {
+      "train":{"signals":414,"wins":291,"losses":123,"ambiguous":0,"unresolved":0,"accuracy_pct":70.2898550725},
+      "validation":{"signals":241,"wins":171,"losses":69,"ambiguous":1,"unresolved":0,"accuracy_pct":71.25},
+      "holdout":{"signals":126,"wins":93,"losses":33,"ambiguous":0,"unresolved":0,"accuracy_pct":73.8095238095},
+      "all":{"signals":781,"wins":555,"losses":225,"ambiguous":1,"unresolved":0,"accuracy_pct":71.1538461538}
+    },
+    "active_bars":3247,
+    "active_bar_coverage_pct":0.2730859384,
+    "candle_confirmation_only": {
+      "directional_pct":{"train":76.3411279230,"validation":78.9227166276,"holdout":77.7227722772,"all":77.3598820059},
+      "lifecycle_pct":{"train":69.8347107438,"validation":71.9339622642,"holdout":73.6318407960,"all":71.0584752036},
+      "signals":{"train":727,"validation":427,"holdout":202,"all":1356}
+    },
+    "rejected_internal_flip_cause_only": {
+      "all_signals":546,"all_lifecycle_pct":75.0922509225,"all_directional_pct":69.0476190476,"holdout_directional_pct":65.8536585366,
+      "decision":"rollback"
+    }
+  },
+  "m15_confirmation_candidate": {
+    "lifecycle_pct":{"train":68.3435241801,"validation":66.5448851775,"holdout":66.1157024793,"all":67.4791730947},
+    "baseline_pct":{"train":68.1836091411,"validation":67.2380952381,"holdout":67.3146148308,"all":67.7777777778},
+    "decision":"rollback"
+  },
+  "h1_confirmation_candidate": {
+    "lifecycle_pct":{"train":69.8754246886,"validation":66.4761904762,"holdout":66.4259927798,"all":68.2492581602},
+    "baseline_pct":{"train":70.1842546064,"validation":67.5938803894,"holdout":68.3574879227,"all":69.0588740868},
+    "decision":"rollback"
+  },
+  "decision":"KEEP M5 confirmed-transition gate; rollback weaker candidates; retain M15/H1 baselines"
+}
