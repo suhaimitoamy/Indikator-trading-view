@@ -1353,10 +1353,10 @@ if amyEventCount > 0
         amyHistoryScore += eventDirection * eventStrength * ageWeight * orderWeight
 
 int amyHistoryBias = amyHistoryScore > 5 ? BULLISH : amyHistoryScore < -5 ? BEARISH : 0
-// AMY SMC Y PREDICTIVE V1 — LONG-HISTORY 2010–2026.
-// Final Bias was materially more stable than the independent short-horizon Next Move.
-// Next Move therefore remains ALWAYS directional (UP/DOWN) and is anchored to Final Bias; there is no WAIT/NEUTRAL state.
-// Event History is retained as context and confidence evidence, not as an independent direction-flip engine.
+// AMY SMC Z ROUND 8 — LONG-HISTORY CONTEXT.
+// Final Bias remains a continuous descriptive bias, while M5 Next Move is now selective and may WAIT outside
+// the validated execution regime. M15/H1 retain the accepted Round-7 directional behavior.
+// Event History stays context/confidence evidence and is not an independent direction-flip engine.
 float amyContextScore = amySafeHTFBias * 25 + amyCurrentSwingBias * 25 + amyCurrentInternalBias * 15 + amyLiquidityBiasActive * 15
 float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore
 // AMY SMC Z ROUND 8 — REGIME-ADAPTIVE NEXT MOVE.
@@ -1379,10 +1379,10 @@ bool amyHasExecutionSignal = amyNextDirection != 0
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : amyNextDirection == BEARISH ? 'DOWN' : 'WAIT'
 // Select invalidation from the actual execution direction. WAIT has no synthetic invalidation/target.
 float amyExecutionInvalidation = amyNextDirection == BULLISH ? amyBullInvalidation : amyNextDirection == BEARISH ? amyBearInvalidation : na
-// AMY SMC Y TARGET V1 — target is ALWAYS available; NO TARGET / NA is not used as a normal predictive state.
-// Prefer nearby untouched structural liquidity. If that liquidity is too distant or unavailable, use a conservative
-// projected target tied to the protected invalidation distance. The projected target is forced outside the signal candle,
-// preserving the same-candle anti-leak rule.
+// AMY SMC Z ROUND 8 TARGET V1 — target is available whenever Next Move is actionable.
+// M5 WAIT/WATCH intentionally has no synthetic target. For actionable calls, prefer nearby untouched structural liquidity;
+// if that liquidity is too distant or unavailable, use the retained conservative projected fallback. The projected target
+// is forced outside the signal candle, preserving the same-candle anti-leak rule.
 float amyTargetAtr = nz(amyAtr14, math.max(high - low, syminfo.mintick))
 float amyTargetRiskDistance = not na(amyExecutionInvalidation) ? math.abs(close - amyExecutionInvalidation) : amyTargetAtr
 float amyProjectedTargetDistance = math.max(amyTargetRiskDistance * 0.40, amyTargetAtr * 0.22)
