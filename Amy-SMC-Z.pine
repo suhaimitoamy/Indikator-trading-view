@@ -757,6 +757,7 @@ amyStructureBias(int length) =>
     float prevPH = ta.valuewhen(not na(ph), ph, 1)
     float lastPL = ta.valuewhen(not na(pl), pl, 0)
     float prevPL = ta.valuewhen(not na(pl), pl, 1)
+    float baseline = ta.sma(close, length * 2)
     bool bullishStructure = not na(lastPH) and not na(prevPH) and not na(lastPL) and not na(prevPL) and lastPH > prevPH and lastPL > prevPL
     bool bearishStructure = not na(lastPH) and not na(prevPH) and not na(lastPL) and not na(prevPL) and lastPH < prevPH and lastPL < prevPL
     int result = 0
@@ -765,7 +766,6 @@ amyStructureBias(int length) =>
     else if bearishStructure
         result := BEARISH
     else
-        float baseline = ta.sma(close, length * 2)
         result := na(baseline) ? 0 : close >= baseline ? BULLISH : BEARISH
     result
 
