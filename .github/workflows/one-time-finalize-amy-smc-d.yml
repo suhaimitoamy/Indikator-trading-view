@@ -22,14 +22,10 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, difflib
 
-          z_path = Path('Amy-SMC-Z.pine')
-          c_path = Path('Amy-SMC-C-LAB.pine')
-          z = z_path.read_text(encoding='utf-8')
-          c = c_path.read_text(encoding='utf-8')
+          z = Path('Amy-SMC-Z.pine').read_text(encoding='utf-8')
+          c = Path('Amy-SMC-C-LAB.pine').read_text(encoding='utf-8')
 
-          # Guard lineage facts before building D.
           assert 'AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.' in c
           assert 'amyBM5TargetCapR' in c and 'amyTargetExpiryBarsNow' in c
           assert 'amyBM15Mgmt' not in c and 'H1 TRADE MANAGEMENT' not in c
@@ -42,11 +38,10 @@ jobs:
               if text.count(start) != 1 or text.count(end) != 1:
                   raise SystemExit(f'{label}: dealing-range anchors not unique')
 
-          zi = z.index(start); zj = z.index(end, zi)
-          ci = c.index(start); cj = c.index(end, ci)
+          zi, zj = z.index(start), z.index(end, z.index(start))
+          ci, cj = c.index(start), c.index(end, c.index(start))
           dr = c[ci:cj]
 
-          # This transplanted section must contain exactly the three validated descriptive fixes.
           required = [
               'float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio',
               'float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio',
@@ -54,8 +49,7 @@ jobs:
               'float amyCH1RangeBottom = amyRound5H1 ? ta.lowest(low[1], 240) : na',
               'float amyCH1PremiumGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.55 : na',
               'float amyCH1DiscountGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.45 : na',
-              'if amyRound5H1',
-              'if amyCDealingPureTF',
+              'if amyRound5H1', 'if amyCDealingPureTF'
           ]
           for marker in required:
               if marker not in dr:
@@ -69,14 +63,10 @@ jobs:
 
           d = z[:zi] + dr + z[zj:]
           d = d.replace("indicator('Amy SMC Z', 'Amy SMC Z'", "indicator('Amy SMC D', 'Amy SMC D'", 1)
-
-          # D must be Z everywhere except indicator identity + the validated DR section.
           d_norm = d.replace("indicator('Amy SMC D', 'Amy SMC D'", "indicator('Amy SMC Z', 'Amy SMC Z'", 1)
-          di = d_norm.index(start); dj = d_norm.index(end, di)
-          if d_norm[:di] != z[:zi] or d_norm[dj:] != z[zj:]:
-              raise SystemExit('D differs from Z outside Dealing Range section')
+          di, dj = d_norm.index(start), d_norm.index(end, d_norm.index(start))
+          assert d_norm[:di] == z[:zi] and d_norm[dj:] == z[zj:]
 
-          # Explicit exclusion of B/B-LAB execution experiments.
           forbidden = [
               'AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.',
               'amyBM5TargetCapR', 'amyBM5HighRisk', 'amyBM5LockedTarget', 'amyBM5TargetExpired',
@@ -85,69 +75,63 @@ jobs:
           ]
           for marker in forbidden:
               if marker in d:
-                  raise SystemExit(f'forbidden B/B-LAB execution marker leaked into D: {marker}')
+                  raise SystemExit(f'forbidden execution marker leaked into D: {marker}')
 
-          # Preserve original Z Target V1; D is not targetless, it is free of B TGT2/trade-management redesigns.
-          if 'AMY SMC Z ROUND 8 TARGET V1' not in d or 'float amyTarget = not amyHasExecutionSignal' not in d:
-              raise SystemExit('original Z Target V1 unexpectedly missing')
+          assert 'AMY SMC Z ROUND 8 TARGET V1' in d
+          assert 'float amyTarget = not amyHasExecutionSignal' in d
 
           dlab = d.replace("indicator('Amy SMC D', 'Amy SMC D'", "indicator('Amy SMC D LAB', 'Amy SMC D LAB'", 1)
           Path('Amy-SMC-D.pine').write_text(d, encoding='utf-8')
           Path('Amy-SMC-D-LAB.pine').write_text(dlab, encoding='utf-8')
-
-          report = r'''# Amy SMC D — Directional Accuracy Cheat-Sheet
-
-**Baseline:** `Amy-SMC-D.pine`  
-**Purpose:** manual dashboard reading / directional context only. No entry, exit, TP, expectancy, or trade-management interpretation is part of this cheat-sheet.  
-**Data:** raw XAUUSD, 2005–Jul 2026; OOS reference 2012–Jul 2026 where listed; 2004 warm-up only.  
-**Low-confidence rule:** fewer than 30 evaluable events in a yearly/window slice.
-
-## Final baseline definition
-
-Amy SMC D is **Amy SMC Z logic plus only three validated descriptive Dealing Range fixes**:
-
-- **M5 Dealing Range:** pure-location, Premium >=70% bearish / Discount <=30% bullish.
-- **M15 Dealing Range:** pure-location, Premium >=60% bearish / Discount <=40% bullish.
-- **H1 Dealing Range:** range = high/low of the **previous 240 closed H1 bars** (`high[1]` / `low[1]`), Premium >=55% bearish / Discount <=45% bullish; no Swing/Internal/HTF context gate.
-
-D explicitly excludes the B-path **M5 TGT2 segmented target/expiry** and B-LAB **M15/H1 ATR trade-management** experiments. Original Z logic, including Z Target V1, is retained unchanged.
-
-## Reliable / fixed fields
-
-| Field | Status | M5 | M15 | H1 | Manual-use note |
-|---|---|---:|---:|---:|---|
-| Dealing Range | **FIXED** | **65.54%** full; OOS 65.41%, 15/15 HC | **62.48%** full; OOS 62.98%, 15/15 HC | **63.09%** full; **64.52% OOS**, 15/15 HC | Location state only; PREMIUM bearish, DISCOUNT bullish |
-| Swing Structure — fresh | **RELIABLE** | **81.42%**, N=5,822 | **88.97%**, N=1,941 | **94.55%**, N=422; yearly sample low | Use only when newly flipped; stale state is not a fresh forecast |
-| Internal Structure — fresh | **RELIABLE** | **69.27%**, N=40,283 | **74.44%**, N=14,172 | **80.15%**, N=3,617 | Fresh directional structure evidence |
-| HTF Swing — fresh | **RELIABLE** | **68.94%**, N=52,961 | **76.20%**, N=12,554 | **82.16%**, N=2,926 | Do not invert; use fresh flips |
-| Final Bias — fresh | **RELIABLE when fresh** | **71.41%**, N=41,820 | **77.87%**, N=11,433 | **84.20%**, N=2,822 | Fresh changes only; continuous/stale bias is not primary direction |
-| Next Move | **RELIABLE** | **73.62%**, N=944; OOS 74.89% | **77.87%**, N=11,433; OOS 77.98% | **83.34%**, N=2,906; OOS 83.92% | Primary forward directional output; structural invalidation scoring, no TP |
-| Sweep Continuation | **RELIABLE M5/M15** | **79.86%**, N=4,678; OOS 80.05% | **84.72%**, N=1,616; OOS 84.57% | **92.48%**, N=319; yearly sample low | Preferred directional interpretation after a raw sweep |
-| Raw Valid Break | **RELIABLE** | **83.99%**, N=10,096 | **89.73%**, N=3,565 | **96.07%**, N=814 | Strong structural-survival event evidence |
-| Qualified Valid Break | **RELIABLE where sample supports** | **88.92%**, N=352; yearly sample low | **90.66%**, N=1,328; 21/22 HC | **97.82%**, N=412; yearly sample low | High-quality break evidence; respect low-sample flags |
-| Qualified CHoCH | **RELIABLE where sample supports** | **78.50%**, N=963; 21/22 HC | **92.60%**, N=473; yearly sample low | **97.56%**, N=82; low sample | Strong when present; do not equate pooled accuracy with yearly confidence |
-| Raw Pattern | **RELIABLE** | **65.21%**, N=180,069 | **70.97%**, N=56,662 | **75.03%**, N=12,634 | Raw directional candlestick evidence |
-| Qualified Pattern | **RELIABLE M15/H1** | **67.45%**, N=424; low yearly coverage | **90.56%**, N=5,108; 22/22 HC | **93.60%**, N=1,359; 22/22 HC | Prefer qualified version, especially M15/H1 |
-
-## Intentionally omitted from daily directional cheat-sheet
-
-Continuous Swing Structure, continuous Internal Structure, continuous HTF Swing, continuous Final Bias, raw continuous Liquidity, Event History, raw Sweep, and Qualified BOS are omitted because they are substitute/context-only/low-sample rather than approved standalone directional reads.
-'''
-          Path('reports').mkdir(exist_ok=True)
-          Path('reports/AMY-SMC-D-CHEATSHEET.md').write_text(report, encoding='utf-8')
-
-          # Final content parity guards.
-          assert Path('Amy-SMC-D.pine').read_text() == d
-          assert Path('Amy-SMC-D-LAB.pine').read_text().replace("indicator('Amy SMC D LAB', 'Amy SMC D LAB'", "indicator('Amy SMC D', 'Amy SMC D'", 1) == d
           print('BUILD_D_OK')
-          print('D is Z outside Dealing Range: YES')
-          print('B TGT2 / B-LAB trade management excluded: YES')
+          print('D_EQUALS_Z_OUTSIDE_DR=YES')
+          print('B_EXECUTION_EXCLUDED=YES')
           PY
+
+          mkdir -p reports
+          cat > reports/AMY-SMC-D-CHEATSHEET.md <<'EOF'
+          # Amy SMC D — Directional Accuracy Cheat-Sheet
+
+          **Baseline:** `Amy-SMC-D.pine`  
+          **Purpose:** referensi baku pembacaan dashboard manual; directional/context only.  
+          **Data:** raw XAUUSD 2005–Jul 2026; OOS 2012–Jul 2026 bila dicantumkan; 2004 warm-up.  
+          **Low-confidence:** <30 evaluable events per yearly/window slice.
+
+          ## Final baseline definition
+
+          Amy SMC D = **logic Amy SMC Z asli + hanya tiga fix descriptive Dealing Range**:
+
+          - **M5:** pure-location; Premium >=70% bearish, Discount <=30% bullish.
+          - **M15:** pure-location; Premium >=60% bearish, Discount <=40% bullish.
+          - **H1:** high/low dari **previous 240 closed H1 bars** (`high[1]`/`low[1]`); Premium >=55% bearish, Discount <=45% bullish; tanpa Swing/Internal/HTF context gate.
+
+          D **tidak membawa** M5 TGT2 segmented target/expiry dari B dan **tidak membawa** ATR trade-management M15/H1 dari B-LAB. Original Z logic, termasuk Z Target V1, tetap utuh.
+
+          ## RELIABLE / FIXED only
+
+          | Field | Status | M5 | M15 | H1 | Catatan manual |
+          |---|---|---:|---:|---:|---|
+          | Dealing Range | **FIXED** | **65.54%** full; OOS 65.41%, 15/15 HC | **62.48%** full; OOS 62.98%, 15/15 HC | **63.09%** full; **64.52% OOS**, 15/15 HC | Descriptive location state |
+          | Swing Structure — fresh | **RELIABLE** | **81.42%**, N=5,822 | **88.97%**, N=1,941 | **94.55%**, N=422; low yearly sample | Baca hanya saat baru flip |
+          | Internal Structure — fresh | **RELIABLE** | **69.27%**, N=40,283 | **74.44%**, N=14,172 | **80.15%**, N=3,617 | Fresh structure evidence |
+          | HTF Swing — fresh | **RELIABLE** | **68.94%**, N=52,961 | **76.20%**, N=12,554 | **82.16%**, N=2,926 | Jangan invert |
+          | Final Bias — fresh | **RELIABLE when fresh** | **71.41%**, N=41,820 | **77.87%**, N=11,433 | **84.20%**, N=2,822 | Fresh only; stale bukan primary direction |
+          | Next Move | **RELIABLE** | **73.62%**, N=944; OOS 74.89% | **77.87%**, N=11,433; OOS 77.98% | **83.34%**, N=2,906; OOS 83.92% | Primary forward direction; invalidation-based, tanpa TP scoring |
+          | Sweep Continuation | **RELIABLE M5/M15** | **79.86%**, N=4,678 | **84.72%**, N=1,616 | **92.48%**, N=319; low yearly sample | Arah setelah raw sweep |
+          | Raw Valid Break | **RELIABLE** | **83.99%**, N=10,096 | **89.73%**, N=3,565 | **96.07%**, N=814 | Strong structural-survival evidence |
+          | Qualified Valid Break | **RELIABLE where sampled** | **88.92%**, N=352; low yearly sample | **90.66%**, N=1,328; 21/22 HC | **97.82%**, N=412; low yearly sample | Hormati low-sample flag |
+          | Qualified CHoCH | **RELIABLE where sampled** | **78.50%**, N=963; 21/22 HC | **92.60%**, N=473; low yearly sample | **97.56%**, N=82; low sample | Evidence kuat saat muncul |
+          | Raw Pattern | **RELIABLE** | **65.21%**, N=180,069 | **70.97%**, N=56,662 | **75.03%**, N=12,634 | Raw candlestick evidence |
+          | Qualified Pattern | **RELIABLE M15/H1** | **67.45%**, N=424; low yearly coverage | **90.56%**, N=5,108; 22/22 HC | **93.60%**, N=1,359; 22/22 HC | Prefer qualified M15/H1 |
+
+          Continuous Swing/Internal/HTF/Final Bias, raw continuous Liquidity, Event History, raw Sweep, dan Qualified BOS sengaja tidak dimasukkan karena statusnya SUBSTITUTE/CONTEXT ONLY/LOW SAMPLE, bukan standalone daily directional read yang disahkan.
+          EOF
+
           git diff --check -- Amy-SMC-D.pine Amy-SMC-D-LAB.pine reports/AMY-SMC-D-CHEATSHEET.md
           grep -n "DEALING RANGE PURE-LOCATION\|amyCH1RangeTop\|amyCDealingPremiumRatio\|AMY SMC Z ROUND 8 TARGET V1" Amy-SMC-D.pine
           if grep -n "AMY SMC B BASELINE\|amyBM5TargetCapR\|amyBM15Mgmt\|H1 TRADE MANAGEMENT" Amy-SMC-D.pine; then exit 1; fi
 
-      - name: Commit D baseline, D LAB, report, and remove one-time workflow
+      - name: Commit final D and remove one-time workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
