@@ -1,0 +1,111 @@
+name: Create Amy SMC C
+on:
+  push:
+    paths:
+      - '.github/workflows/create-amy-smc-c.yml'
+permissions:
+  contents: write
+jobs:
+  build-c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Build C and C-LAB from frozen B
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Amy-SMC-B.pine)" = "3b9b718a238e1c836920e76449bc5e4e11246440"
+          test "$(git hash-object Amy-SMC-B-LAB.pine)" = "5df16e233afe06402307bebe71703093f50af58d"
+          test "$(git hash-object Amy-SMC-Z.pine)" = "389036df09d03125a2f71189722953658a901170"
+          test "$(git hash-object Amy-SMC-A.pine)" = "edb769a2bcfc59fe53237eda2a926fe31a14003b"
+          test "$(git hash-object Amy-SMC-A-LAB.pine)" = "66b80304c44556040dc587557913bda309ca7b7d"
+          test ! -e Amy-SMC-C.pine
+          test ! -e Amy-SMC-C-LAB.pine
+          cp Amy-SMC-B.pine Amy-SMC-C.pine
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-C.pine')
+          s = p.read_text()
+          s = s.replace("indicator('Amy SMC B', 'Amy SMC B',", "indicator('Amy SMC C', 'Amy SMC C',", 1)
+          start = "float amyPassedDRPremiumRatio = 0.65"
+          end = "\nint amyLiquidityAge ="
+          i = s.index(start)
+          j = s.index(end, i)
+          old = s[i:j]
+          new = '''// AMY SMC C — DEALING RANGE PURE-LOCATION REDESIGN.
+// Fresh raw XAUUSD 2004-2026, rolling 8y->1y OOS 2012-2026:
+// M5 uses 70/30 pure location; M15 uses 60/40 pure location. No Swing/Internal/HTF confirmation is required.
+// H1 intentionally keeps the frozen B/Z 65/35 context-gated definition because its redesign was not stable.
+float amyPassedDRPremiumRatio = 0.65
+float amyPassedDRDiscountRatio = 0.35
+float amyPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRPremiumRatio : na
+float amyDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRDiscountRatio : na
+bool amyDRM5Strict = timeframe.period == '5'
+bool amyDRBullHTFConfirm = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BULLISH
+bool amyDRBearHTFConfirm = na(amyHTFSwing) or amyHTFSwing == 0 or amyHTFSwing == BEARISH
+bool amyDRBullContextBase = amyDRBias == BULLISH and swingTrend.bias == BULLISH and internalTrend.bias != BEARISH
+bool amyDRBearContextBase = amyDRBias == BEARISH and swingTrend.bias == BEARISH and internalTrend.bias != BULLISH
+bool amyDRBullContext = amyDRBullContextBase and (not amyDRM5Strict or (internalTrend.bias == BULLISH and amyDRBullHTFConfirm))
+bool amyDRBearContext = amyDRBearContextBase and (not amyDRM5Strict or (internalTrend.bias == BEARISH and amyDRBearHTFConfirm))
+
+bool amyCDealingPureTF = amyRound5M5 or amyRound5M15
+float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio
+float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio
+float amyCDealingPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyCDealingPremiumRatio : na
+float amyCDealingDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyCDealingDiscountRatio : na
+
+string amyDealingRange = 'EQUILIBRIUM'
+int amyDealingBias = 0
+if amyDRValid
+    if amyCDealingPureTF
+        // C M5/M15: the field itself is the validated pure-location signal.
+        // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
+        if close >= amyCDealingPremiumGate
+            amyDealingRange := 'PREMIUM'
+            amyDealingBias := BEARISH
+        else if close <= amyCDealingDiscountGate
+            amyDealingRange := 'DISCOUNT'
+            amyDealingBias := BULLISH
+    else
+        // H1 and other timeframes retain the frozen B/Z behavior exactly.
+        if close > amyEQUpper
+            amyDealingRange := 'PREMIUM'
+            amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
+        else if close < amyEQLower
+            amyDealingRange := 'DISCOUNT'
+            amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
+'''
+          s = s[:i] + new + s[j:]
+          p.write_text(s)
+          Path('Amy-SMC-C-LAB.pine').write_text(s.replace("indicator('Amy SMC C', 'Amy SMC C',", "indicator('Amy SMC C LAB', 'Amy SMC C LAB',", 1))
+          PY
+      - name: Verify scope and C logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Amy-SMC-B.pine)" = "3b9b718a238e1c836920e76449bc5e4e11246440"
+          test "$(git hash-object Amy-SMC-B-LAB.pine)" = "5df16e233afe06402307bebe71703093f50af58d"
+          test "$(git hash-object Amy-SMC-Z.pine)" = "389036df09d03125a2f71189722953658a901170"
+          test "$(git hash-object Amy-SMC-A.pine)" = "edb769a2bcfc59fe53237eda2a926fe31a14003b"
+          test "$(git hash-object Amy-SMC-A-LAB.pine)" = "66b80304c44556040dc587557913bda309ca7b7d"
+          grep -F "indicator('Amy SMC C', 'Amy SMC C'" Amy-SMC-C.pine
+          grep -F "indicator('Amy SMC C LAB', 'Amy SMC C LAB'" Amy-SMC-C-LAB.pine
+          grep -F "float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio" Amy-SMC-C.pine
+          grep -F "float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio" Amy-SMC-C.pine
+          grep -F "amyDealingBias := BEARISH" Amy-SMC-C.pine
+          grep -F "amyDealingBias := BULLISH" Amy-SMC-C.pine
+          grep -F "H1 and other timeframes retain the frozen B/Z behavior exactly." Amy-SMC-C.pine
+          diff -u <(sed "s/Amy SMC C LAB/Amy SMC C/g" Amy-SMC-C-LAB.pine) Amy-SMC-C.pine
+          git diff --check
+          test "$(git status --short | awk '{print $2}' | sort | tr '\n' ' ')" = "Amy-SMC-C-LAB.pine Amy-SMC-C.pine "
+      - name: Commit C files
+        shell: bash
+        run: |
+          git config user.name suhaimitoamy
+          git config user.email 34860608+suhaimitoamy@users.noreply.github.com
+          git add Amy-SMC-C.pine Amy-SMC-C-LAB.pine
+          git commit -m 'feat: add Amy SMC C dealing-range redesign'
+          git push origin HEAD:main
