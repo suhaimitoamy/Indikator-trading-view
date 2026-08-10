@@ -1401,7 +1401,8 @@ bool amyRound9M5TradeRegime = amyRound8M5TradeRegime and amyRound9M5TradeDirecti
 // Therefore Round 10 does NOT discard the retained Round-9 trades. It grades the cleaner subset A+ and keeps
 // the remaining already-valid Round-9 trades as A. Next Move, Target V1 and invalidation logic stay unchanged.
 float amyRound10EntryBodyAtr = not na(amyEventAtr) and amyEventAtr > 0 ? amyEventBody / amyEventAtr : na
-bool amyRound10EntryAPlusQualified = amyRound9EntryConfirmed and not na(amyRound10EntryBodyAtr) and amyRound10EntryBodyAtr >= 0.50 and amyRound10EntryBodyAtr < 2.50 and amyEventBodyRatio >= 0.30 and amyRound9EntryRiskAtr < 8.0
+// Legacy A+ subset was tuned on the pre-redesign transition regime and is intentionally disabled here until separately revalidated.
+bool amyRound10EntryAPlusQualified = false
 var bool amyRound10M5APlus = false
 if barstate.isconfirmed
     if not amyRound9M5TradeRegime
@@ -1412,7 +1413,7 @@ if barstate.isconfirmed
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
 string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'WF PROV • A+' : 'WF PROV • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • CONSENSUS' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
-// Walk-forward promotion status. M5 is provisional because most annual OOS windows have <30 signals.
+// Walk-forward promotion status. The redesigned M5 regime has 15/15 high-confidence OOS windows, but remains experimental/provisional because execution expectancy is positive in only 10/15 windows and 2026 is approximately flat.
 // M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
 bool amyWfM5Provisional = true
 bool amyWfM15Approved = false
