@@ -1205,11 +1205,11 @@ float amyRangeSpan = amyDRValid ? amyRangeTop - amyRangeBottom : na
 float amyRangeEQ = amyDRValid ? math.avg(amyRangeTop, amyRangeBottom) : na
 float amyEQUpper = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.525 : na
 float amyEQLower = amyDRValid ? amyRangeBottom + amyRangeSpan * 0.475 : na
-// PASSED PROFILE — Dealing Range H1: 83.33% (5/6). Keep this 65/35 profile unchanged while lower-TF variants remain under tuning.
-// AMY SMC C — DEALING RANGE PURE-LOCATION REDESIGN.
+// AMY SMC C — DEALING RANGE PURE-LOCATION PROFILES.
 // Fresh raw XAUUSD 2004-2026, rolling 8y->1y OOS 2012-2026:
-// M5 uses 70/30 pure location; M15 uses 60/40 pure location. No Swing/Internal/HTF confirmation is required.
-// H1 intentionally keeps the frozen B/Z 65/35 context-gated definition because its redesign was not stable.
+// M5 keeps 70/30 pure location; M15 keeps 60/40 pure location — both are frozen and unchanged.
+// H1 uses the high/low of the previous 240 CLOSED H1 bars (current candle excluded) with 55/45 pure location.
+// Dealing Range remains descriptive only; H1 has no Swing/Internal/HTF context gate and does not feed predictors.
 float amyPassedDRPremiumRatio = 0.65
 float amyPassedDRDiscountRatio = 0.35
 float amyPremiumGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amyPassedDRPremiumRatio : na
@@ -1222,6 +1222,15 @@ bool amyDRBearContextBase = amyDRBias == BEARISH and swingTrend.bias == BEARISH 
 bool amyDRBullContext = amyDRBullContextBase and (not amyDRM5Strict or (internalTrend.bias == BULLISH and amyDRBullHTFConfirm))
 bool amyDRBearContext = amyDRBearContextBase and (not amyDRM5Strict or (internalTrend.bias == BEARISH and amyDRBearHTFConfirm))
 
+// C H1 — dedicated rolling range from previous 240 closed H1 bars only.
+// high[1]/low[1] exclude the current H1 candle; ta.highest/lowest look only backward.
+float amyCH1RangeTop = amyRound5H1 ? ta.highest(high[1], 240) : na
+float amyCH1RangeBottom = amyRound5H1 ? ta.lowest(low[1], 240) : na
+bool amyCH1DRValid = amyRound5H1 and not na(amyCH1RangeTop) and not na(amyCH1RangeBottom) and amyCH1RangeTop > amyCH1RangeBottom
+float amyCH1RangeSpan = amyCH1DRValid ? amyCH1RangeTop - amyCH1RangeBottom : na
+float amyCH1PremiumGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.55 : na
+float amyCH1DiscountGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.45 : na
+
 bool amyCDealingPureTF = amyRound5M5 or amyRound5M15
 float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio
 float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio
@@ -1230,25 +1239,34 @@ float amyCDealingDiscountGate = amyDRValid ? amyRangeBottom + amyRangeSpan * amy
 
 string amyDealingRange = 'EQUILIBRIUM'
 int amyDealingBias = 0
-if amyDRValid
+if amyRound5H1
+    // C H1: pure-location descriptive state from previous 240 closed H1 bars.
+    // PREMIUM = bearish, DISCOUNT = bullish; 45%-55% remains equilibrium/neutral.
+    if amyCH1DRValid
+        if close >= amyCH1PremiumGate
+  amyDealingRange := 'PREMIUM'
+  amyDealingBias := BEARISH
+        else if close <= amyCH1DiscountGate
+  amyDealingRange := 'DISCOUNT'
+  amyDealingBias := BULLISH
+else if amyDRValid
     if amyCDealingPureTF
         // C M5/M15: the field itself is the validated pure-location signal.
         // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
         if close >= amyCDealingPremiumGate
-            amyDealingRange := 'PREMIUM'
-            amyDealingBias := BEARISH
+  amyDealingRange := 'PREMIUM'
+  amyDealingBias := BEARISH
         else if close <= amyCDealingDiscountGate
-            amyDealingRange := 'DISCOUNT'
-            amyDealingBias := BULLISH
+  amyDealingRange := 'DISCOUNT'
+  amyDealingBias := BULLISH
     else
-        // H1 and other timeframes retain the frozen B/Z behavior exactly.
+        // Other timeframes retain the frozen B/Z behavior exactly.
         if close > amyEQUpper
-            amyDealingRange := 'PREMIUM'
-            amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
+  amyDealingRange := 'PREMIUM'
+  amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
         else if close < amyEQLower
-            amyDealingRange := 'DISCOUNT'
-            amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
-
+  amyDealingRange := 'DISCOUNT'
+  amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
 int amyLiquidityAge = na(amyLastLiquidityBar) ? 1000000 : bar_index - amyLastLiquidityBar
 bool amyLiquidityActive = amyLiquidityAge <= 12
 int amyLiquidityBiasActive = amyLiquidityActive ? amyLastLiquidityBias : 0
