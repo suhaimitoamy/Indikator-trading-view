@@ -18,7 +18,7 @@ jobs:
           test "$(git hash-object Amy-SMC-Z.pine)" = "389036df09d03125a2f71189722953658a901170"
           test "$(git hash-object Amy-SMC-A.pine)" = "edb769a2bcfc59fe53237eda2a926fe31a14003b"
           test "$(git hash-object Amy-SMC-A-LAB.pine)" = "66b80304c44556040dc587557913bda309ca7b7d"
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = "Amy-SMC-B-LAB.pine Amy-SMC-B.pine "
+          test "$(git status --porcelain | awk '{print $2}' | sort | tr '\n' ' ')" = "Amy-SMC-B-LAB.pine Amy-SMC-B.pine "
           grep -F "float amyBM5TargetCapR = amyBM5HighRisk ? 0.35 : 0.375" Amy-SMC-B.pine
           grep -F "amyRound5M15 ? 32 : amyRound5H1 ? 24" Amy-SMC-B.pine
       - name: Commit B baseline
