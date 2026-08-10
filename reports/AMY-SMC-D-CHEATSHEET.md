@@ -19,7 +19,7 @@ D **tidak membawa** M5 TGT2 segmented target/expiry dari B dan **tidak membawa**
 
 | Field | Status | M5 | M15 | H1 | Catatan manual |
 |---|---|---:|---:|---:|---|
-| Dealing Range | **FIXED** | **65.54%** full; OOS 65.41%, 15/15 HC | **62.48%** full; OOS 62.98%, 15/15 HC | **63.09%** full; **64.52% OOS**, 15/15 HC | Descriptive location state |
+| Dealing Range | **FIXED** | **65.54%** full; OOS 65.41%, 15/15 HC | **62.48%** full; OOS 62.98%, 15/15 HC | **64.33%** full, N=1,214, 22/22 HC; **65.39% OOS**, N=887, 15/15 HC | Descriptive location state; H1 replay memakai opposite directional flip across equilibrium dan censor event lintas tahun |
 | Swing Structure — fresh | **RELIABLE** | **81.42%**, N=5,822 | **88.97%**, N=1,941 | **94.55%**, N=422; low yearly sample | Baca hanya saat baru flip |
 | Internal Structure — fresh | **RELIABLE** | **69.27%**, N=40,283 | **74.44%**, N=14,172 | **80.15%**, N=3,617 | Fresh structure evidence |
 | HTF Swing — fresh | **RELIABLE** | **68.94%**, N=52,961 | **76.20%**, N=12,554 | **82.16%**, N=2,926 | Jangan invert |
