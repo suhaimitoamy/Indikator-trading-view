@@ -1244,29 +1244,29 @@ if amyRound5H1
     // PREMIUM = bearish, DISCOUNT = bullish; 45%-55% remains equilibrium/neutral.
     if amyCH1DRValid
         if close >= amyCH1PremiumGate
-  amyDealingRange := 'PREMIUM'
-  amyDealingBias := BEARISH
+            amyDealingRange := 'PREMIUM'
+            amyDealingBias := BEARISH
         else if close <= amyCH1DiscountGate
-  amyDealingRange := 'DISCOUNT'
-  amyDealingBias := BULLISH
+            amyDealingRange := 'DISCOUNT'
+            amyDealingBias := BULLISH
 else if amyDRValid
     if amyCDealingPureTF
         // C M5/M15: the field itself is the validated pure-location signal.
         // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
         if close >= amyCDealingPremiumGate
-  amyDealingRange := 'PREMIUM'
-  amyDealingBias := BEARISH
+            amyDealingRange := 'PREMIUM'
+            amyDealingBias := BEARISH
         else if close <= amyCDealingDiscountGate
-  amyDealingRange := 'DISCOUNT'
-  amyDealingBias := BULLISH
+            amyDealingRange := 'DISCOUNT'
+            amyDealingBias := BULLISH
     else
         // Other timeframes retain the frozen B/Z behavior exactly.
         if close > amyEQUpper
-  amyDealingRange := 'PREMIUM'
-  amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
+            amyDealingRange := 'PREMIUM'
+            amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
         else if close < amyEQLower
-  amyDealingRange := 'DISCOUNT'
-  amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
+            amyDealingRange := 'DISCOUNT'
+            amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
 int amyLiquidityAge = na(amyLastLiquidityBar) ? 1000000 : bar_index - amyLastLiquidityBar
 bool amyLiquidityActive = amyLiquidityAge <= 12
 int amyLiquidityBiasActive = amyLiquidityActive ? amyLastLiquidityBias : 0
