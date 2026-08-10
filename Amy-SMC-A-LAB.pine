@@ -1418,13 +1418,15 @@ if barstate.isconfirmed
 
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
-string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'LAB TGT2 • A+' : 'LAB TGT2 • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
+string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'LAB TGT2 • A+' : 'LAB TGT2 • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'LAB M15 • Z-BASE' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
 // Priority #1 result: M5 uses the frozen Z benchmark gate in LAB because no tested alternative won cleanly across all targets.
-// M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
+// Priority #3 requires the M15 predictor population to be the frozen Z baseline (amyFinalBias); this is a LAB baseline restore,
+// not a new M15 entry/gate. H1 remains unchanged/disabled from the stable-A branch until its own experiment.
 bool amyWfM5Provisional = false
 bool amyWfM15Approved = false
 bool amyWfH1Approved = false
-int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyRound5M15 ? (amyWfM15Approved ? amyFinalBias : 0) : amyRound5H1 ? (amyWfH1Approved ? amyFinalBias : 0) : amyFinalBias
+bool amyLabM15ZBaseline = true
+int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyRound5M15 ? (amyLabM15ZBaseline ? amyFinalBias : 0) : amyRound5H1 ? (amyWfH1Approved ? amyFinalBias : 0) : amyFinalBias
 // H1 keeps the previously accepted confirmed-sweep-candle override. M15 remains the retained baseline.
 if amyRound5H1 and amyWfH1Approved and amySweepContinuationQualified
     amyNextDirection := amySweepContinuationBias
@@ -1454,6 +1456,13 @@ float amyTargetCandidate = not amyHasExecutionSignal ? na : amyNextDirection == 
 float amyTargetDistanceRatio = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 ? math.abs(amyTargetCandidate - close) / amyTargetRiskDistance : na
 bool amyTargetQualityOK = amyHasExecutionSignal and not na(amyTargetCandidate) and amyTargetRiskDistance > 0 and amyTargetDistanceRatio <= 0.40
 float amyTargetBaseV1 = not amyHasExecutionSignal ? na : amyTargetQualityOK ? amyTargetCandidate : amyNextDirection == BULLISH ? amyBullProjectedTarget : amyBearProjectedTarget
+
+// AMY SMC A LAB PRIORITY #3 — M15 TARGET / EXPIRY RESULT: NO PROMOTION.
+// Fresh raw M15 replay: 516,174 candles / 264 CSVs; OOS 2012–2026 = 7,888 Z-baseline signals,
+// 77.95% directional and 15/15 high-confidence windows. Risk-target/expiry families raised TP materially,
+// but no train-only WFO candidate produced positive pooled expectancy. M15 therefore keeps Z Target V1
+// unchanged with 32-bar execution expiry. No M15 target cap, segmented target or expiry extension is active.
+// The only LAB change for M15 is restoring its Next Move population to the frozen Z baseline above.
 
 // AMY SMC A LAB PRIORITY #2 — M5 SEGMENTED TARGET / EXPIRY.
 // Entry population and Round-9 gate remain exactly the frozen Z baseline.
