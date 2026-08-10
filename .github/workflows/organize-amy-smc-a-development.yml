@@ -1,0 +1,101 @@
+name: Organize Amy SMC A Development
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  organize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Consolidate Amy SMC A development
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p archive/amy-smc-a-experiments reports
+
+          git mv Amy-SMC-A-Liquidity-Fixed.pine archive/amy-smc-a-experiments/Amy-SMC-A-Liquidity-Fixed.pine
+          git mv Amy-SMC-A-Liquidity-Fixed-M5-Regime-Redesign.pine archive/amy-smc-a-experiments/Amy-SMC-A-Liquidity-Fixed-M5-Regime-Redesign.pine
+          git mv Amy-SMC-A-Liquidity-Fixed-FinalBias-SignedGrid.pine archive/amy-smc-a-experiments/Amy-SMC-A-Liquidity-Fixed-FinalBias-SignedGrid.pine
+
+          cp Amy-SMC-A.pine Amy-SMC-A-LAB.pine
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-A-LAB.pine')
+          s = p.read_text()
+          old = "indicator('Amy SMC A', 'Amy SMC A', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)"
+          new = "indicator('Amy SMC A LAB', 'Amy SMC A LAB', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)\n// ACTIVE DEVELOPMENT FILE — all future Amy SMC A experiments go here.\n// Amy-SMC-Z.pine = frozen benchmark. Amy-SMC-A.pine = stable baseline.\n// Keep DESCRIPTIVE context and PREDICTIVE forecasting as separate evaluation tracks.\n// Do not create another Amy-SMC-A-*.pine experiment in repo root; use Git history + reports instead.\n// Promote LAB -> A only when the changed module beats Z on the SAME category/metric under train-only walk-forward and does not regress retained modules."
+          if old not in s:
+              raise SystemExit('Amy SMC A indicator header not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+          cat > archive/amy-smc-a-experiments/README.md <<'EOF'
+          # Amy SMC A — Archived Experiments
+
+          These files are preserved for research traceability and are **not active development baselines**.
+
+          - `Amy-SMC-A-Liquidity-Fixed.pine` — experiment that changed the raw/descriptive sweep state to continuation semantics. Useful evidence, but it blurred the separation between descriptive liquidity context and predictive sweep continuation.
+          - `Amy-SMC-A-Liquidity-Fixed-M5-Regime-Redesign.pine` — M5 Consensus4 regime experiment built on the Liquidity-Fixed branch. Its walk-forward result remains useful research, but it must be revalidated on the clean descriptive/predictive architecture before promotion.
+          - `Amy-SMC-A-Liquidity-Fixed-FinalBias-SignedGrid.pine` — Final Bias signed-weight experiment. It optimized a descriptive continuous field using a predictive directional objective and produced inverse-HTF behavior; keep as research only.
+
+          ## Active lineage
+
+          1. `Amy-SMC-Z.pine` — benchmark to beat; do not tune casually.
+          2. `Amy-SMC-A.pine` — stable A baseline.
+          3. `Amy-SMC-A-LAB.pine` — the **only** active A experiment file.
+
+          Future experiments should modify `Amy-SMC-A-LAB.pine`, record results in `reports/`, and use Git commits for rollback instead of creating more root-level A variants.
+          EOF
+
+          cat > reports/AMY-SMC-A-DEVELOPMENT-RULES.md <<'EOF'
+          # Amy SMC A Development Rules
+
+          Goal: make Amy SMC A demonstrably better than Amy SMC Z without mixing descriptive and predictive metrics.
+
+          ## File roles
+
+          - `Amy-SMC-Z.pine`: frozen benchmark/reference.
+          - `Amy-SMC-A.pine`: stable retained A baseline.
+          - `Amy-SMC-A-LAB.pine`: single active development file.
+          - `archive/amy-smc-a-experiments/`: old experimental branches preserved only for research.
+
+          ## Two independent scoreboards
+
+          ### PREDICTIVE
+          Evaluate only forward-looking modules against the Z predictive benchmark: qualified Pattern/BOS/CHoCH/Sweep, Next Move, regime gating, Target/TP, directional accuracy, expectancy, and execution lifecycle.
+
+          ### DESCRIPTIVE
+          Evaluate context/state modules on their descriptive job, not by forcing them to behave like Next Move: HTF/Swing/Internal structure, raw Liquidity context, Dealing Range, raw Pattern, Event History, Final Bias/context summary, zones/levels.
+
+          ## Promotion rule
+
+          A LAB change is promoted only when:
+          1. selection/tuning uses train data only;
+          2. the same walk-forward protocol is used for A and Z;
+          3. `<30` events/signals in a test window is low-confidence;
+          4. it beats Z on the **same module category and metric** with adequate sample and cross-window consistency;
+          5. it does not regress already-retained modules outside the intended scope.
+
+          If a change fails, rollback the LAB commit. Do not create another A filename.
+
+          ## Current research notes
+
+          - The continuation interpretation of sweep is strong as a **predictive cue**, but this does not justify overwriting the raw descriptive sweep state.
+          - The Consensus4 M5 result is worth retesting on the clean architecture because its prior test was built on the Liquidity-Fixed experiment.
+          - The signed-grid Final Bias result is not production-ready; its inverse-HTF behavior indicates a semantic/objective mismatch that needs a separate audit.
+          EOF
+
+          rm -f .github/workflows/organize-amy-smc-a-development.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: consolidate Amy SMC A experiments into single LAB workflow"
+          git push
