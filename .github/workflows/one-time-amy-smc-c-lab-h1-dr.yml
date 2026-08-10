@@ -1,0 +1,155 @@
+name: Apply Amy SMC C LAB H1 dealing range
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-amy-smc-c-lab-h1-dr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch only H1 Dealing Range in C-LAB
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          p = Path('Amy-SMC-C-LAB.pine')
+          text = p.read_text(encoding='utf-8')
+          before = text
+
+          old_comment = """// PASSED PROFILE — Dealing Range H1: 83.33% (5/6). Keep this 65/35 profile unchanged while lower-TF variants remain under tuning.
+          // AMY SMC C — DEALING RANGE PURE-LOCATION REDESIGN.
+          // Fresh raw XAUUSD 2004-2026, rolling 8y->1y OOS 2012-2026:
+          // M5 uses 70/30 pure location; M15 uses 60/40 pure location. No Swing/Internal/HTF confirmation is required.
+          // H1 intentionally keeps the frozen B/Z 65/35 context-gated definition because its redesign was not stable.
+          """.replace('          ', '')
+          new_comment = """// AMY SMC C — DEALING RANGE PURE-LOCATION PROFILES.
+          // Fresh raw XAUUSD 2004-2026, rolling 8y->1y OOS 2012-2026:
+          // M5 keeps 70/30 pure location; M15 keeps 60/40 pure location — both are frozen and unchanged.
+          // H1 uses the high/low of the previous 240 CLOSED H1 bars (current candle excluded) with 55/45 pure location.
+          // Dealing Range remains descriptive only; H1 has no Swing/Internal/HTF context gate and does not feed predictors.
+          """.replace('          ', '')
+          if text.count(old_comment) != 1:
+              raise SystemExit(f'old comment marker count={text.count(old_comment)}')
+          text = text.replace(old_comment, new_comment, 1)
+
+          insert_marker = "bool amyCDealingPureTF = amyRound5M5 or amyRound5M15\n"
+          h1_source = """// C H1 — dedicated rolling range from previous 240 closed H1 bars only.
+          // high[1]/low[1] exclude the current H1 candle; ta.highest/lowest look only backward.
+          float amyCH1RangeTop = amyRound5H1 ? ta.highest(high[1], 240) : na
+          float amyCH1RangeBottom = amyRound5H1 ? ta.lowest(low[1], 240) : na
+          bool amyCH1DRValid = amyRound5H1 and not na(amyCH1RangeTop) and not na(amyCH1RangeBottom) and amyCH1RangeTop > amyCH1RangeBottom
+          float amyCH1RangeSpan = amyCH1DRValid ? amyCH1RangeTop - amyCH1RangeBottom : na
+          float amyCH1PremiumGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.55 : na
+          float amyCH1DiscountGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.45 : na
+
+          """.replace('          ', '')
+          if text.count(insert_marker) != 1:
+              raise SystemExit(f'pure-TF marker count={text.count(insert_marker)}')
+          text = text.replace(insert_marker, h1_source + insert_marker, 1)
+
+          old_calc = """string amyDealingRange = 'EQUILIBRIUM'
+          int amyDealingBias = 0
+          if amyDRValid
+              if amyCDealingPureTF
+                  // C M5/M15: the field itself is the validated pure-location signal.
+                  // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
+                  if close >= amyCDealingPremiumGate
+                      amyDealingRange := 'PREMIUM'
+                      amyDealingBias := BEARISH
+                  else if close <= amyCDealingDiscountGate
+                      amyDealingRange := 'DISCOUNT'
+                      amyDealingBias := BULLISH
+              else
+                  // H1 and other timeframes retain the frozen B/Z behavior exactly.
+                  if close > amyEQUpper
+                      amyDealingRange := 'PREMIUM'
+                      amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
+                  else if close < amyEQLower
+                      amyDealingRange := 'DISCOUNT'
+                      amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
+          """.replace('          ', '')
+          new_calc = """string amyDealingRange = 'EQUILIBRIUM'
+          int amyDealingBias = 0
+          if amyRound5H1
+              // C H1: pure-location descriptive state from previous 240 closed H1 bars.
+              // PREMIUM = bearish, DISCOUNT = bullish; 45%-55% remains equilibrium/neutral.
+              if amyCH1DRValid
+                  if close >= amyCH1PremiumGate
+                      amyDealingRange := 'PREMIUM'
+                      amyDealingBias := BEARISH
+                  else if close <= amyCH1DiscountGate
+                      amyDealingRange := 'DISCOUNT'
+                      amyDealingBias := BULLISH
+          else if amyDRValid
+              if amyCDealingPureTF
+                  // C M5/M15: the field itself is the validated pure-location signal.
+                  // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
+                  if close >= amyCDealingPremiumGate
+                      amyDealingRange := 'PREMIUM'
+                      amyDealingBias := BEARISH
+                  else if close <= amyCDealingDiscountGate
+                      amyDealingRange := 'DISCOUNT'
+                      amyDealingBias := BULLISH
+              else
+                  // Other timeframes retain the frozen B/Z behavior exactly.
+                  if close > amyEQUpper
+                      amyDealingRange := 'PREMIUM'
+                      amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
+                  else if close < amyEQLower
+                      amyDealingRange := 'DISCOUNT'
+                      amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
+          """.replace('          ', '')
+          if text.count(old_calc) != 1:
+              raise SystemExit(f'old calculation block count={text.count(old_calc)}')
+          text = text.replace(old_calc, new_calc, 1)
+
+          # Strict guards: passed M5/M15 definitions and all content outside the targeted markers remain untouched.
+          required = [
+              "bool amyCDealingPureTF = amyRound5M5 or amyRound5M15",
+              "float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio",
+              "float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio",
+              "float amyCH1RangeTop = amyRound5H1 ? ta.highest(high[1], 240) : na",
+              "float amyCH1RangeBottom = amyRound5H1 ? ta.lowest(low[1], 240) : na",
+              "float amyCH1PremiumGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.55 : na",
+              "float amyCH1DiscountGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.45 : na",
+          ]
+          for marker in required:
+              if text.count(marker) != 1:
+                  raise SystemExit(f'guard failed for marker: {marker!r}; count={text.count(marker)}')
+
+          if "amyFinalScore =" not in text or "amyNextRaw =" not in text or "amySweepContinuationBias =" not in text:
+              raise SystemExit('predictor/core guard markers missing')
+
+          p.write_text(text, encoding='utf-8')
+          print('before_sha256', hashlib.sha256(before.encode()).hexdigest())
+          print('after_sha256 ', hashlib.sha256(text.encode()).hexdigest())
+          print('PATCH_OK')
+          PY
+
+          git diff --check -- Amy-SMC-C-LAB.pine
+          git diff -- Amy-SMC-C-LAB.pine
+          grep -Fq "float amyCH1RangeTop = amyRound5H1 ? ta.highest(high[1], 240) : na" Amy-SMC-C-LAB.pine
+          grep -Fq "float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio" Amy-SMC-C-LAB.pine
+
+      - name: Commit isolated C-LAB change and remove one-time workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-amy-smc-c-lab-h1-dr.yml
+          git add Amy-SMC-C-LAB.pine
+          git diff --cached --check
+          git commit -m "Improve Amy SMC C LAB H1 dealing range"
+          git push origin HEAD:main
