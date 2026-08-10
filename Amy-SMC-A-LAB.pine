@@ -1464,13 +1464,38 @@ float amyTargetBaseV1 = not amyHasExecutionSignal ? na : amyTargetQualityOK ? am
 float amyTargetRiskAtr = amyTargetAtr > 0 and amyTargetRiskDistance > 0 ? amyTargetRiskDistance / amyTargetAtr : na
 bool amyLabM5HighRisk = amyRound5M5 and not na(amyTargetRiskAtr) and amyTargetRiskAtr >= 5.0
 float amyLabM5TargetCapR = amyLabM5HighRisk ? 0.35 : 0.375
-int amyTargetExpiryBars = amyRound5M5 ? (amyLabM5HighRisk ? 192 : 60) : amyRound5M15 ? 32 : amyRound5H1 ? 24 : 48
+int amyTargetExpiryBarsNow = amyRound5M5 ? (amyLabM5HighRisk ? 192 : 60) : amyRound5M15 ? 32 : amyRound5H1 ? 24 : 48
 float amyLabM5TargetCapDistance = amyTargetRiskDistance * amyLabM5TargetCapR
 float amyLabM5BullCapTarget = math.max(close + amyLabM5TargetCapDistance, high + amyTargetOutsidePad)
 float amyLabM5BearCapTarget = math.min(close - amyLabM5TargetCapDistance, low - amyTargetOutsidePad)
-float amyTarget = not amyHasExecutionSignal ? na : amyRound5M5 ? (amyNextDirection == BULLISH ? math.min(amyTargetBaseV1, amyLabM5BullCapTarget) : math.max(amyTargetBaseV1, amyLabM5BearCapTarget)) : amyTargetBaseV1
-bool amyLabM5TargetCapped = amyRound5M5 and amyHasExecutionSignal and not na(amyTargetBaseV1) and math.abs(amyTarget - amyTargetBaseV1) >= syminfo.mintick
-string amyTargetSide = not amyHasExecutionSignal ? 'WAIT' : amyLabM5TargetCapped ? (amyNextDirection == BULLISH ? 'LAB CAP UP' : 'LAB CAP DOWN') : amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
+float amyLabM5TargetNow = not amyHasExecutionSignal ? na : amyRound5M5 ? (amyNextDirection == BULLISH ? math.min(amyTargetBaseV1, amyLabM5BullCapTarget) : math.max(amyTargetBaseV1, amyLabM5BearCapTarget)) : amyTargetBaseV1
+bool amyLabM5TargetCappedNow = amyRound5M5 and amyHasExecutionSignal and not na(amyTargetBaseV1) and math.abs(amyLabM5TargetNow - amyTargetBaseV1) >= syminfo.mintick
+bool amyLabM5NewTargetLifecycle = amyRound5M5 and amyRound9M5RegimeEntry and amyRound9EntryConfirmed
+var float amyLabM5LockedTarget = na
+var int amyLabM5LockedTargetStartBar = na
+var int amyLabM5LockedTargetExpiryBars = na
+var bool amyLabM5LockedTargetCapped = false
+var bool amyLabM5TargetExpired = false
+if barstate.isconfirmed
+    if amyLabM5NewTargetLifecycle
+        amyLabM5LockedTarget := amyLabM5TargetNow
+        amyLabM5LockedTargetStartBar := bar_index
+        amyLabM5LockedTargetExpiryBars := amyTargetExpiryBarsNow
+        amyLabM5LockedTargetCapped := amyLabM5TargetCappedNow
+        amyLabM5TargetExpired := false
+    else if not amyRound9M5TradeRegime
+        amyLabM5LockedTarget := na
+        amyLabM5LockedTargetStartBar := na
+        amyLabM5LockedTargetExpiryBars := na
+        amyLabM5LockedTargetCapped := false
+        amyLabM5TargetExpired := false
+    else if not na(amyLabM5LockedTargetStartBar) and not na(amyLabM5LockedTargetExpiryBars) and bar_index - amyLabM5LockedTargetStartBar >= amyLabM5LockedTargetExpiryBars
+        amyLabM5TargetExpired := true
+
+float amyTarget = not amyHasExecutionSignal ? na : amyRound5M5 ? (amyLabM5TargetExpired ? na : nz(amyLabM5LockedTarget, amyLabM5TargetNow)) : amyTargetBaseV1
+int amyTargetExpiryBars = amyRound5M5 ? nz(amyLabM5LockedTargetExpiryBars, amyTargetExpiryBarsNow) : amyTargetExpiryBarsNow
+bool amyLabM5TargetCapped = amyRound5M5 and amyLabM5LockedTargetCapped
+string amyTargetSide = not amyHasExecutionSignal ? 'WAIT' : amyRound5M5 and amyLabM5TargetExpired ? 'LAB EXPIRED' : amyLabM5TargetCapped ? (amyNextDirection == BULLISH ? 'LAB CAP UP' : 'LAB CAP DOWN') : amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
 
 // Confidence measures agreement only when an actionable prediction exists.
 float amyConfidenceRaw = amyHasExecutionSignal ? 50.0 : 0.0
