@@ -1,0 +1,126 @@
+name: Amy SMC B LAB H1 Trade Management
+on:
+  push:
+    paths:
+      - '.github/workflows/amy-smc-b-lab-h1-tm.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch H1 trade management into B-LAB only
+        run: python - <<'PY'
+          from pathlib import Path
+          p=Path('Amy-SMC-B-LAB.pine')
+          s=p.read_text()
+          assert 'AMY SMC B LAB — H1 TRADE MANAGEMENT' not in s
+          anchor='\n\n\n// Confidence measures agreement only when an actionable prediction exists.'
+          assert anchor in s
+          block=r'''
+
+          // AMY SMC B LAB — H1 TRADE MANAGEMENT (WFO candidate; NOT promoted to B baseline).
+          // Entry/Next Move, original structural invalidation, full Target V1, and 24-bar expiry remain identical to B/Z.
+          // H1 was tuned independently from M15. Original coarse train-only 8y->1y WFO selected:
+          // activate after +0.25 entry ATR favorable excursion; trail 0.40 current ATR behind the completed-bar favorable extreme;
+          // once active, stop is never looser than breakeven and can only tighten. Stress-neighbor tests are validation only.
+          // Conservative ordering: entering-bar stop is checked before Target; a newly calculated trail becomes active NEXT bar.
+          float amyBH1TrailTriggerAtr = 0.25
+          float amyBH1TrailDistanceAtr = 0.40
+          int amyBH1ManagementExpiryBars = 24
+          bool amyBH1NewManagementSignal = amyRound5H1 and amyHasExecutionSignal and amyNextDirection != nz(amyNextDirection[1], 0)
+
+          var int amyBH1MgmtDirection = 0
+          var float amyBH1MgmtEntry = na
+          var float amyBH1MgmtTarget = na
+          var float amyBH1MgmtInitialStop = na
+          var float amyBH1MgmtTrailStop = na
+          var float amyBH1MgmtEntryAtr = na
+          var float amyBH1MgmtFavorable = na
+          var int amyBH1MgmtStartBar = na
+          var bool amyBH1MgmtTrailActive = false
+          var bool amyBH1MgmtClosed = false
+          var string amyBH1MgmtState = 'IDLE'
+          var float amyBH1MgmtExitR = na
+
+          if barstate.isconfirmed
+              if amyBH1NewManagementSignal
+                  amyBH1MgmtDirection := amyNextDirection
+                  amyBH1MgmtEntry := close
+                  amyBH1MgmtTarget := amyTargetBaseV1
+                  amyBH1MgmtInitialStop := amyExecutionInvalidation
+                  amyBH1MgmtTrailStop := amyExecutionInvalidation
+                  amyBH1MgmtEntryAtr := amyTargetAtr
+                  amyBH1MgmtFavorable := close
+                  amyBH1MgmtStartBar := bar_index
+                  amyBH1MgmtTrailActive := false
+                  amyBH1MgmtClosed := false
+                  amyBH1MgmtState := 'ARMED'
+                  amyBH1MgmtExitR := na
+              else if amyRound5H1 and not amyBH1MgmtClosed and amyBH1MgmtDirection != 0 and not na(amyBH1MgmtEntry) and not na(amyBH1MgmtTarget) and not na(amyBH1MgmtInitialStop) and not na(amyBH1MgmtTrailStop) and not na(amyBH1MgmtEntryAtr) and not na(amyBH1MgmtStartBar)
+                  float amyBH1MgmtRisk = math.abs(amyBH1MgmtEntry - amyBH1MgmtInitialStop)
+                  bool amyBH1MgmtRiskOK = amyBH1MgmtRisk > 0
+                  bool amyBH1MgmtStopHit = amyBH1MgmtDirection == BULLISH ? low <= amyBH1MgmtTrailStop : high >= amyBH1MgmtTrailStop
+                  bool amyBH1MgmtTargetHit = amyBH1MgmtDirection == BULLISH ? high >= amyBH1MgmtTarget : low <= amyBH1MgmtTarget
+                  if amyBH1MgmtRiskOK and amyBH1MgmtStopHit
+                      amyBH1MgmtExitR := (amyBH1MgmtTrailStop - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
+                      bool amyBH1AtBE = math.abs(amyBH1MgmtTrailStop - amyBH1MgmtEntry) <= syminfo.mintick
+                      amyBH1MgmtState := amyBH1MgmtTrailActive ? (amyBH1AtBE ? 'BE EXIT' : 'TRAIL EXIT') : 'SL'
+                      amyBH1MgmtClosed := true
+                  else if amyBH1MgmtRiskOK and amyBH1MgmtTargetHit
+                      amyBH1MgmtExitR := math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
+                      amyBH1MgmtState := 'FULL TP'
+                      amyBH1MgmtClosed := true
+                  else if amyBH1MgmtRiskOK
+                      amyBH1MgmtFavorable := amyBH1MgmtDirection == BULLISH ? math.max(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), high) : math.min(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), low)
+                      float amyBH1FavorableMove = math.abs(amyBH1MgmtFavorable - amyBH1MgmtEntry)
+                      if amyBH1FavorableMove >= amyBH1TrailTriggerAtr * amyBH1MgmtEntryAtr
+                          amyBH1MgmtTrailActive := true
+                          float amyBH1TrailCandidate = amyBH1MgmtDirection == BULLISH ? amyBH1MgmtFavorable - amyBH1TrailDistanceAtr * amyTargetAtr : amyBH1MgmtFavorable + amyBH1TrailDistanceAtr * amyTargetAtr
+                          amyBH1TrailCandidate := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1TrailCandidate, amyBH1MgmtEntry) : math.min(amyBH1TrailCandidate, amyBH1MgmtEntry)
+                          amyBH1MgmtTrailStop := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1MgmtTrailStop, amyBH1TrailCandidate) : math.min(amyBH1MgmtTrailStop, amyBH1TrailCandidate)
+                          amyBH1MgmtState := 'TRAIL ACTIVE'
+                      if bar_index - amyBH1MgmtStartBar >= amyBH1ManagementExpiryBars
+                          float amyBH1FullTargetR = math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
+                          float amyBH1ExpiryR = (close - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
+                          amyBH1MgmtExitR := math.max(-1.0, math.min(amyBH1FullTargetR, amyBH1ExpiryR))
+                          amyBH1MgmtState := 'EXPIRED'
+                          amyBH1MgmtClosed := true
+
+          string amyBH1ManagementText = not amyRound5H1 ? amyRound10Regime : amyBH1MgmtClosed ? 'H1 TM • ' + amyBH1MgmtState : amyBH1MgmtTrailActive ? 'H1 TM • TRAIL ' + amyPrice(amyBH1MgmtTrailStop) : 'H1 TM • ARMED'
+          '''
+          block='\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines())
+          s=s.replace(anchor,block+anchor,1)
+          old="table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound10Regime, text_color = amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)"
+          new="table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound5H1 ? amyBH1ManagementText : amyRound10Regime, text_color = (amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed) or (amyRound5H1 and amyBH1MgmtTrailActive and not amyBH1MgmtClosed) ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)"
+          assert old in s
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - name: Verify frozen baseline and M15 block
+        run: |
+          test "$(git hash-object Amy-SMC-B.pine)" = "3b9b718a238e1c836920e76449bc5e4e11246440"
+          test "$(git hash-object Amy-SMC-Z.pine)" = "389036df09d03125a2f71189722953658a901170"
+          test "$(git hash-object Amy-SMC-A.pine)" = "edb769a2bcfc59fe53237eda2a926fe31a14003b"
+          test "$(git hash-object Amy-SMC-A-LAB.pine)" = "66b80304c44556040dc587557913bda309ca7b7d"
+          grep -F "float amyBM15TrailTriggerAtr = 0.25" Amy-SMC-B-LAB.pine
+          grep -F "float amyBM15TrailDistanceAtr = 0.40" Amy-SMC-B-LAB.pine
+          grep -F "int amyBM15ManagementExpiryBars = 32" Amy-SMC-B-LAB.pine
+          grep -F "float amyBH1TrailTriggerAtr = 0.25" Amy-SMC-B-LAB.pine
+          grep -F "float amyBH1TrailDistanceAtr = 0.40" Amy-SMC-B-LAB.pine
+          grep -F "int amyBH1ManagementExpiryBars = 24" Amy-SMC-B-LAB.pine
+          grep -F "int amyTargetExpiryBarsNow = amyRound5M5 ? (amyBM5HighRisk ? 192 : 60) : amyRound5M15 ? 32 : amyRound5H1 ? 24 : 48" Amy-SMC-B-LAB.pine
+          grep -F "int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyFinalBias" Amy-SMC-B-LAB.pine
+          git diff --check
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "Amy-SMC-B-LAB.pine "
+      - name: Commit H1 LAB experiment
+        run: |
+          git config user.name suhaimitoamy
+          git config user.email 34860608+suhaimitoamy@users.noreply.github.com
+          git add Amy-SMC-B-LAB.pine
+          git commit -m 'test: add H1 ATR trade-management LAB'
+          git push origin HEAD:main
