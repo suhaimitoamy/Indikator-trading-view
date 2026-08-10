@@ -2,8 +2,7 @@ name: Apply Amy SMC C LAB H1 dealing range
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - .github/workflows/one-time-amy-smc-c-lab-h1-dr.yml
 
@@ -60,27 +59,24 @@ jobs:
               raise SystemExit(f'pure-TF marker count={text.count(insert_marker)}')
           text = text.replace(insert_marker, h1_source + insert_marker, 1)
 
-          old_calc = """string amyDealingRange = 'EQUILIBRIUM'
-          int amyDealingBias = 0
-          if amyDRValid
-              if amyCDealingPureTF
-                  // C M5/M15: the field itself is the validated pure-location signal.
-                  // PREMIUM = bearish, DISCOUNT = bullish; middle band remains equilibrium/neutral.
-                  if close >= amyCDealingPremiumGate
-                      amyDealingRange := 'PREMIUM'
-                      amyDealingBias := BEARISH
-                  else if close <= amyCDealingDiscountGate
-                      amyDealingRange := 'DISCOUNT'
-                      amyDealingBias := BULLISH
-              else
-                  // H1 and other timeframes retain the frozen B/Z behavior exactly.
-                  if close > amyEQUpper
-                      amyDealingRange := 'PREMIUM'
-                      amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0
-                  else if close < amyEQLower
-                      amyDealingRange := 'DISCOUNT'
-                      amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
-          """.replace('          ', '')
+          start_marker = "string amyDealingRange = 'EQUILIBRIUM'\nint amyDealingBias = 0\n"
+          end_marker = "\nint amyLiquidityAge ="
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit(f'calculation boundary marker counts: start={text.count(start_marker)}, end={text.count(end_marker)}')
+          i = text.index(start_marker)
+          j = text.index(end_marker, i)
+          old_calc = text[i:j]
+          for guard in [
+              "if amyDRValid",
+              "if amyCDealingPureTF",
+              "if close >= amyCDealingPremiumGate",
+              "else if close <= amyCDealingDiscountGate",
+              "amyDealingBias := close >= amyPremiumGate and amyDRBearContext ? BEARISH : 0",
+              "amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0",
+          ]:
+              if guard not in old_calc:
+                  raise SystemExit(f'old calculation guard missing: {guard}')
+
           new_calc = """string amyDealingRange = 'EQUILIBRIUM'
           int amyDealingBias = 0
           if amyRound5H1
@@ -111,12 +107,9 @@ jobs:
                   else if close < amyEQLower
                       amyDealingRange := 'DISCOUNT'
                       amyDealingBias := close <= amyDiscountGate and amyDRBullContext ? BULLISH : 0
-          """.replace('          ', '')
-          if text.count(old_calc) != 1:
-              raise SystemExit(f'old calculation block count={text.count(old_calc)}')
-          text = text.replace(old_calc, new_calc, 1)
+          """.replace('          ', '').rstrip('\n')
+          text = text[:i] + new_calc + text[j:]
 
-          # Strict guards: passed M5/M15 definitions and all content outside the targeted markers remain untouched.
           required = [
               "bool amyCDealingPureTF = amyRound5M5 or amyRound5M15",
               "float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio",
@@ -125,13 +118,12 @@ jobs:
               "float amyCH1RangeBottom = amyRound5H1 ? ta.lowest(low[1], 240) : na",
               "float amyCH1PremiumGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.55 : na",
               "float amyCH1DiscountGate = amyCH1DRValid ? amyCH1RangeBottom + amyCH1RangeSpan * 0.45 : na",
+              "float amyFinalScore = amySafeHTFBias * 35 + amyCurrentSwingBias * 30 + amyCurrentInternalBias * 20 + amyLiquidityBiasActive * 15",
+              "float amyNextRaw = amyHistoryScore * 0.55 + amyContextScore",
           ]
           for marker in required:
               if text.count(marker) != 1:
-                  raise SystemExit(f'guard failed for marker: {marker!r}; count={text.count(marker)}')
-
-          if "amyFinalScore =" not in text or "amyNextRaw =" not in text or "amySweepContinuationBias =" not in text:
-              raise SystemExit('predictor/core guard markers missing')
+                  raise SystemExit(f'guard failed: {marker!r}; count={text.count(marker)}')
 
           p.write_text(text, encoding='utf-8')
           print('before_sha256', hashlib.sha256(before.encode()).hexdigest())
@@ -141,8 +133,6 @@ jobs:
 
           git diff --check -- Amy-SMC-C-LAB.pine
           git diff -- Amy-SMC-C-LAB.pine
-          grep -Fq "float amyCH1RangeTop = amyRound5H1 ? ta.highest(high[1], 240) : na" Amy-SMC-C-LAB.pine
-          grep -Fq "float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio" Amy-SMC-C-LAB.pine
 
       - name: Commit isolated C-LAB change and remove one-time workflow
         run: |
