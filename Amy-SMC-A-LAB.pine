@@ -1418,7 +1418,7 @@ if barstate.isconfirmed
 
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
-string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'LAB Z-BASE • A+' : 'LAB Z-BASE • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
+string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'LAB TGT2 • A+' : 'LAB TGT2 • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
 // Priority #1 result: M5 uses the frozen Z benchmark gate in LAB because no tested alternative won cleanly across all targets.
 // M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
 bool amyWfM5Provisional = false
@@ -1453,8 +1453,24 @@ float amyInternalBearTarget = not na(internalLow.currentLevel) and internalLow.c
 float amyTargetCandidate = not amyHasExecutionSignal ? na : amyNextDirection == BULLISH ? amyNearestAbove(amyBullTargetBase, amyInternalBullTarget, na, na, amyBullTargetRef) : amyNearestBelow(amyBearTargetBase, amyInternalBearTarget, na, na, amyBearTargetRef)
 float amyTargetDistanceRatio = not na(amyTargetCandidate) and amyTargetRiskDistance > 0 ? math.abs(amyTargetCandidate - close) / amyTargetRiskDistance : na
 bool amyTargetQualityOK = amyHasExecutionSignal and not na(amyTargetCandidate) and amyTargetRiskDistance > 0 and amyTargetDistanceRatio <= 0.40
-float amyTarget = not amyHasExecutionSignal ? na : amyTargetQualityOK ? amyTargetCandidate : amyNextDirection == BULLISH ? amyBullProjectedTarget : amyBearProjectedTarget
-string amyTargetSide = not amyHasExecutionSignal ? 'WAIT' : amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
+float amyTargetBaseV1 = not amyHasExecutionSignal ? na : amyTargetQualityOK ? amyTargetCandidate : amyNextDirection == BULLISH ? amyBullProjectedTarget : amyBearProjectedTarget
+
+// AMY SMC A LAB PRIORITY #2 — M5 SEGMENTED TARGET / EXPIRY.
+// Entry population and Round-9 gate remain exactly the frozen Z baseline.
+// Fresh raw 2004–2026 train-only 8y->1y WFO kept all 691 OOS M5 signals and 15/15 HC.
+// Best simple single-TP family: 72.07% TP win, +0.02064R pooled expectancy, 75.11% directional unchanged.
+// Latest train-only deployment (2018–2025): riskATR 3–<5 => target cap 0.375R / 60 bars;
+// riskATR >=5 => target cap 0.35R / 192 bars. Existing structural targets closer than the cap are preserved.
+float amyTargetRiskAtr = amyTargetAtr > 0 and amyTargetRiskDistance > 0 ? amyTargetRiskDistance / amyTargetAtr : na
+bool amyLabM5HighRisk = amyRound5M5 and not na(amyTargetRiskAtr) and amyTargetRiskAtr >= 5.0
+float amyLabM5TargetCapR = amyLabM5HighRisk ? 0.35 : 0.375
+int amyTargetExpiryBars = amyRound5M5 ? (amyLabM5HighRisk ? 192 : 60) : amyRound5M15 ? 32 : amyRound5H1 ? 24 : 48
+float amyLabM5TargetCapDistance = amyTargetRiskDistance * amyLabM5TargetCapR
+float amyLabM5BullCapTarget = math.max(close + amyLabM5TargetCapDistance, high + amyTargetOutsidePad)
+float amyLabM5BearCapTarget = math.min(close - amyLabM5TargetCapDistance, low - amyTargetOutsidePad)
+float amyTarget = not amyHasExecutionSignal ? na : amyRound5M5 ? (amyNextDirection == BULLISH ? math.min(amyTargetBaseV1, amyLabM5BullCapTarget) : math.max(amyTargetBaseV1, amyLabM5BearCapTarget)) : amyTargetBaseV1
+bool amyLabM5TargetCapped = amyRound5M5 and amyHasExecutionSignal and not na(amyTargetBaseV1) and math.abs(amyTarget - amyTargetBaseV1) >= syminfo.mintick
+string amyTargetSide = not amyHasExecutionSignal ? 'WAIT' : amyLabM5TargetCapped ? (amyNextDirection == BULLISH ? 'LAB CAP UP' : 'LAB CAP DOWN') : amyTargetQualityOK ? (amyNextDirection == BULLISH ? 'BSL' : 'SSL') : (amyNextDirection == BULLISH ? 'PROJ UP' : 'PROJ DOWN')
 
 // Confidence measures agreement only when an actionable prediction exists.
 float amyConfidenceRaw = amyHasExecutionSignal ? 50.0 : 0.0
