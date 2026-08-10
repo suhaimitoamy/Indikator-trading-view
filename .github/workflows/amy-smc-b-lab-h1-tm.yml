@@ -1,8 +1,7 @@
 name: Amy SMC B LAB H1 Trade Management
 on:
   push:
-    paths:
-      - '.github/workflows/amy-smc-b-lab-h1-tm.yml'
+    paths: ['.github/workflows/amy-smc-b-lab-h1-tm.yml']
 permissions:
   contents: write
 jobs:
@@ -10,97 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
+        with: {ref: main, fetch-depth: 0}
       - name: Patch H1 trade management into B-LAB only
-        run: python - <<'PY'
-          from pathlib import Path
-          p=Path('Amy-SMC-B-LAB.pine')
-          s=p.read_text()
-          assert 'AMY SMC B LAB — H1 TRADE MANAGEMENT' not in s
-          anchor='\n\n\n// Confidence measures agreement only when an actionable prediction exists.'
-          assert anchor in s
-          block=r'''
-
-          // AMY SMC B LAB — H1 TRADE MANAGEMENT (WFO candidate; NOT promoted to B baseline).
-          // Entry/Next Move, original structural invalidation, full Target V1, and 24-bar expiry remain identical to B/Z.
-          // H1 was tuned independently from M15. Original coarse train-only 8y->1y WFO selected:
-          // activate after +0.25 entry ATR favorable excursion; trail 0.40 current ATR behind the completed-bar favorable extreme;
-          // once active, stop is never looser than breakeven and can only tighten. Stress-neighbor tests are validation only.
-          // Conservative ordering: entering-bar stop is checked before Target; a newly calculated trail becomes active NEXT bar.
-          float amyBH1TrailTriggerAtr = 0.25
-          float amyBH1TrailDistanceAtr = 0.40
-          int amyBH1ManagementExpiryBars = 24
-          bool amyBH1NewManagementSignal = amyRound5H1 and amyHasExecutionSignal and amyNextDirection != nz(amyNextDirection[1], 0)
-
-          var int amyBH1MgmtDirection = 0
-          var float amyBH1MgmtEntry = na
-          var float amyBH1MgmtTarget = na
-          var float amyBH1MgmtInitialStop = na
-          var float amyBH1MgmtTrailStop = na
-          var float amyBH1MgmtEntryAtr = na
-          var float amyBH1MgmtFavorable = na
-          var int amyBH1MgmtStartBar = na
-          var bool amyBH1MgmtTrailActive = false
-          var bool amyBH1MgmtClosed = false
-          var string amyBH1MgmtState = 'IDLE'
-          var float amyBH1MgmtExitR = na
-
-          if barstate.isconfirmed
-              if amyBH1NewManagementSignal
-                  amyBH1MgmtDirection := amyNextDirection
-                  amyBH1MgmtEntry := close
-                  amyBH1MgmtTarget := amyTargetBaseV1
-                  amyBH1MgmtInitialStop := amyExecutionInvalidation
-                  amyBH1MgmtTrailStop := amyExecutionInvalidation
-                  amyBH1MgmtEntryAtr := amyTargetAtr
-                  amyBH1MgmtFavorable := close
-                  amyBH1MgmtStartBar := bar_index
-                  amyBH1MgmtTrailActive := false
-                  amyBH1MgmtClosed := false
-                  amyBH1MgmtState := 'ARMED'
-                  amyBH1MgmtExitR := na
-              else if amyRound5H1 and not amyBH1MgmtClosed and amyBH1MgmtDirection != 0 and not na(amyBH1MgmtEntry) and not na(amyBH1MgmtTarget) and not na(amyBH1MgmtInitialStop) and not na(amyBH1MgmtTrailStop) and not na(amyBH1MgmtEntryAtr) and not na(amyBH1MgmtStartBar)
-                  float amyBH1MgmtRisk = math.abs(amyBH1MgmtEntry - amyBH1MgmtInitialStop)
-                  bool amyBH1MgmtRiskOK = amyBH1MgmtRisk > 0
-                  bool amyBH1MgmtStopHit = amyBH1MgmtDirection == BULLISH ? low <= amyBH1MgmtTrailStop : high >= amyBH1MgmtTrailStop
-                  bool amyBH1MgmtTargetHit = amyBH1MgmtDirection == BULLISH ? high >= amyBH1MgmtTarget : low <= amyBH1MgmtTarget
-                  if amyBH1MgmtRiskOK and amyBH1MgmtStopHit
-                      amyBH1MgmtExitR := (amyBH1MgmtTrailStop - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
-                      bool amyBH1AtBE = math.abs(amyBH1MgmtTrailStop - amyBH1MgmtEntry) <= syminfo.mintick
-                      amyBH1MgmtState := amyBH1MgmtTrailActive ? (amyBH1AtBE ? 'BE EXIT' : 'TRAIL EXIT') : 'SL'
-                      amyBH1MgmtClosed := true
-                  else if amyBH1MgmtRiskOK and amyBH1MgmtTargetHit
-                      amyBH1MgmtExitR := math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
-                      amyBH1MgmtState := 'FULL TP'
-                      amyBH1MgmtClosed := true
-                  else if amyBH1MgmtRiskOK
-                      amyBH1MgmtFavorable := amyBH1MgmtDirection == BULLISH ? math.max(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), high) : math.min(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), low)
-                      float amyBH1FavorableMove = math.abs(amyBH1MgmtFavorable - amyBH1MgmtEntry)
-                      if amyBH1FavorableMove >= amyBH1TrailTriggerAtr * amyBH1MgmtEntryAtr
-                          amyBH1MgmtTrailActive := true
-                          float amyBH1TrailCandidate = amyBH1MgmtDirection == BULLISH ? amyBH1MgmtFavorable - amyBH1TrailDistanceAtr * amyTargetAtr : amyBH1MgmtFavorable + amyBH1TrailDistanceAtr * amyTargetAtr
-                          amyBH1TrailCandidate := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1TrailCandidate, amyBH1MgmtEntry) : math.min(amyBH1TrailCandidate, amyBH1MgmtEntry)
-                          amyBH1MgmtTrailStop := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1MgmtTrailStop, amyBH1TrailCandidate) : math.min(amyBH1MgmtTrailStop, amyBH1TrailCandidate)
-                          amyBH1MgmtState := 'TRAIL ACTIVE'
-                      if bar_index - amyBH1MgmtStartBar >= amyBH1ManagementExpiryBars
-                          float amyBH1FullTargetR = math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
-                          float amyBH1ExpiryR = (close - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
-                          amyBH1MgmtExitR := math.max(-1.0, math.min(amyBH1FullTargetR, amyBH1ExpiryR))
-                          amyBH1MgmtState := 'EXPIRED'
-                          amyBH1MgmtClosed := true
-
-          string amyBH1ManagementText = not amyRound5H1 ? amyRound10Regime : amyBH1MgmtClosed ? 'H1 TM • ' + amyBH1MgmtState : amyBH1MgmtTrailActive ? 'H1 TM • TRAIL ' + amyPrice(amyBH1MgmtTrailStop) : 'H1 TM • ARMED'
-          '''
-          block='\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines())
-          s=s.replace(anchor,block+anchor,1)
-          old="table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound10Regime, text_color = amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)"
-          new="table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound5H1 ? amyBH1ManagementText : amyRound10Regime, text_color = (amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed) or (amyRound5H1 and amyBH1MgmtTrailActive and not amyBH1MgmtClosed) ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)"
-          assert old in s
-          s=s.replace(old,new,1)
-          p.write_text(s)
-          PY
+        run: python -c "import zlib,base64;exec(zlib.decompress(base64.b64decode('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'))')"
       - name: Verify frozen baseline and M15 block
         run: |
           test "$(git hash-object Amy-SMC-B.pine)" = "3b9b718a238e1c836920e76449bc5e4e11246440"
