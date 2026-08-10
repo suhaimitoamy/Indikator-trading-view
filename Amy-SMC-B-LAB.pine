@@ -1555,6 +1555,78 @@ if barstate.isconfirmed
 string amyBM15ManagementText = not amyRound5M15 ? amyRound10Regime : amyBM15MgmtClosed ? 'M15 TM • ' + amyBM15MgmtState : amyBM15MgmtTrailActive ? 'M15 TM • TRAIL ' + amyPrice(amyBM15MgmtTrailStop) : 'M15 TM • ARMED'
 
 
+// AMY SMC B LAB — H1 TRADE MANAGEMENT (WFO candidate; NOT promoted to B baseline).
+// Entry/Next Move, original structural invalidation, full Target V1, and 24-bar expiry remain identical to B/Z.
+// H1 was tuned independently from M15. The original coarse train-only 8y->1y WFO selected the same robust profile:
+// activate after +0.25 entry ATR favorable excursion; trail 0.40 current ATR behind the completed-bar favorable extreme;
+// once active, the stop is never looser than breakeven and can only tighten. Stress-neighbor tests are validation only,
+// never fed back into the WFO selector. Conservative ordering: entering-bar stop is checked before Target; any newly
+// calculated trail becomes active on the NEXT bar. This module manages exits only and never changes H1 signals.
+float amyBH1TrailTriggerAtr = 0.25
+float amyBH1TrailDistanceAtr = 0.40
+int amyBH1ManagementExpiryBars = 24
+bool amyBH1NewManagementSignal = amyRound5H1 and amyHasExecutionSignal and amyNextDirection != nz(amyNextDirection[1], 0)
+
+var int amyBH1MgmtDirection = 0
+var float amyBH1MgmtEntry = na
+var float amyBH1MgmtTarget = na
+var float amyBH1MgmtInitialStop = na
+var float amyBH1MgmtTrailStop = na
+var float amyBH1MgmtEntryAtr = na
+var float amyBH1MgmtFavorable = na
+var int amyBH1MgmtStartBar = na
+var bool amyBH1MgmtTrailActive = false
+var bool amyBH1MgmtClosed = false
+var string amyBH1MgmtState = 'IDLE'
+var float amyBH1MgmtExitR = na
+
+if barstate.isconfirmed
+    if amyBH1NewManagementSignal
+        amyBH1MgmtDirection := amyNextDirection
+        amyBH1MgmtEntry := close
+        amyBH1MgmtTarget := amyTargetBaseV1
+        amyBH1MgmtInitialStop := amyExecutionInvalidation
+        amyBH1MgmtTrailStop := amyExecutionInvalidation
+        amyBH1MgmtEntryAtr := amyTargetAtr
+        amyBH1MgmtFavorable := close
+        amyBH1MgmtStartBar := bar_index
+        amyBH1MgmtTrailActive := false
+        amyBH1MgmtClosed := false
+        amyBH1MgmtState := 'ARMED'
+        amyBH1MgmtExitR := na
+    else if amyRound5H1 and not amyBH1MgmtClosed and amyBH1MgmtDirection != 0 and not na(amyBH1MgmtEntry) and not na(amyBH1MgmtTarget) and not na(amyBH1MgmtInitialStop) and not na(amyBH1MgmtTrailStop) and not na(amyBH1MgmtEntryAtr) and not na(amyBH1MgmtStartBar)
+        float amyBH1MgmtRisk = math.abs(amyBH1MgmtEntry - amyBH1MgmtInitialStop)
+        bool amyBH1MgmtRiskOK = amyBH1MgmtRisk > 0
+        bool amyBH1MgmtStopHit = amyBH1MgmtDirection == BULLISH ? low <= amyBH1MgmtTrailStop : high >= amyBH1MgmtTrailStop
+        bool amyBH1MgmtTargetHit = amyBH1MgmtDirection == BULLISH ? high >= amyBH1MgmtTarget : low <= amyBH1MgmtTarget
+        if amyBH1MgmtRiskOK and amyBH1MgmtStopHit
+            amyBH1MgmtExitR := (amyBH1MgmtTrailStop - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
+            bool amyBH1AtBE = math.abs(amyBH1MgmtTrailStop - amyBH1MgmtEntry) <= syminfo.mintick
+            amyBH1MgmtState := amyBH1MgmtTrailActive ? (amyBH1AtBE ? 'BE EXIT' : 'TRAIL EXIT') : 'SL'
+            amyBH1MgmtClosed := true
+        else if amyBH1MgmtRiskOK and amyBH1MgmtTargetHit
+            amyBH1MgmtExitR := math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
+            amyBH1MgmtState := 'FULL TP'
+            amyBH1MgmtClosed := true
+        else if amyBH1MgmtRiskOK
+            amyBH1MgmtFavorable := amyBH1MgmtDirection == BULLISH ? math.max(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), high) : math.min(nz(amyBH1MgmtFavorable, amyBH1MgmtEntry), low)
+            float amyBH1FavorableMove = math.abs(amyBH1MgmtFavorable - amyBH1MgmtEntry)
+            if amyBH1FavorableMove >= amyBH1TrailTriggerAtr * amyBH1MgmtEntryAtr
+                amyBH1MgmtTrailActive := true
+                float amyBH1TrailCandidate = amyBH1MgmtDirection == BULLISH ? amyBH1MgmtFavorable - amyBH1TrailDistanceAtr * amyTargetAtr : amyBH1MgmtFavorable + amyBH1TrailDistanceAtr * amyTargetAtr
+                amyBH1TrailCandidate := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1TrailCandidate, amyBH1MgmtEntry) : math.min(amyBH1TrailCandidate, amyBH1MgmtEntry)
+                amyBH1MgmtTrailStop := amyBH1MgmtDirection == BULLISH ? math.max(amyBH1MgmtTrailStop, amyBH1TrailCandidate) : math.min(amyBH1MgmtTrailStop, amyBH1TrailCandidate)
+                amyBH1MgmtState := 'TRAIL ACTIVE'
+            if bar_index - amyBH1MgmtStartBar >= amyBH1ManagementExpiryBars
+                float amyBH1FullTargetR = math.abs(amyBH1MgmtTarget - amyBH1MgmtEntry) / amyBH1MgmtRisk
+                float amyBH1ExpiryR = (close - amyBH1MgmtEntry) * amyBH1MgmtDirection / amyBH1MgmtRisk
+                amyBH1MgmtExitR := math.max(-1.0, math.min(amyBH1FullTargetR, amyBH1ExpiryR))
+                amyBH1MgmtState := 'EXPIRED'
+                amyBH1MgmtClosed := true
+
+string amyBH1ManagementText = not amyRound5H1 ? amyRound10Regime : amyBH1MgmtClosed ? 'H1 TM • ' + amyBH1MgmtState : amyBH1MgmtTrailActive ? 'H1 TM • TRAIL ' + amyPrice(amyBH1MgmtTrailStop) : 'H1 TM • ARMED'
+
+
 
 // Confidence measures agreement only when an actionable prediction exists.
 float amyConfidenceRaw = amyHasExecutionSignal ? 50.0 : 0.0
@@ -1605,7 +1677,7 @@ if barstate.islast
         table.cell(amyDashboard, 0, 9, 'Target', text_color = color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 1, 9, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
         table.cell(amyDashboard, 0, 10, 'Regime', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound10Regime, text_color = amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 10, amyRound5M15 ? amyBM15ManagementText : amyRound5H1 ? amyBH1ManagementText : amyRound10Regime, text_color = (amyRound5M15 and amyBM15MgmtTrailActive and not amyBM15MgmtClosed) or (amyRound5H1 and amyBH1MgmtTrailActive and not amyBH1MgmtClosed) ? color.orange : amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 0, 11, 'Confidence', text_color = color.silver, text_size = size.tiny)
         table.cell(amyDashboard, 1, 11, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
         table.cell(amyDashboard, 0, 12, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
