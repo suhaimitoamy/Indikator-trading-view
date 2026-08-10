@@ -1,0 +1,76 @@
+name: Amy SMC A LAB M5 Priority1 Rollback
+on:
+  push:
+    paths:
+      - '.github/workflows/amy-smc-a-lab-m5-priority1-rollback.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch only Amy SMC A LAB
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Amy-SMC-A-LAB.pine')
+          s = p.read_text()
+          old = """// AMY SMC A WALK-FORWARD DEPLOYMENT GATE — selected using train 2018–2025 only.
+// 2026 Jan–Jul remains out-of-sample and was not used to select these thresholds.
+// Latest M5 train-only set: body ratio >= 0.30, body/ATR 0.35–2.50, structural room 3.0–8.0 ATR.
+bool amyWfM5ParamGate = amyEventBodyRatio >= 0.30 and amyBreakBodyAtr >= 0.35 and amyBreakBodyAtr < 2.50 and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0 and amyRound9EntryRiskAtr < 8.0
+"""
+          new = """// AMY SMC A LAB PRIORITY #1 — M5 NEXT MOVE CLEAN ROLLBACK.
+// Fresh raw 2004–2026, 8y→1y train-only WFO tested body/risk, dead-zone, close-position,
+// side-asymmetric, volatility-regime, tree and logistic execution gates. No candidate met ALL targets:
+// >=75% directional, >=67.5824% TP win, >=+0.042195R expectancy, and 15/15 high-confidence windows.
+// The old risk/ATR < 8 cap was especially harmful to direction: it discarded many high-risk signals whose
+// structural direction remained correct. Keep the frozen Z Round-9 execution rule for M5 instead:
+// directional candle confirmation (applied below) + valid structural room >= 3 ATR, with no extra upper cap.
+bool amyWfM5ParamGate = not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0
+"""
+          if old not in s:
+              raise SystemExit('expected M5 gate block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace("amyRound10M5APlus ? 'WF PROV • A+' : 'WF PROV • A'", "amyRound10M5APlus ? 'LAB Z-BASE • A+' : 'LAB Z-BASE • A'", 1)
+          old_status = """// Walk-forward promotion status. M5 is provisional because most annual OOS windows have <30 signals.
+// M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
+bool amyWfM5Provisional = true
+"""
+          new_status = """// Walk-forward status. Priority #1 found no clean gate that beats Z across direction + execution + density.
+// M5 therefore uses the frozen Z benchmark gate in LAB (15/15 HC); this is a rollback baseline, not a new promotion.
+// M15/H1 remain unchanged and are still not promoted.
+bool amyWfM5Provisional = false
+"""
+          if old_status not in s:
+              raise SystemExit('expected M5 status block not found')
+          s = s.replace(old_status, new_status, 1)
+          old_note = """// AMY SMC A WALK-FORWARD VALIDATION — 8-year rolling train / 1-year test, test 2012–2026.
+// Parameter selection is train-only. Test windows below 30 signals are LOW CONFIDENCE and never lock/unlock a rule.
+// Latest deployment training window: 2018–2025. M5 train expectancy +0.07795R (201 signals): PROVISIONAL.
+// M15 train expectancy -0.01619R (1742 signals): REJECT/WAIT. H1 train expectancy -0.04592R (131 signals): REJECT/WAIT.
+// 2026 Jan–Jul is OOS only: M5 18 signals (LOW), M15 149, H1 14 (LOW).
+// Full per-window table is stored in Google Drive / Data backtest / Amy SMC A Walk-Forward 2004-2026.
+"""
+          new_note = """// AMY SMC A LAB PRIORITY #1 RESULT — M5 NEXT MOVE, clean predictor-only comparison.
+// Full raw replay: 1,515,121 M5 candles from 264 CSVs; 8-year train -> 1-year test; OOS 2012–2026.
+// Frozen Z M5 benchmark: 691 OOS, 75.11% directional, 57.74% TP win, +0.0085R, 15/15 HC.
+// Rejected A-current gate: 364 OOS, 70.05% directional, 67.58% TP win, +0.0422R, 1/15 HC.
+// No tested train-selected gate beat Z direction/robustness while also retaining A-current TP/expectancy.
+// Therefore M5 in LAB is intentionally rolled back to the frozen Z Round-9 gate until a future experiment wins cleanly.
+"""
+          if old_note in s:
+              s = s.replace(old_note, new_note, 1)
+          p.write_text(s)
+          PY
+          git config user.name 'suhaimitoamy'
+          git config user.email '34860608+suhaimitoamy@users.noreply.github.com'
+          git add Amy-SMC-A-LAB.pine
+          git diff --cached --check
+          git commit -m 'test: rollback A LAB M5 gate to Z benchmark'
+          git push origin HEAD:main
