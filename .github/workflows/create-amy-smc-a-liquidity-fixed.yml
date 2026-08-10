@@ -1,0 +1,106 @@
+name: Create Amy SMC A Liquidity Fixed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/create-amy-smc-a-liquidity-fixed.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create liquidity-fixed copy
+        shell: python
+        run: |
+          from pathlib import Path
+
+          src = Path('Amy-SMC-A.pine')
+          dst = Path('Amy-SMC-A-Liquidity-Fixed.pine')
+          text = src.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "indicator('Amy SMC A', 'Amy SMC A', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)",
+              "indicator('Amy SMC A Liquidity Fixed', 'Amy SMC A Liquidity Fixed', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)\n// LIQUIDITY-FIX EXPERIMENTAL COPY — original Amy-SMC-A.pine is intentionally untouched.\n// Sweep semantics: BSL sweep -> BULLISH continuation; SSL sweep -> BEARISH continuation.",
+              'indicator header')
+
+          old_bsl = """if amyBSLSweep
+              amyLastSweptHigh := amyBSL
+              amyLastLiquiditySide := 'BSL'
+              amyLastLiquidityLevel := amyBSL
+              amyLastLiquidityBias := BEARISH
+              amyLastLiquidityBar := bar_index
+              amyAddEvent('BSL SWEEP', amyBSL, BEARISH, 30)
+              if amyShowEvents and amyQualifiedBSLSweep
+                  amyAddChartLabel(bar_index, high + amyOffset, 'SWEEP', true, RED)"""
+          new_bsl = """if amyBSLSweep
+              amyLastSweptHigh := amyBSL
+              amyLastLiquiditySide := 'BSL'
+              amyLastLiquidityLevel := amyBSL
+              amyLastLiquidityBias := BULLISH
+              amyLastLiquidityBar := bar_index
+              amyAddEvent('BSL SWEEP', amyBSL, BULLISH, 30)
+              if amyShowEvents and amyQualifiedBSLSweep
+                  amyAddChartLabel(bar_index, high + amyOffset, 'SWEEP', true, GREEN)"""
+          replace_once(old_bsl, new_bsl, 'BSL sweep block')
+
+          old_ssl = """if amySSLSweep
+              amyLastSweptLow := amySSL
+              amyLastLiquiditySide := 'SSL'
+              amyLastLiquidityLevel := amySSL
+              amyLastLiquidityBias := BULLISH
+              amyLastLiquidityBar := bar_index
+              amyAddEvent('SSL SWEEP', amySSL, BULLISH, 30)
+              if amyShowEvents and amyQualifiedSSLSweep
+                  amyAddChartLabel(bar_index, low - amyOffset, 'SWEEP', false, GREEN)"""
+          new_ssl = """if amySSLSweep
+              amyLastSweptLow := amySSL
+              amyLastLiquiditySide := 'SSL'
+              amyLastLiquidityLevel := amySSL
+              amyLastLiquidityBias := BEARISH
+              amyLastLiquidityBar := bar_index
+              amyAddEvent('SSL SWEEP', amySSL, BEARISH, 30)
+              if amyShowEvents and amyQualifiedSSLSweep
+                  amyAddChartLabel(bar_index, low - amyOffset, 'SWEEP', false, RED)"""
+          replace_once(old_ssl, new_ssl, 'SSL sweep block')
+
+          replace_once(
+              "int amyLiquidityBiasActive = amyLiquidityActive ? amyLastLiquidityBias : 0",
+              "// Liquidity direction is continuation-based in this experimental copy. Downstream equality/inequality checks\n// intentionally remain unchanged so Final Bias, pattern voting, transition regime and confidence consume the fixed sign once.\nint amyLiquidityBiasActive = amyLiquidityActive ? amyLastLiquidityBias : 0",
+              'active liquidity bias')
+
+          replace_once(
+              "// followed by the next swing structure in the OPPOSITE direction of the raw sweep bias when Internal Structure\n// already points that way. This is used only as a forward-predictive continuation cue; the descriptive liquidity\n// event, Event History, labels, and non-predictive modules keep their original meaning.",
+              "// followed by the next swing structure in the continuation direction when Internal Structure already points that way.\n// In this liquidity-fixed copy, the raw descriptive sweep bias itself uses the same continuation direction, so Event History,\n// Final Bias and downstream context consume one consistent sign. Qualification thresholds are unchanged.",
+              'Round 5 sweep comment')
+
+          dst.write_text(text, encoding='utf-8')
+          print(f'created {dst} from {src}; source left unchanged')
+
+      - name: Verify only new indicator changed
+        run: |
+          git diff --exit-code -- Amy-SMC-A.pine
+          grep -F "indicator('Amy SMC A Liquidity Fixed'" Amy-SMC-A-Liquidity-Fixed.pine
+          grep -F "amyLastLiquidityBias := BULLISH" Amy-SMC-A-Liquidity-Fixed.pine
+          grep -F "amyLastLiquidityBias := BEARISH" Amy-SMC-A-Liquidity-Fixed.pine
+          git status --short
+      - name: Commit liquidity-fixed copy
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Amy-SMC-A-Liquidity-Fixed.pine
+          git commit -m "feat: add Amy SMC A liquidity-fixed experimental copy"
+          git push
