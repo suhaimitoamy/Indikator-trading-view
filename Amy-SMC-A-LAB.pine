@@ -1387,10 +1387,10 @@ bool amyRound9M5RegimeEntry = amyRound8M5TradeRegime and not amyRound8M5TradeReg
 float amyRound9EntryInvalidation = amyCurrentInternalBias == BULLISH ? amyBullInvalidation : amyCurrentInternalBias == BEARISH ? amyBearInvalidation : na
 float amyRound9EntryRiskAtr = not na(amyRound9EntryInvalidation) and not na(amyEventAtr) and amyEventAtr > 0 ? math.abs(close - amyRound9EntryInvalidation) / amyEventAtr : na
 bool amyRound9CandleConfirm = amyCurrentInternalBias == BULLISH ? close > open : amyCurrentInternalBias == BEARISH ? close < open : false
-// AMY SMC A WALK-FORWARD DEPLOYMENT GATE — selected using train 2018–2025 only.
-// 2026 Jan–Jul remains out-of-sample and was not used to select these thresholds.
-// Latest M5 train-only set: body ratio >= 0.30, body/ATR 0.35–2.50, structural room 3.0–8.0 ATR.
-bool amyWfM5ParamGate = amyEventBodyRatio >= 0.30 and amyBreakBodyAtr >= 0.35 and amyBreakBodyAtr < 2.50 and not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0 and amyRound9EntryRiskAtr < 8.0
+// AMY SMC A LAB PRIORITY #1 — no clean WFO winner; M5 rolled back to the frozen Z Round-9 execution gate.
+// Fresh raw 2004–2026 train-only WFO: no candidate met direction >=75%, TP >=67.5824%, expectancy >=+0.042195R and 15/15 HC together.
+// Final LAB gate = directional candle confirmation (below) + structural room >=3 ATR; no body filter and no risk upper cap.
+bool amyWfM5ParamGate = not na(amyRound9EntryRiskAtr) and amyRound9EntryRiskAtr >= 3.0
 bool amyRound9EntryConfirmed = amyRound9CandleConfirm and amyWfM5ParamGate
 var int amyRound9M5TradeDirection = 0
 if barstate.isconfirmed
@@ -1418,10 +1418,10 @@ if barstate.isconfirmed
 
 bool amyRound9M5SweepWatch = amyRound5M5 and not amyRound9M5TradeRegime and amySweepContinuationQualified
 bool amyRound9M5TransitionWatch = amyRound5M5 and amyRound8M5TradeRegime and not amyRound9M5TradeRegime
-string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'WF PROV • A+' : 'WF PROV • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
-// Walk-forward promotion status. M5 is provisional because most annual OOS windows have <30 signals.
+string amyRound10Regime = amyRound5M5 ? (amyRound9M5TradeRegime ? (amyRound10M5APlus ? 'LAB Z-BASE • A+' : 'LAB Z-BASE • A') : amyRound9M5SweepWatch ? 'WATCH • SWEEP' : amyRound9M5TransitionWatch ? 'WATCH • TRANSITION' : 'WAIT') : amyRound5M15 ? 'WF WAIT • TRAIN REJECT' : amyRound5H1 ? 'WF WAIT • TRAIN REJECT' : 'WF BASELINE'
+// Priority #1 result: M5 uses the frozen Z benchmark gate in LAB because no tested alternative won cleanly across all targets.
 // M15/H1 are not promoted: their latest 2018–2025 train expectancy is negative, so test data cannot rescue them.
-bool amyWfM5Provisional = true
+bool amyWfM5Provisional = false
 bool amyWfM15Approved = false
 bool amyWfH1Approved = false
 int amyNextDirection = amyRound5M5 ? (amyRound9M5TradeRegime ? amyRound9M5TradeDirection : 0) : amyRound5M15 ? (amyWfM15Approved ? amyFinalBias : 0) : amyRound5H1 ? (amyWfH1Approved ? amyFinalBias : 0) : amyFinalBias
@@ -1534,6 +1534,13 @@ if barstate.islast
 // M15 train expectancy -0.01619R (1742 signals): REJECT/WAIT. H1 train expectancy -0.04592R (131 signals): REJECT/WAIT.
 // 2026 Jan–Jul is OOS only: M5 18 signals (LOW), M15 149, H1 14 (LOW).
 // Full per-window table is stored in Google Drive / Data backtest / Amy SMC A Walk-Forward 2004-2026.
+
+// AMY SMC A LAB PRIORITY #1 M5 RESULT LOCK
+// Z benchmark: 691 OOS, 75.11% directional, 57.74% TP, +0.0085R, 15/15 HC.
+// A-current extra gate: 364 OOS, 70.05% directional, 67.58% TP, +0.0422R, 1/15 HC.
+// Diagnostic: the A extra gate dropped 327 Z-valid signals whose directional accuracy was 80.73%; riskATR >=8 alone dropped 153 signals at 92.81% directional.
+// No train-selected body/risk/dead-zone/close/side-asymmetric/volatility/tree/logistic gate met all four required targets.
+// Keep Z Round-9 M5 execution semantics in LAB until a future experiment beats it cleanly.
 
 // AMY SMC A ROUND 10 RESULT LOCK
 // Round 9 remains the execution baseline: confirmed Internal Transition + >=3 ATR structural room.
