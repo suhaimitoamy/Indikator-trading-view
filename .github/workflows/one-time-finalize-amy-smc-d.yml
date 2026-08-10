@@ -22,26 +22,21 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           z = Path('Amy-SMC-Z.pine').read_text(encoding='utf-8')
           c = Path('Amy-SMC-C-LAB.pine').read_text(encoding='utf-8')
-
           assert 'AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.' in c
           assert 'amyBM5TargetCapR' in c and 'amyTargetExpiryBarsNow' in c
           assert 'amyBM15Mgmt' not in c and 'H1 TRADE MANAGEMENT' not in c
           assert 'AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.' not in z
           assert 'amyBM5TargetCapR' not in z and 'amyTargetExpiryBarsNow' not in z
-
           start = 'bool amyDRValid = not na(amyDRTop) and not na(amyDRBottom) and amyDRTop > amyDRBottom\n'
           end = 'int amyLiquidityAge = na(amyLastLiquidityBar) ? 1000000 : bar_index - amyLastLiquidityBar\n'
           for label, text in [('Z', z), ('C-LAB', c)]:
               if text.count(start) != 1 or text.count(end) != 1:
                   raise SystemExit(f'{label}: dealing-range anchors not unique')
-
           zi, zj = z.index(start), z.index(end, z.index(start))
           ci, cj = c.index(start), c.index(end, c.index(start))
           dr = c[ci:cj]
-
           required = [
               'float amyCDealingPremiumRatio = amyRound5M5 ? 0.70 : amyRound5M15 ? 0.60 : amyPassedDRPremiumRatio',
               'float amyCDealingDiscountRatio = amyRound5M5 ? 0.30 : amyRound5M15 ? 0.40 : amyPassedDRDiscountRatio',
@@ -54,32 +49,22 @@ jobs:
           for marker in required:
               if marker not in dr:
                   raise SystemExit(f'DR guard missing: {marker}')
-
           dr = dr.replace('// AMY SMC C — DEALING RANGE PURE-LOCATION PROFILES.', '// AMY SMC D — DEALING RANGE PURE-LOCATION PROFILES.')
           dr = dr.replace('// C H1 — dedicated rolling range', '// D H1 — dedicated rolling range')
           dr = dr.replace('// C H1: pure-location descriptive state', '// D H1: pure-location descriptive state')
           dr = dr.replace('// C M5/M15: the field itself is the validated pure-location signal.', '// D M5/M15: the field itself is the validated pure-location signal.')
           dr = dr.replace('frozen B/Z behavior', 'frozen Z behavior')
-
           d = z[:zi] + dr + z[zj:]
           d = d.replace("indicator('Amy SMC Z', 'Amy SMC Z'", "indicator('Amy SMC D', 'Amy SMC D'", 1)
           d_norm = d.replace("indicator('Amy SMC D', 'Amy SMC D'", "indicator('Amy SMC Z', 'Amy SMC Z'", 1)
           di, dj = d_norm.index(start), d_norm.index(end, d_norm.index(start))
           assert d_norm[:di] == z[:zi] and d_norm[dj:] == z[zj:]
-
-          forbidden = [
-              'AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.',
-              'amyBM5TargetCapR', 'amyBM5HighRisk', 'amyBM5LockedTarget', 'amyBM5TargetExpired',
-              'amyTargetExpiryBarsNow', 'amyBM15Mgmt', 'amyBH1Mgmt',
-              'M15 TRADE MANAGEMENT', 'H1 TRADE MANAGEMENT'
-          ]
+          forbidden = ['AMY SMC B BASELINE — PROMOTED M5 TGT2 SEGMENTED TARGET / EXPIRY.','amyBM5TargetCapR','amyBM5HighRisk','amyBM5LockedTarget','amyBM5TargetExpired','amyTargetExpiryBarsNow','amyBM15Mgmt','amyBH1Mgmt','M15 TRADE MANAGEMENT','H1 TRADE MANAGEMENT']
           for marker in forbidden:
               if marker in d:
                   raise SystemExit(f'forbidden execution marker leaked into D: {marker}')
-
           assert 'AMY SMC Z ROUND 8 TARGET V1' in d
           assert 'float amyTarget = not amyHasExecutionSignal' in d
-
           dlab = d.replace("indicator('Amy SMC D', 'Amy SMC D'", "indicator('Amy SMC D LAB', 'Amy SMC D LAB'", 1)
           Path('Amy-SMC-D.pine').write_text(d, encoding='utf-8')
           Path('Amy-SMC-D-LAB.pine').write_text(dlab, encoding='utf-8')
@@ -87,14 +72,13 @@ jobs:
           print('D_EQUALS_Z_OUTSIDE_DR=YES')
           print('B_EXECUTION_EXCLUDED=YES')
           PY
-
           mkdir -p reports
           cat > reports/AMY-SMC-D-CHEATSHEET.md <<'EOF'
           # Amy SMC D — Directional Accuracy Cheat-Sheet
 
-          **Baseline:** `Amy-SMC-D.pine`  
-          **Purpose:** referensi baku pembacaan dashboard manual; directional/context only.  
-          **Data:** raw XAUUSD 2005–Jul 2026; OOS 2012–Jul 2026 bila dicantumkan; 2004 warm-up.  
+          **Baseline:** `Amy-SMC-D.pine`
+          **Purpose:** referensi baku pembacaan dashboard manual; directional/context only.
+          **Data:** raw XAUUSD 2005–Jul 2026; OOS 2012–Jul 2026 bila dicantumkan; 2004 warm-up.
           **Low-confidence:** <30 evaluable events per yearly/window slice.
 
           ## Final baseline definition
@@ -126,8 +110,6 @@ jobs:
 
           Continuous Swing/Internal/HTF/Final Bias, raw continuous Liquidity, Event History, raw Sweep, dan Qualified BOS sengaja tidak dimasukkan karena statusnya SUBSTITUTE/CONTEXT ONLY/LOW SAMPLE, bukan standalone daily directional read yang disahkan.
           EOF
-
-          git diff --check -- Amy-SMC-D.pine Amy-SMC-D-LAB.pine reports/AMY-SMC-D-CHEATSHEET.md
           grep -n "DEALING RANGE PURE-LOCATION\|amyCH1RangeTop\|amyCDealingPremiumRatio\|AMY SMC Z ROUND 8 TARGET V1" Amy-SMC-D.pine
           if grep -n "AMY SMC B BASELINE\|amyBM5TargetCapR\|amyBM15Mgmt\|H1 TRADE MANAGEMENT" Amy-SMC-D.pine; then exit 1; fi
 
@@ -137,6 +119,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/one-time-finalize-amy-smc-d.yml
           git add Amy-SMC-D.pine Amy-SMC-D-LAB.pine reports/AMY-SMC-D-CHEATSHEET.md
-          git diff --cached --check
           git commit -m "Promote clean Amy SMC D directional baseline"
           git push origin HEAD:main
