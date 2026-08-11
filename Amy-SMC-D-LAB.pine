@@ -61,11 +61,11 @@ showStructureTooltip            = 'Display swing market Structure'
 showSwingsTooltip               = 'Display swing point as labels on the chart'
 showHighLowSwingsTooltip        = 'Highlight most recent strong and weak high/low points on the chart'
 showInternalOrderBlocksTooltip  = 'Display internal order blocks on the chart\n\nNumber of internal order blocks to display on the chart'
-showSwingOrderBlocksTooltip     = 'Display swing market structure\n\nNumber of internal swing blocks to display on the chart'
+showSwingOrderBlocksTooltip     = 'Display swing order blocks on the chart\n\nNumber of internal swing blocks to display on the chart'
 orderBlockFilterTooltip         = 'Method used to filter out volatile order blocks \n\nIt is recommended to use the cumulative mean range method when a low amount of data is available'
-orderBlockMitigationTooltip     = 'Method used to mitigate order blocks'
+orderBlockMitigationTooltip     = 'Select what values to use for order block mitigation'
 showEqualHighsLowsTooltip       = 'Display equal highs and equal lows on the chart'
-equalHighsLowsLengthTooltip     = 'Number of bars used to confirm equal highs and lows'
+equalHighsLowsLengthTooltip     = 'Number of bars used to confirm equal highs and equal lows'
 equalHighsLowsThresholdTooltip  = 'Sensitivity threshold in a range (0, 1) used for the detection of equal highs & lows\n\nLower values will return fewer but more pertinent results'
 showFairValueGapsTooltip        = 'Display fair values gaps on the chart'
 fairValueGapsThresholdTooltip   = 'Filter out non significant fair value gaps'
@@ -88,7 +88,7 @@ internalStructureSize           = input.string( TINY,       'Internal Label Size
 showStructureInput              = input(        true,       'Show Swing Structure',     group = SWING_GROUP,    tooltip = showStructureTooltip)
 showSwingBullInput              = input.string( ALL,        'Bullish Structure',        group = SWING_GROUP,    inline = 'bull',    options = [ALL,BOS,CHOCH])
 swingBullColorInput             = input(        GREEN,      '',                         group = SWING_GROUP,    inline = 'bull')
-showSwingBearInput              = input.string( ALL,        'Bearish Structure' ,       group = SWING_GROUP,    inline = 'bear',    options = [ALL,BOS,CHOCH])
+showSwingBearInput              = input.string( ALL,        'Bearish Structure',        group = SWING_GROUP,    inline = 'bear',    options = [ALL,BOS,CHOCH])
 swingBearColorInput             = input(        RED,        '',                         group = SWING_GROUP,    inline = 'bear')
 swingStructureSize              = input.string( SMALL,      'Swing Label Size',         group = SWING_GROUP,    options = [TINY,SMALL,NORMAL])
 showSwingsInput                 = input(        false,      'Show Swings Points',       group = SWING_GROUP,    tooltip = showSwingsTooltip,inline = 'swings')
@@ -111,7 +111,7 @@ equalHighsLowsLengthInput       = input.int(    3,          'Bars Confirmation',
 equalHighsLowsThresholdInput    = input.float(  0.1,        'Threshold',                group = EQUAL_GROUP,    tooltip = equalHighsLowsThresholdTooltip,   minval = 0, maxval = 0.5, step = 0.1)
 equalHighsLowsSizeInput         = input.string( TINY,       'Label Size',               group = EQUAL_GROUP,    options = [TINY,SMALL,NORMAL])
 
-showFairValueGapsInput          = input(        false,      'Fair Value Gaps',           group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
+showFairValueGapsInput          = input(        false,      'Fair Value Gaps',          group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
 fairValueGapsThresholdInput     = input(        true,       'Auto Threshold',           group = GAPS_GROUP,     tooltip = fairValueGapsThresholdTooltip)
 fairValueGapsTimeframeInput     = input.timeframe('',       'Timeframe',                group = GAPS_GROUP,     tooltip = fairValueGapsTimeframeTooltip)
 fairValueGapsBullColorInput     = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = GAPS_GROUP)
@@ -549,7 +549,7 @@ updateTrailingExtremes() =>
 
 drawHighLowSwings() =>
     var line topLine        = line.new(na, na, na, na, color = swingBearishColor, xloc = xloc.bar_time)
-    var line bottomLine     = line.new(na, na, na, na, color = swingBullishColor, xloc = xloc.bar_time)
+    var line bottomLine     = line.new(na, na, na,na, color = swingBullishColor, xloc = xloc.bar_time)
     var label topLabel      = label.new(na, na, color=color(na), textcolor = swingBearishColor, xloc = xloc.bar_time, style = label.style_label_down, size = size.tiny)
     var label bottomLabel   = label.new(na, na, color=color(na), textcolor = swingBullishColor, xloc = xloc.bar_time, style = label.style_label_up, size = size.tiny)
 
@@ -659,7 +659,7 @@ alertcondition(currentAlerts.swingBearishCHoCH,          'Bearish CHoCH',       
 alertcondition(currentAlerts.internalBullishOrderBlock, 'Bullish Internal OB Breakout', 'Price broke bullish internal OB')
 alertcondition(currentAlerts.internalBearishOrderBlock, 'Bearish Internal OB Breakout', 'Price broke bearish internal OB')
 alertcondition(currentAlerts.swingBullishOrderBlock,    'Bullish Swing OB Breakout',    'Price broke bullish swing OB')
-alertcondition(currentAlerts.swingBearishOrderBlock,    'Bearish Swing OB Breakout',    'Price broke bearish swing OB')
+alertcondition(currentAlerts.swingBearishOrderBlock,    'Bearish Swing OB Breakout',    'Bearish Swing OB Breakout')
 
 alertcondition(currentAlerts.equalHighs,                'Equal Highs',                  'Equal highs detected')
 alertcondition(currentAlerts.equalLows,                 'Equal Lows',                   'Equal lows detected')
