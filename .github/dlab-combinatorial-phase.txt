@@ -1,0 +1,43 @@
+// AMY SMC D-LAB — COMBINATORIAL ENTRY PHASE
+// Date: 2026-08-12
+// Scope: entry research only; no directional/predictive scoring. Amy-SMC-D.pine untouched.
+// Existing K1-K21/native building blocks are not overwritten.
+// Data: XAUUSD 2004 warm-up, 2005-2026 research history; rolling 8y train -> 1y OOS 2012-2026 (2026 Jan-Jul).
+// Execution: native M1 TP/SL ordering; same-M1 ambiguity = SL first; initial balance $10,000; 1% current-balance risk; chronological compounding.
+// Realism: actual XAUUSD distances only; SL >= 1.00, TP >= 2.00. Zone semantics = FIRST FRESH TOUCH ONLY.
+// Parameter search per fold: TF/window/ATR exit profile selected on preceding train only. No OOS/future leakage.
+// NOTE: this phase is a research-port replay of the locked building-block semantics; it adds no executable Pine signal logic.
+//
+// OOS RANKING / DECISION
+// 1 BSL Continue BUY + HTF Structure | N 2385 | WR 40.63% | TP 40.63% | End $25,914.67 | Net +$15,914.67 | MaxDD 39.95% | Positive years 9/15 | MedSL 4.23 | MedTP 6.55 | WATCH (profitable but DD/stability not promote-grade)
+// 2 OTE + HTF Structure | N 224 | WR 30.80% | TP 30.80% | End $10,808.73 | Net +$808.73 | MaxDD 16.33% | Positive years 2/15 | MedSL 3.86 | MedTP 9.66 | REJECT: profit concentrated in 1 regime
+// 3 CHoCH + Fresh Internal OB | N 79 | WR 31.65% | TP 31.65% | End $10,513.21 | Net +$513.21 | MaxDD 10.96% | Positive years 2/15 | MedSL 3.69 | MedTP 9.24 | REJECT: low HC / regime concentration
+// 4 Sweep + OB + CHoCH | N 78 | WR 33.33% | TP 33.33% | End $10,467.56 | Net +$467.56 | MaxDD 17.12% | Positive years 4/15 | MedSL 2.05 | MedTP 5.13 | REJECT: low HC
+// 5 FVG + CHoCH | N 359 | WR 42.34% | TP 42.34% | End $10,071.02 | Net +$71.02 | MaxDD 21.30% | Positive years 2/15 | MedSL 6.85 | MedTP 9.63 | REJECT: unstable / near-flat
+//
+// PRIORITY / OB HYPOTHESIS TESTS
+// CHoCH + OTE | N 784 | WR 32.40% | End $5,797.48 | Net -$4,202.52 | MaxDD 51.89% | Positive years 5/15 | MedSL 1.53 | MedTP 2.94 | REJECT
+// OB + CHoCH | N 79 | WR 31.65% | End $10,513.21 | Net +$513.21 | MaxDD 10.96% | Positive years 2/15 | REJECT low HC/regime concentration
+// OB + Sweep | N 128 | WR 29.69% | End $8,681.32 | Net -$1,318.68 | MaxDD 20.63% | Positive years 7/15 | REJECT
+// OB + OTE | N 75 | WR 40.00% | End $9,722.11 | Net -$277.89 | MaxDD 9.87% | Positive years 1/15 | REJECT
+// OB + Dealing Location | N 141 | WR 29.79% | End $8,046.71 | Net -$1,953.29 | MaxDD 22.68% | Positive years 2/15 | REJECT
+// Sweep + OTE | N 76 | WR 31.58% | End $9,024.29 | Net -$975.71 | MaxDD 14.33% | Positive years 2/15 | REJECT
+// SSL Sweep + Internal Structure SELL | N 187 | WR 35.83% | End $7,659.98 | Net -$2,340.02 | MaxDD 29.13% | Positive years 0/15 | REJECT
+// BSL Continue BUY + Internal Structure | N 1635 | WR 47.46% | End $7,999.46 | Net -$2,000.54 | MaxDD 43.04% | Positive years 7/15 | REJECT
+// BSL Continue BUY + CHoCH | N 410 | WR 37.07% | End $6,165.11 | Net -$3,834.89 | MaxDD 46.36% | Positive years 4/15 | REJECT
+//
+// REGIME CHECK — BSL Continue BUY + HTF Structure
+// 2012-2016: 423 trades, +$2,012.35 from $10k reset-equivalent.
+// 2017-2021: 646 trades, +$1,290.92.
+// 2022-2026: 1316 trades, +$9,106.83.
+// Interpretation: HTF alignment can rescue the BUY-side continuation hypothesis, but most growth is concentrated in the latest regime and MaxDD is ~40%; keep WATCH, do not promote or alter base BSL semantics yet.
+//
+// OB HYPOTHESIS DECISION
+// Standalone OB was already weak. Adding CHoCH/Sweep/OTE/Dealing Location did NOT produce a robust 15-fold OOS edge in this pass.
+// Therefore the broad claim "OB = useful location/filter" is NOT confirmed yet. It remains plausible only as a conditional context component; no OB combination is promoted.
+//
+// FINAL LOCK
+// No combinatorial candidate earns PROMOTE in this pass under the automatic reject rules.
+// WATCH only: BSL Continue BUY + HTF Structure.
+// All other listed combinations REJECT for instability, low HC, regime concentration, or negative/near-flat OOS profit.
+// Do not change production baseline or native BSL/SSL/OB semantics from this result.
