@@ -1,0 +1,140 @@
+
+// =====================================================================================================================
+// AMY SMC D-LAB — PHASE 1/2 FREE EXPLORATION + WALK-FORWARD VALIDATION — K7-K21 — 2026-08-11
+// =====================================================================================================================
+// SCOPE / IMMUTABILITY LOCK
+// - Repository: suhaimitoamy/Indikator-trading-view, branch main.
+// - Frozen production baseline Amy-SMC-D.pine remains blob d6e6d7c979dd5a852bddd9661bef0480caa2eb35 and is NOT modified.
+// - Existing K1-K6 definitions/results and Pullback logic above are NOT removed, overwritten, re-fit, or re-scored here.
+// - This phase is append-only research documentation. No executable Pine signal logic is changed by this block.
+// - Dataset: audited/repaired raw XAUUSD; 2004 warm-up, score 2005-2026 (2026 Jan-Jul); no synthetic candles.
+// - Base-TF horizons match the K1-K6 research convention: M5=48, M15=32, H1=24 closed bars.
+// - Signal is known only at candle close; every market candidate executes at NEXT BAR OPEN.
+// - Lifecycle reference = 0.40R; robustness = 1.00R; if TP and SL are both touched inside the same base-TF candle,
+//   the conservative tie-break is SL FIRST. No future candle is used to construct a signal or choose a parameter.
+// - Directional accuracy below = direction of the terminal horizon close relative to the actual next-open entry price.
+//   It is deliberately reported separately from TP hit-rate/expectancy; path-dependent expectancy can be positive even when
+//   terminal-horizon direction is near 50%.
+//
+// PHASE 1 — FULL-SAMPLE EXPLORATION (2005-2026)
+// - Candidate families were searched freely on the entire score sample. Overfit was allowed by design in this phase.
+// - The parameters printed below are each family's best FULL-SAMPLE profile and are descriptive of the Phase-1 winner only.
+// - Selection objective inside each family: 0.40R expectancy first, then 1.00R robustness, directional accuracy and coverage.
+//
+// EXACT PHASE-1 WINNER DEFINITIONS
+// K7 — Donchian Trend Breakout — M15
+//   LONG trigger/filter: close > highest HIGH of the previous 40 bars; close > EMA50; candle body/ATR14 >= 0.40;
+//   close position in candle >= 0.60. SHORT = exact mirror below previous-40 LOW / EMA50 / close-position <= 0.40.
+//   ENTRY: next-bar OPEN. SL: LONG previous-5-bar lowest LOW; SHORT previous-5-bar highest HIGH.
+//
+// K8 — Sweep-Reclaim Trend — M15
+//   LONG: low sweeps below previous rolling-40 LOW and closes back above it; close > EMA20; lower-wick/range >= 0.40.
+//   SHORT: high sweeps previous rolling-40 HIGH and closes back below; close < EMA20; upper-wick/range >= 0.40.
+//   ENTRY: next-bar OPEN. SL: signal-candle LOW/HIGH respectively.
+//
+// K9 — EMA Pullback + HTF Trend — M15
+//   LONG: low <= EMA10 and close > EMA10; EMA10 > EMA100; RSI14 >= 50; completed H1 EMA50 > EMA200.
+//   SHORT = mirror; completed H1 trend is shifted one closed H1 bar so the active hour cannot leak into the signal.
+//   ENTRY: next-bar OPEN. SL: previous-5-bar lowest LOW / highest HIGH.
+//
+// K10 — EMA Cross + ADX — M15
+//   LONG: EMA20 crosses above EMA100 with ADX14 >= 15. SHORT: EMA20 crosses below EMA100 with ADX14 >= 15.
+//   ENTRY: next-bar OPEN. SL: signal close -/+ 1.50*ATR14.
+//
+// K11 — Bollinger Squeeze Breakout — M15
+//   Prior bar BB-width(20) <= rolling-100 median BB-width * 0.60; current close breaks previous-20 HIGH/LOW and is
+//   above/below EMA50 in trade direction. ENTRY: next-bar OPEN. SL: signal close -/+ 1.50*ATR14.
+//
+// K12 — Narrow-Range Breakout + HTF — M5
+//   Previous candle is the narrowest range of the prior 5; current close breaks previous HIGH/LOW; direction agrees with
+//   EMA50 and completed H1 EMA50/EMA200; body/ATR14 >= 0.25. ENTRY: next-bar OPEN. SL: opposite previous-candle extreme.
+//
+// K13 — Inside-Bar Breakout + HTF — M5
+//   Previous candle is inside its mother candle (bar -2); mother range <= 2.00*ATR14; current close breaks mother HIGH/LOW;
+//   direction agrees with EMA100 and completed H1 EMA50/EMA200. ENTRY: next-bar OPEN. SL: mother LOW/HIGH.
+//
+// K14 — Engulfing Trend — M15
+//   Bullish/bearish engulfing of prior opposite candle; direction agrees with EMA20; RSI14 >=50 for LONG / <=50 for SHORT;
+//   body/range >=0.60. ENTRY: next-bar OPEN. SL: signal-candle LOW/HIGH.
+//
+// K15 — Pinbar Trend + HTF — M15
+//   LONG: lower-wick/range >=0.70, close-position >=0.60, close>EMA50, RSI14>=45, completed H1 bullish.
+//   SHORT: upper-wick/range >=0.70, close-position <=0.40, close<EMA50, RSI14<=55, completed H1 bearish.
+//   ENTRY: next-bar OPEN. SL: signal-candle LOW/HIGH.
+//
+// K16 — FVG Displacement Trend — M15
+//   LONG: current LOW - HIGH[2] > 0.05*ATR14, bullish candle, body/ATR14 >=0.70, close>EMA100.
+//   SHORT: LOW[2] - current HIGH >0.05*ATR14, bearish candle, body/ATR14>=0.70, close<EMA100.
+//   ENTRY: next-bar OPEN. SL: LONG LOW[2]; SHORT HIGH[2].
+//
+// K17 — M5 Breakout + H1 Trend — M5
+//   LONG: close > previous rolling-40 HIGH; completed H1 EMA50>EMA200; RSI14>=50; body/ATR14>=0.40.
+//   SHORT = mirror. ENTRY: next-bar OPEN. SL: previous-5-bar lowest LOW / highest HIGH.
+//
+// K18 — M5 Sweep + H1 Volatility — M5
+//   LONG: sweep previous rolling-40 LOW then reclaim; completed H1 bullish; ATR14/ATR100 >=1.20; close-position>=0.65.
+//   SHORT = mirror with close-position<=0.35. ENTRY: next-bar OPEN. SL: signal-candle LOW/HIGH.
+//
+// K19 — EMA Pullback + H1 ADX — M15
+//   LONG: low<=EMA30 and close>EMA30; completed H1 bullish; ADX14>=20; RSI14>=55.
+//   SHORT: high>=EMA30 and close<EMA30; completed H1 bearish; ADX14>=20; RSI14<=45.
+//   ENTRY: next-bar OPEN. SL: previous-5-bar lowest LOW / highest HIGH.
+//
+// K20 — Asia Range Breakout + H1 — M15
+//   Daily UTC Asia range = candles before 07:00 UTC. Active entry window = 07:00 <= hour < 20:00 UTC.
+//   LONG: first daily close above Asia HIGH, completed H1 EMA50>EMA200, body/ATR14>=0.30.
+//   SHORT: first daily close below Asia LOW, completed H1 EMA50<EMA200, body/ATR14>=0.30.
+//   ENTRY: next-bar OPEN. SL: LONG Asia LOW; SHORT Asia HIGH.
+//
+// K21 — H1 Volatility-Contraction Breakout — H1
+//   Prior-bar ATR14/ATR100 <=0.90; current close breaks previous rolling-40 HIGH/LOW; close agrees with EMA50.
+//   ENTRY: next-bar OPEN. SL: signal close -/+ 1.50*ATR14.
+//
+// PHASE 2 — REQUIRED WALK-FORWARD OOS
+// - 15 rolling tests: OOS year 2012 through 2026; each test uses ONLY the immediately preceding 8 calendar years as train.
+// - IMPORTANT LEAKAGE GUARD: the Phase-1 parameter printed above is NOT blindly reused in OOS. For every candidate family
+//   and every OOS year, the family's parameter grid is re-optimized using that 8-year TRAIN slice only; the selected train
+//   configuration is then frozen for the following 1-year OOS slice. The OOS year never participates in parameter selection.
+// - HC means an OOS year has >=30 executions. Windows below 30 executions are low-confidence and are not hidden.
+//
+// COMPARISON — FULL-SAMPLE PHASE 1 vs ROLLING OOS PHASE 2
+// Columns: K | TF | IS N | IS Dir | IS TP40 | IS Exp40 | IS Exp100 || OOS N | OOS Dir | OOS TP40 | OOS Exp40 | OOS Exp100 | HC | VERDICT
+// K7  | M15 | 26292 | 48.12% | 64.18% | +0.0175R | +0.0017R || 18061 | 48.42% | 64.18% | +0.0169R | +0.0006R | 15/15 | ROBUST
+// K8  | M15 |   191 | 53.40% | 72.25% | +0.0272R | +0.0681R ||   166 | 51.81% | 72.89% | +0.0446R | +0.0361R |  0/15 | POSITIVE, LOW HC
+// K9  | M15 | 64052 | 48.77% | 66.67% | -0.0541R | -0.0200R || 44673 | 48.79% | 67.18% | -0.0478R | -0.0172R | 15/15 | REJECTED
+// K10 | M15 |  5563 | 48.86% | 69.69% | -0.0148R | +0.0014R ||  1958 | 49.69% | 69.51% | -0.0187R | -0.0015R | 15/15 | REJECTED
+// K11 | M15 |  8804 | 48.34% | 69.48% | -0.0269R | -0.0237R ||  5520 | 48.28% | 69.51% | -0.0267R | -0.0197R | 15/15 | REJECTED
+// K12 | M5  | 53865 | 48.30% | 65.96% | -0.0755R | -0.0318R || 37334 | 48.79% | 66.83% | -0.0633R | -0.0270R | 15/15 | REJECTED
+// K13 | M5  | 19428 | 47.91% | 68.13% | -0.0430R | -0.0298R || 15510 | 48.47% | 68.57% | -0.0369R | -0.0250R | 15/15 | REJECTED
+// K14 | M15 | 21471 | 48.23% | 65.33% | -0.0813R | -0.0493R || 15420 | 48.91% | 66.12% | -0.0703R | -0.0390R | 15/15 | REJECTED
+// K15 | M15 | 12276 | 48.49% | 60.05% | -0.1589R | -0.0816R ||  7523 | 48.31% | 62.38% | -0.1261R | -0.0528R | 15/15 | REJECTED
+// K16 | M15 | 15927 | 48.30% | 66.07% | +0.0005R | +0.0037R || 12034 | 48.29% | 66.31% | -0.0008R | -0.0006R | 15/15 | PROVEN OVERFIT
+// K17 | M5  | 45475 | 48.52% | 66.94% | -0.0071R | -0.0143R || 47237 | 48.62% | 67.64% | -0.0080R | -0.0119R | 15/15 | REJECTED
+// K18 | M5  |  6428 | 52.50% | 68.56% | -0.0378R | +0.0198R ||  7778 | 51.85% | 67.85% | -0.0480R | -0.0108R | 15/15 | REJECTED / 1R FAILS OOS
+// K19 | M15 |  5751 | 48.10% | 65.21% | -0.0315R | -0.0263R ||  4358 | 47.34% | 65.33% | -0.0354R | -0.0413R | 15/15 | REJECTED
+// K20 | M15 |  3531 | 50.16% | 58.23% | +0.0551R | +0.0391R ||  2376 | 49.66% | 55.64% | +0.0458R | +0.0156R | 15/15 | ROBUST — STRONGEST
+// K21 | H1  |  2802 | 52.28% | 70.59% | -0.0113R | +0.0435R ||   334 | 52.69% | 68.26% | -0.0443R | +0.0180R |  2/15 | REJECTED MAIN TP / LOW HC
+//
+// FINDINGS / PROMOTION STATUS
+// 1) K20 is the strongest new robust candidate in this search: main 0.40R expectancy stays positive from +0.0551R full-sample
+//    to +0.0458R rolling OOS, 1.00R remains positive (+0.0156R OOS), and HC is 15/15. It is the only candidate here with
+//    a material positive margin at BOTH target references and full HC while retaining most of its Phase-1 expectancy.
+// 2) K7 is also robust at the main 0.40R objective (+0.0169R OOS, HC 15/15), but its 1.00R margin is only +0.0006R.
+//    Treat K7 as a valid secondary candidate, not stronger than K20.
+// 3) K8 stays positive at both target references, but only 166 total OOS executions and HC 0/15 make it LOW-CONFIDENCE.
+//    It is not promoted to K1-equivalent status until a denser independent sample supports it.
+// 4) K16 is the cleanest overfit lesson: full-sample expectancy was slightly positive at both 0.40R/+0.0005R and 1.00R/+0.0037R,
+//    but both turn negative OOS. The apparent FVG-displacement edge is therefore classified as historical-fit noise here.
+// 5) K9-K15, K17, K19 were already negative at the main Phase-1 objective and stay negative OOS; these are REJECTED weak
+//    families rather than falsely described as 'great in-sample then failed'. K18 and K21 illustrate target-specific traps:
+//    1.00R can look positive while the required 0.40R reference fails; K18's 1.00R edge also disappears OOS, while K21 is sparse.
+// 6) HIGH TP-WR alone is not sufficient. Several rejected families show 60-70% TP40 hit rates yet negative expectancy because
+//    the -1R stop geometry dominates the +0.40R win payoff. Ranking is therefore expectancy-first, not raw win-rate-first.
+//
+// FINAL RESEARCH LOCK FOR THIS PHASE
+// - ROBUST NEW: K20 primary; K7 secondary.
+// - WATCH ONLY / LOW CONFIDENCE: K8.
+// - PROVEN OVERFIT: K16.
+// - REJECTED at required 0.40R reference: K9-K15, K17-K19, K21.
+// - K1-K6 and Pullback remain untouched and authoritative for their original research block above.
+// =====================================================================================================================
