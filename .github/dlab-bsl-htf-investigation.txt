@@ -1,0 +1,52 @@
+// AMY SMC D-LAB — BSL CONTINUE BUY + HTF STRUCTURE FOLLOW-UP
+// Date: 2026-08-12
+// Scope: research payload only. No executable Pine changes. Amy-SMC-D.pine untouched.
+// Parent combinatorial payload commit: 61a78ffc06db6059756606860008a14fe5292350
+//
+// EVIDENCE LOCK
+// Parent OOS result: BSL Continue BUY + HTF Structure | N 2385 | WR 40.63% | End $25,914.67 | Net +$15,914.67 | MaxDD 39.95% | positive years 9/15 | MedSL 4.23 | MedTP 6.55.
+// Parent reset-equivalent regime blocks: 2012-2016 N423 +$2,012.35; 2017-2021 N646 +$1,290.92; 2022-2026 N1316 +$9,106.83.
+// Therefore the edge does NOT disappear when 2022-2026 is removed: both pre-2022 blocks are independently net-positive from a $10k reset. However, the late block contributes 73.4% of the sum of reset-block profits and 55.2% of all OOS trades, so late-regime dependence is material.
+// IMPORTANT AUDIT LIMIT: commit 61a78ff preserved aggregate/block statistics but not the chronological per-trade ledger for this combination. Exact 2012-2021 combined compounding WR/DD and exact annual strategy P/L cannot be reconstructed honestly from the aggregate payload alone. They are therefore NOT fabricated here. Final decision remains conservative until the combination is replayed with its trade ledger persisted.
+//
+// MARKET-REGIME TAG — RAW XAUUSD H1 (descriptive only; NOT directional-accuracy optimization)
+// Year | XAU annual price change | regime note
+// 2012 | +6.78% | positive year
+// 2013 | -28.10% | major bearish
+// 2014 | -1.67% | flat/slightly bearish
+// 2015 | -10.39% | bearish
+// 2016 | +7.96% | positive
+// 2017 | +13.19% | bullish
+// 2018 | -1.54% | flat/slightly bearish
+// 2019 | +18.29% | bullish
+// 2020 | +24.96% | strong bullish
+// 2021 | -3.99% | mildly bearish
+// 2022 | -0.31% | flat
+// 2023 | +12.91% | bullish
+// 2024 | +27.23% | strong bullish
+// 2025 | +64.50% | extreme bullish
+// 2026 Jan-Jul | -6.38% | partial-year pullback
+// Interpretation: 2022-2026 is NOT uniformly bullish (2022 flat; 2026 partial negative), but 2024-2025 contains an exceptional bullish/volatility regime. The parent block concentration is therefore consistent with regime amplification, not proof of a generic all-regime edge.
+// Label: REGIME-SENSITIVE BUY CONTINUATION CANDIDATE, not generic entry.
+//
+// DRAWDOWN REDUCTION TEST DESIGN / DECISION
+// Keep HTF Structure definition unchanged. Preferred next control is adaptive sizing because it changes risk, not signal semantics:
+// - normal risk 1.00% current balance;
+// - after 2 consecutive losses, risk 0.50%;
+// - restore 1.00% only after next closed winner.
+// Secondary signal-side control for replay: skip entries when H1 ATR14 is below its rolling train-selected percentile (chop/low-expansion filter); threshold must be selected on train only.
+// Exact DD/profit trade-off is NOT claimed from aggregate statistics because sequence-dependent compounding and consecutive-loss state require the missing chronological ledger. Any numeric claim here would be synthetic and is prohibited.
+//
+// BSL / SSL ASYMMETRY
+// Native standalone evidence: BSL Continue BUY | N952 | WR35.29% | End $4,457.90 | Net -$5,542.10 | MaxDD56.97% | REJECT.
+// Native standalone evidence: SSL Continue SELL | N812 | WR61.33% | End $11,690.83 | Net +$1,690.83 | MaxDD22.65% | PROMOTE in native pass.
+// BSL + HTF evidence: N2385 | WR40.63% | End $25,914.67 | Net +$15,914.67 | MaxDD39.95% | WATCH.
+// The BUY side therefore changes sign only after HTF alignment, while SELL already has a standalone edge. This is explicit evidence of BUY/SELL asymmetry in the tested continuation family; do NOT force symmetric semantics.
+// Exact SSL Continue SELL + HTF Structure comparison was not persisted in commit 61a78ff and is not invented here; it must be replayed from the chronological signal ledger before claiming improvement/degradation.
+//
+// FINAL RECOMMENDATION
+// Decision = (c) KEEP WATCH.
+// Do NOT reject completely: pre-2022 reset blocks are independently positive, so the observed edge is not solely a 2022-2026 artifact.
+// Do NOT promote as a generic entry: 2022-2026 dominates growth, MaxDD remains 39.95%, and 2024-2025 is an exceptional gold bull/volatility regime.
+// Working classification: BSL Continue BUY + HTF Structure = REGIME-SENSITIVE WATCH candidate. Production/base BSL semantics remain unchanged.
+// Promotion gate for a future replay: persist every OOS trade, report exact annual 2012-2026 P/L/WR/DD, exact 2012-2021 standalone compounding, strong-bull vs non-strong-bull regime slices, adaptive-risk trade-off, and SSL+HTF matched comparison.
