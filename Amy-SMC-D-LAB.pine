@@ -61,11 +61,11 @@ showStructureTooltip            = 'Display swing market Structure'
 showSwingsTooltip               = 'Display swing point as labels on the chart'
 showHighLowSwingsTooltip        = 'Highlight most recent strong and weak high/low points on the chart'
 showInternalOrderBlocksTooltip  = 'Display internal order blocks on the chart\n\nNumber of internal order blocks to display on the chart'
-showSwingOrderBlocksTooltip     = 'Display swing order blocks on the chart\n\nNumber of internal swing blocks to display on the chart'
+showSwingOrderBlocksTooltip     = 'Display swing market structure\n\nNumber of internal swing blocks to display on the chart'
 orderBlockFilterTooltip         = 'Method used to filter out volatile order blocks \n\nIt is recommended to use the cumulative mean range method when a low amount of data is available'
-orderBlockMitigationTooltip     = 'Select what values to use for order block mitigation'
+orderBlockMitigationTooltip     = 'Method used to mitigate order blocks'
 showEqualHighsLowsTooltip       = 'Display equal highs and equal lows on the chart'
-equalHighsLowsLengthTooltip     = 'Number of bars used to confirm equal highs and equal lows'
+equalHighsLowsLengthTooltip     = 'Number of bars used to confirm equal highs and lows'
 equalHighsLowsThresholdTooltip  = 'Sensitivity threshold in a range (0, 1) used for the detection of equal highs & lows\n\nLower values will return fewer but more pertinent results'
 showFairValueGapsTooltip        = 'Display fair values gaps on the chart'
 fairValueGapsThresholdTooltip   = 'Filter out non significant fair value gaps'
@@ -88,7 +88,7 @@ internalStructureSize           = input.string( TINY,       'Internal Label Size
 showStructureInput              = input(        true,       'Show Swing Structure',     group = SWING_GROUP,    tooltip = showStructureTooltip)
 showSwingBullInput              = input.string( ALL,        'Bullish Structure',        group = SWING_GROUP,    inline = 'bull',    options = [ALL,BOS,CHOCH])
 swingBullColorInput             = input(        GREEN,      '',                         group = SWING_GROUP,    inline = 'bull')
-showSwingBearInput              = input.string( ALL,        'Bearish Structure',        group = SWING_GROUP,    inline = 'bear',    options = [ALL,BOS,CHOCH])
+showSwingBearInput              = input.string( ALL,        'Bearish Structure' ,       group = SWING_GROUP,    inline = 'bear',    options = [ALL,BOS,CHOCH])
 swingBearColorInput             = input(        RED,        '',                         group = SWING_GROUP,    inline = 'bear')
 swingStructureSize              = input.string( SMALL,      'Swing Label Size',         group = SWING_GROUP,    options = [TINY,SMALL,NORMAL])
 showSwingsInput                 = input(        false,      'Show Swings Points',       group = SWING_GROUP,    tooltip = showSwingsTooltip,inline = 'swings')
@@ -111,7 +111,7 @@ equalHighsLowsLengthInput       = input.int(    3,          'Bars Confirmation',
 equalHighsLowsThresholdInput    = input.float(  0.1,        'Threshold',                group = EQUAL_GROUP,    tooltip = equalHighsLowsThresholdTooltip,   minval = 0, maxval = 0.5, step = 0.1)
 equalHighsLowsSizeInput         = input.string( TINY,       'Label Size',               group = EQUAL_GROUP,    options = [TINY,SMALL,NORMAL])
 
-showFairValueGapsInput          = input(        false,      'Fair Value Gaps',          group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
+showFairValueGapsInput          = input(        false,      'Fair Value Gaps',           group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
 fairValueGapsThresholdInput     = input(        true,       'Auto Threshold',           group = GAPS_GROUP,     tooltip = fairValueGapsThresholdTooltip)
 fairValueGapsTimeframeInput     = input.timeframe('',       'Timeframe',                group = GAPS_GROUP,     tooltip = fairValueGapsTimeframeTooltip)
 fairValueGapsBullColorInput     = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = GAPS_GROUP)
@@ -1779,3 +1779,124 @@ if barstate.islast
 alertcondition(amyxOTETouch, 'OTE Touch', 'Price entered the OTE zone')
 
 //---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — DISCRETE MANUAL ENTRY RESEARCH (2026-08-11)
+// Frozen production baseline: Amy-SMC-D.pine @ d6e6d7c979dd5a852bddd9661bef0480caa2eb35 — DO NOT MODIFY.
+// Dataset: raw/audited XAUUSD 2004 warm-up, score 2005–2026 (2026 Jan–Jul), no synthetic candles.
+// Walk-forward: rolling 8y train -> 1y OOS, OOS test years 2012–2026. Rules below are fixed, not re-fit per test year.
+// Directional horizon: M5 48 / M15 32 / H1 24 closed bars; locked opposite Swing boundary is structural cancellation.
+// Execution study: signal is known only after its candle closes. NEXT = next-bar market/open; RETEST = broken level <=3 bars.
+// Main lifecycle reference TP = 0.40R (same scale as the retained projected-target layer); 1.00R was checked as robustness.
+// Conservative ambiguity rule in research: if SL and TP occur in the same base-TF candle, count SL first.
+// IMPORTANT RESULT: same-candle Dealing Range alignment with QVB/QCH collapsed M5/M15 coverage to ~zero. It is archived,
+// not silently forced here. DR D-fix remains context/filter only where it is mechanically compatible (Sweep/Pattern).
+// Final Bias is intentionally NOT used by this module.
+//---------------------------------------------------------------------------------------------------------------------{
+
+AMY_DLAB_ENTRY_GROUP = 'Amy D-LAB Entry Research'
+amyDlabShowNextEntries = input.bool(false, 'Show NEXT entry candidates', group = AMY_DLAB_ENTRY_GROUP)
+amyDlabShowRetestEntries = input.bool(false, 'Show RETEST candidates', group = AMY_DLAB_ENTRY_GROUP)
+amyDlabReferenceTpR = input.float(0.40, 'Reference TP (R)', minval = 0.10, step = 0.05, group = AMY_DLAB_ENTRY_GROUP)
+amyDlabRetestBars = input.int(3, 'Retest validity (bars)', minval = 1, maxval = 10, group = AMY_DLAB_ENTRY_GROUP)
+
+var array<label> amyDlabEntryLabels = array.new<label>()
+
+amyDlabReferenceTarget(int direction, float entryPrice, float stopPrice) =>
+    float result = na
+    bool riskValid = direction == BULLISH ? not na(stopPrice) and stopPrice < entryPrice : direction == BEARISH ? not na(stopPrice) and stopPrice > entryPrice : false
+    if riskValid
+        float risk = math.abs(entryPrice - stopPrice)
+        result := direction == BULLISH ? entryPrice + risk * amyDlabReferenceTpR : entryPrice - risk * amyDlabReferenceTpR
+    result
+
+amyDlabAddEntryLabel(bool enabled, string method, int direction, float triggerLevel, float stopLevel, float referenceTarget, string executionText) =>
+    if enabled and direction != 0 and not na(triggerLevel)
+        color entryColor = direction == BULLISH ? GREEN : RED
+        bool labelAbove = direction == BEARISH
+        float markerY = labelAbove ? high + amyOffset * 2.2 : low - amyOffset * 2.2
+        string side = direction == BULLISH ? 'BUY' : 'SELL'
+        string entryText = method + ' • ' + side + '\nTRG ' + amyPrice(triggerLevel) + '\n' + executionText + '\nSL ' + amyPrice(stopLevel) + '\nTP REF ' + amyPrice(referenceTarget)
+        label newEntryLabel = label.new(bar_index, markerY, entryText, xloc = xloc.bar_index, yloc = yloc.price, color = color.new(entryColor, 84), style = labelAbove ? label.style_label_down : label.style_label_up, textcolor = entryColor, size = size.tiny)
+        array.push(amyDlabEntryLabels, newEntryLabel)
+        if array.size(amyDlabEntryLabels) > 24
+            label.delete(array.shift(amyDlabEntryLabels))
+
+// K1 — Qualified Valid Break + Internal Structure. DR is not required on the break candle.
+int amyDlabK1Dir = amyQualifiedBSLValidBreak ? BULLISH : amyQualifiedSSLValidBreak ? BEARISH : 0
+bool amyDlabK1Event = barstate.isconfirmed and amyDlabK1Dir != 0 and amyCurrentInternalBias == amyDlabK1Dir
+float amyDlabK1Trigger = amyDlabK1Dir == BULLISH ? amyBSL : amyDlabK1Dir == BEARISH ? amySSL : na
+float amyDlabK1Stop = amyDlabK1Dir == BULLISH ? amyBullInvalidation : amyDlabK1Dir == BEARISH ? amyBearInvalidation : na
+float amyDlabK1TpRef = amyDlabReferenceTarget(amyDlabK1Dir, close, amyDlabK1Stop)
+if amyDlabK1Event
+    amyDlabAddEntryLabel(amyDlabShowNextEntries, 'K1 QVB', amyDlabK1Dir, amyDlabK1Trigger, amyDlabK1Stop, amyDlabK1TpRef, 'ENTRY NEXT OPEN • +1 BAR')
+
+// K2 — Qualified CHoCH + same-direction Internal Structure. QCH is already a fresh Swing transition event.
+int amyDlabK2Dir = amyQualifiedSwingBullCHoCH ? BULLISH : amyQualifiedSwingBearCHoCH ? BEARISH : 0
+bool amyDlabK2Event = barstate.isconfirmed and amyDlabK2Dir != 0 and amyCurrentInternalBias == amyDlabK2Dir
+float amyDlabK2Trigger = amyDlabK2Dir == BULLISH ? swingHigh.currentLevel : amyDlabK2Dir == BEARISH ? swingLow.currentLevel : na
+float amyDlabK2Stop = amyDlabK2Dir == BULLISH ? amyBullInvalidation : amyDlabK2Dir == BEARISH ? amyBearInvalidation : na
+float amyDlabK2TpRef = amyDlabReferenceTarget(amyDlabK2Dir, close, amyDlabK2Stop)
+if amyDlabK2Event
+    amyDlabAddEntryLabel(amyDlabShowNextEntries, 'K2 QCH', amyDlabK2Dir, amyDlabK2Trigger, amyDlabK2Stop, amyDlabK2TpRef, 'ENTRY NEXT OPEN • +1 BAR')
+
+// K3 — Sweep Continuation + D-fix Dealing Range alignment. Internal alignment is inherent in Sweep Continuation.
+int amyDlabK3Dir = amySweepContinuationQualified ? amySweepContinuationBias : 0
+bool amyDlabK3Event = barstate.isconfirmed and amyDlabK3Dir != 0 and amyDealingBias == amyDlabK3Dir
+float amyDlabK3Trigger = amyDlabK3Dir == BULLISH ? amyBSL : amyDlabK3Dir == BEARISH ? amySSL : na
+float amyDlabK3Stop = amyDlabK3Dir == BULLISH ? amyBullInvalidation : amyDlabK3Dir == BEARISH ? amyBearInvalidation : na
+float amyDlabK3TpRef = amyDlabReferenceTarget(amyDlabK3Dir, close, amyDlabK3Stop)
+if amyDlabK3Event
+    amyDlabAddEntryLabel(amyDlabShowNextEntries, 'K3 SWC+DR', amyDlabK3Dir, amyDlabK3Trigger, amyDlabK3Stop, amyDlabK3TpRef, 'ENTRY NEXT OPEN • +1 BAR')
+
+// K4 — Qualified Pattern must be FRESH on this exact candle, plus D-fix location + Internal Structure alignment.
+int amyDlabK4Dir = amyPatternAge == 0 ? amyPatternBiasActive : 0
+bool amyDlabK4Event = barstate.isconfirmed and amyDlabK4Dir != 0 and amyDealingBias == amyDlabK4Dir and amyCurrentInternalBias == amyDlabK4Dir
+float amyDlabK4Trigger = amyDlabK4Event ? close : na
+float amyDlabK4Stop = amyDlabK4Dir == BULLISH ? amyBullInvalidation : amyDlabK4Dir == BEARISH ? amyBearInvalidation : na
+float amyDlabK4TpRef = amyDlabReferenceTarget(amyDlabK4Dir, close, amyDlabK4Stop)
+if amyDlabK4Event
+    amyDlabAddEntryLabel(amyDlabShowNextEntries, 'K4 PAT+DR+INT', amyDlabK4Dir, amyDlabK4Trigger, amyDlabK4Stop, amyDlabK4TpRef, 'ENTRY NEXT OPEN • +1 BAR')
+
+// K5/K6 — delayed limit alternatives. The level is exact and remains valid for the configured number of bars.
+// Research lifecycle cancels if the locked opposite Swing boundary invalidates before fill; these labels ARM the limit.
+float amyDlabK5TpRef = amyDlabReferenceTarget(amyDlabK1Dir, amyDlabK1Trigger, amyDlabK1Stop)
+if amyDlabK1Event
+    amyDlabAddEntryLabel(amyDlabShowRetestEntries, 'K5 QVB RETEST', amyDlabK1Dir, amyDlabK1Trigger, amyDlabK1Stop, amyDlabK5TpRef, 'LIMIT @ TRG • <= ' + str.tostring(amyDlabRetestBars) + ' BARS')
+
+float amyDlabK6TpRef = amyDlabReferenceTarget(amyDlabK2Dir, amyDlabK2Trigger, amyDlabK2Stop)
+if amyDlabK2Event
+    amyDlabAddEntryLabel(amyDlabShowRetestEntries, 'K6 QCH RETEST', amyDlabK2Dir, amyDlabK2Trigger, amyDlabK2Stop, amyDlabK6TpRef, 'LIMIT @ TRG • <= ' + str.tostring(amyDlabRetestBars) + ' BARS')
+
+alertcondition(amyDlabK1Event, 'D-LAB K1 QVB NEXT', 'Qualified Valid Break + Internal Structure: execute at next bar open')
+alertcondition(amyDlabK2Event, 'D-LAB K2 QCH NEXT', 'Qualified CHoCH + Internal Structure: execute at next bar open')
+alertcondition(amyDlabK3Event, 'D-LAB K3 SWC DR NEXT', 'Sweep Continuation + Dealing Range: execute at next bar open')
+alertcondition(amyDlabK4Event, 'D-LAB K4 PAT DR INT NEXT', 'Fresh Qualified Pattern + Dealing Range + Internal Structure: execute at next bar open')
+alertcondition(amyDlabK1Event, 'D-LAB K5 QVB RETEST ARM', 'Qualified Valid Break retest armed at the broken level for the configured bars')
+alertcondition(amyDlabK2Event, 'D-LAB K6 QCH RETEST ARM', 'Qualified CHoCH retest armed at the broken level for the configured bars')
+
+// OOS RESULT LOCK — 2012–2026, main TP = 0.40R.
+// Columns: signals/executions | directional accuracy | TP win rate | expectancy | HC execution windows (>=30 / 15).
+// M5 : K1 237/237 | 89.03% | 48.10% | +0.0291R | 0/15
+//      K2 684/684 | 78.95% | 52.78% | -0.0162R | 15/15
+//      K3 561/555 | 79.82% | 53.51% | -0.0026R | 13/15
+//      K4 69/63   | 63.49% | 66.67% | +0.0461R | 0/15
+//      K5 237/51  | 72.55% | 54.90% | -0.0285R | 0/15 | fill 21.52%
+//      K6 684/358 | 74.02% | 60.89% | +0.0569R | 2/15 | fill 52.34%
+// M15: K1 878/878 | 90.66% | 39.98% | +0.0146R | 15/15
+//      K2 319/319 | 91.85% | 42.01% | +0.0253R | 0/15
+//      K3 226/222 | 80.18% | 49.10% | -0.0576R | 0/15
+//      K4 350/294 | 72.45% | 44.90% | -0.0673R | 0/15
+//      K5 878/434 | 87.33% | 43.09% | +0.0021R | 7/15 | fill 49.43%
+//      K6 319/132 | 87.12% | 42.42% | -0.0076R | 0/15 | fill 41.38%
+// H1 : K1 264/264 | 97.35% | 26.89% | +0.0179R | 0/15
+//      K2 54/54   | 98.15% | 29.63% | +0.0369R | 0/15
+//      K3 22/21   | 80.95% | 47.62% | -0.0325R | 0/15
+//      K4 112/88  | 87.50% | 53.41% | +0.0577R | 0/15
+//      K5 264/106 | 96.23% | 31.13% | +0.0326R | 0/15 | fill 40.15%
+//      K6 54/33   | 96.97% | 18.18% | -0.0109R | 0/15 | fill 61.11%
+// 1.00R robustness: K1 remained positive on M5/M15/H1 (+0.0361/+0.0114/+0.0433R).
+// K2 remained positive on M15/H1 (+0.0312/+0.0722R) but negative on M5. K3 remained non-preferred as an entry trigger.
+// Manual timing check: favorable signal-close -> next-open gap was rarely >0.10R and never >0.25R in K1/K2 OOS,
+// so NEXT-open is materially more practical than waiting for retest, which missed roughly 38–78% depending on method/TF.
+// RESEARCH RECOMMENDATION LOCK: primary = K1, strongest deployable profile M15; K2 = secondary M15/H1.
+// K3 stays WATCH/context, not primary entry. K4 stays exploratory only. K5/K6 are optional delayed limit variants,
+// with K5 M5 archived; strict same-candle DR+QVB/QCH is archived due near-zero coverage.
