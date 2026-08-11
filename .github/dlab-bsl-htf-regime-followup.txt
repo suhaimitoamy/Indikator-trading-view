@@ -1,0 +1,73 @@
+// AMY SMC D-LAB — BSL CONTINUE BUY + HTF STRUCTURE FOLLOW-UP
+// Date: 2026-08-12
+// Scope: follow-up research payload only. Amy-SMC-D.pine and executable Pine logic untouched.
+// Parent combinatorial payload commit: 61a78ffc06db6059756606860008a14fe5292350
+// Source semantics remain the locked D-LAB research-port replay; no directional/predictive accuracy optimization.
+// Execution/money-management unchanged: XAUUSD, 2004 warm-up, rolling 8y train -> 1y OOS 2012-2026, M1 intrabar ordering, SL-first ambiguity, initial $10,000, 1% current-balance risk, actual XAUUSD distances, SL>=1.00, TP>=2.00.
+//
+// 1) REGIME DEPENDENCY — REMOVE 2022-2026
+// BSL Continue BUY + HTF Structure, OOS 2012-2021 only, balance reset to $10,000 at start of this isolated test:
+// N 1,069 | WR/TP 50.05% | End $13,563.04 | Net +$3,563.04 | MaxDD 21.43% | Positive years 6/10 | MedSL 4.29 | MedTP 4.80.
+// Average trade account-return expectancy = +0.0342% per trade at the 1% risk model; approximately +$3.42 per trade at a $10,000 balance before compounding effects.
+// DECISION: the edge remains net-positive BEFORE 2022-2026; therefore it is NOT explained solely by the recent gold bull run.
+//
+// YEAR-BY-YEAR ISOLATED $10K-RESET ATTRIBUTION
+// Year | XAU annual return | Trades | WR | Strategy net | Year MaxDD
+// 2012 | +6.54%  | 95  | 44.21% | -$1,252.41 | 18.36%
+// 2013 | -28.10% | 66  | 54.55% | +$441.29   | 9.30%
+// 2014 | -1.80%  | 85  | 49.41% | -$312.48   | 10.02%
+// 2015 | -10.59% | 82  | 54.88% | +$612.36   | 5.81%
+// 2016 | +8.29%  | 95  | 64.21% | +$2,792.63 | 3.13%
+// 2017 | +13.23% | 131 | 53.44% | +$588.82   | 12.72%
+// 2018 | -1.86%  | 103 | 47.57% | -$747.67   | 15.92%
+// 2019 | +18.40% | 126 | 54.76% | +$904.02   | 8.34%
+// 2020 | +25.00% | 162 | 45.68% | +$1,823.93 | 9.79%
+// 2021 | -4.39%  | 124 | 37.90% | -$1,061.14 | 15.46%
+// 2022 | -0.29%  | 101 | 43.56% | -$1,440.72 | 17.64%
+// 2023 | +12.76% | 255 | 32.94% | +$2,450.56 | 15.90%
+// 2024 | +27.16% | 352 | 31.25% | +$1,199.08 | 30.10%
+// 2025 | +64.60% | 417 | 34.05% | +$7,828.45 | 18.04%
+// 2026 | -6.38%* | 191 | 28.27% | -$1,020.20 | 28.10%
+// *2026 data Jan-Jul only.
+// Annual strategy profit vs XAU annual return: Pearson correlation +0.782; Spearman +0.614.
+// Strategy was positive in 7/8 XAU-positive years and 2/7 XAU-negative years.
+// Interpretation: clear positive dependence on bullish gold regimes, but not a simple annual-direction clone (2013 and 2015 were profitable despite bearish full-year XAU; 2012 was losing despite positive XAU).
+//
+// NO-LOOKAHEAD REGIME TAG DIAGNOSTIC
+// Regime variables are read from the PRIOR CLOSED H1 bar only.
+// Macro Bull tag = H1 close > EMA200 AND EMA50 > EMA200 AND EMA200 slope over prior 120 H1 bars > 0.
+// Strong Bull tag = Macro Bull plus EMA200 120H slope >= 1.0 current H1 ATR.
+// ATR Expansion tag = H1 ATR14 > 1.15 x rolling median ATR14 of prior 240 H1 bars.
+// Full OOS Macro Bull trades: N 1,551 | WR 41.39% | End $27,114.38 | Net +$17,114.38 | MaxDD 37.44% | Positive years 11/15.
+// Full OOS non-Macro-Bull trades: N 834 | WR 39.21% | End $9,557.54 | Net -$442.46 | MaxDD 31.78%.
+// 2012-2021 Macro Bull only: N 669 | WR 52.47% | End $16,436.67 | Net +$6,436.67 | MaxDD 25.33%.
+// 2012-2021 non-Macro-Bull: N 400 | WR 46.00% | End $8,251.70 | Net -$1,748.30 | MaxDD 28.48%.
+// DECISION: the structural edge is concentrated inside bullish HTF slope regimes. Outside Macro Bull, the edge is absent/negative. Treat BSL Continue BUY + HTF as REGIME-CONDITIONAL, not a generic entry method.
+//
+// 2) DRAWDOWN REDUCTION
+// Adaptive sizing trial: after 2 consecutive losses, reduce risk from 1.00% to 0.50% until next winning trade.
+// Result: End $19,290.05 | Net +$9,290.05 | MaxDD 38.85%.
+// Trade-off vs baseline: profit falls 41.6%, but MaxDD improves only 1.10 percentage points (39.95% -> 38.85%). REJECT adaptive sizing rule as ineffective DD control for this setup.
+//
+// Fixed no-lookahead volatility filter trial: keep the original BSL+HTF definition, but accept an entry only when prior-closed H1 ATR14 > 1.15 x prior-240-H1 ATR median.
+// Result: N 716 | WR 43.02% | End $14,934.91 | Net +$4,934.91 | MaxDD 17.15% | Positive years 10/15 | MedSL 5.69 | MedTP 8.41.
+// Trade-off vs baseline: MaxDD falls 22.80 percentage points (~57% relative reduction), while net profit falls from +$15,914.67 to +$4,934.91 (~69% reduction). This filter meaningfully improves risk quality but materially lowers growth.
+// Strong-Bull + ATR-Expansion diagnostic subset: N 480 | WR 43.54% | End $16,100.14 | Net +$6,100.14 | MaxDD 18.25% | Positive years 11/15 | MedSL 5.23 | MedTP 8.21.
+// 2012-2021 Strong-Bull + ATR-Expansion only: N 217 | WR 54.84% | End $12,778.45 | Net +$2,778.45 | MaxDD 8.68%.
+// This confirms the lower-DD profile also existed before 2022-2026; it is not solely a recent-regime artifact.
+//
+// 3) BSL / SSL ASYMMETRY
+// Previous standalone SSL Continue SELL checkpoint: N 812 | WR 61.33% | End $11,690.83 | Net +$1,690.83 | MaxDD 22.65% | Positive years 9/15.
+// Symmetric follow-up SSL Continue SELL + HTF Structure, using the same rolling train-selection grid as BSL+HTF:
+// N 1,341 | WR/TP 38.78% | End $4,258.95 | Net -$5,741.05 | MaxDD 63.11% | Positive OOS years 1/15 | MedSL 2.30 | MedTP 3.50.
+// Several folds had no profitable train configuration and therefore no OOS trade under the existing train-score gate.
+// DECISION: adding the same HTF Structure filter materially DESTROYS the SELL-side edge. SSL does not benefit from the filter that rescues BSL.
+// Explicit asymmetry finding: BUY continuation requires bullish HTF/regime context to become viable; SELL continuation was already positive standalone and becomes materially worse with the symmetric HTF filter. Do NOT force symmetric BSL/SSL continuation logic.
+//
+// FINAL RECOMMENDATION
+// Choose option (b), but only as a LAB CONDITIONAL promotion — NOT a generic/production entry and NOT a change to base BSL semantics.
+// Label: BSL Continue BUY — HTF Bullish Regime Conditional.
+// Required interpretation: the setup is valid only inside a demonstrably bullish HTF regime; outside that regime the historical OOS edge disappears.
+// For a lower-drawdown research profile, the fixed prior-H1 ATR-expansion guard is the preferred additional filter; it cuts DD to ~17% at the cost of large profit reduction.
+// Do not promote SSL+HTF; retain the existing standalone SSL finding separately.
+// Do not modify Amy-SMC-D.pine, production baseline, or executable Amy-SMC-D-LAB logic from this payload.
