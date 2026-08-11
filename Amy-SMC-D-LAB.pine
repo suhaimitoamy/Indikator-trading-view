@@ -112,7 +112,7 @@ equalHighsLowsThresholdInput    = input.float(  0.1,        'Threshold',        
 equalHighsLowsSizeInput         = input.string( TINY,       'Label Size',               group = EQUAL_GROUP,    options = [TINY,SMALL,NORMAL])
 
 showFairValueGapsInput          = input(        false,      'Fair Value Gaps',          group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
-fairValueGapsThresholdInput     = input(        true,       'Auto Threshold',           group = GAPS_GROUP,     tooltip = fairValueGapsThresholdTooltip)
+fairValueGapsThresholdInput     = input(        true,       'Auto Threshold',           group = GAPS_GROUP,     tooltip = showFairValueGapsTooltip)
 fairValueGapsTimeframeInput     = input.timeframe('',       'Timeframe',                group = GAPS_GROUP,     tooltip = fairValueGapsTimeframeTooltip)
 fairValueGapsBullColorInput     = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = GAPS_GROUP)
 fairValueGapsBearColorInput     = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = GAPS_GROUP)
@@ -248,7 +248,7 @@ times.push(time)
 leg(int size) =>
     var leg     = 0    
     newLegHigh  = high[size] > ta.highest( size)
-    newLegLow   = low[size]  < ta.lowest( size)
+    newLegLow   = low[size]  < ta.lowest(  size)
     
     if newLegHigh
         leg := BEARISH_LEG
@@ -274,31 +274,31 @@ drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHigh) =>
     string tag          = 'EQL'
     color equalColor    = swingBullishColor
     string labelStyle   = label.style_label_up
-    
+
     if equalHigh
         tag         := 'EQH'
         equalColor  := swingBearishColor
         labelStyle  := label.style_label_down
-    
+
     if modeInput == PRESENT
         line.delete(    e_qualDisplay.l_ine)
         label.delete(   e_qualDisplay.l_abel)
         
     e_qualDisplay.l_ine     := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time[size],na,level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
     labelPosition           = math.round(0.5*(p_ivot.barIndex + bar_index - size))
-    e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color=color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+    e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
 
 getCurrentStructure(int size,bool equalHighLow = false, bool internal = false) =>        
     currentLeg              = leg(size)
     newPivot                = startOfNewLeg(currentLeg)
     pivotLow                = startOfBullishLeg(currentLeg)
     pivotHigh               = startOfBearishLeg(currentLeg)
-    
+
     if newPivot
         if pivotLow
             pivot p_ivot    = equalHighLow ? equalLow : internal ? internalLow : swingLow    
 
-            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure
+            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure                
                 drawEqualHighLow(p_ivot, low[size], size, false)
                 currentAlerts.equalLows := true
 
@@ -321,7 +321,7 @@ getCurrentStructure(int size,bool equalHighLow = false, bool internal = false) =
 
             if equalHighLow and math.abs(p_ivot.currentLevel - high[size]) < equalHighsLowsThresholdInput * atrMeasure
                 drawEqualHighLow(p_ivot,high[size],size,true)
-                currentAlerts.equalHighs := true
+                currentAlerts.equalHighs := true               
 
             p_ivot.lastLevel    := p_ivot.currentLevel
             p_ivot.currentLevel := high[size]
@@ -368,19 +368,19 @@ deleteOrderBlocks(bool internal = false) =>
             else
                 currentAlerts.swingBullishOrderBlock    := true
         if crossedOderBlock                    
-            orderBlocks.remove(index)
+            orderBlocks.remove(index)            
 
 storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
     if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
-        
+
         array<float> a_rray = na
         int parsedIndex = na
 
         if bias == BEARISH
-            a_rray      := parsedHighs.slice(p_ivot.barIndex,bar_index)
+            a_rray      = parsedHighs.slice(p_ivot.barIndex,bar_index)
             parsedIndex := p_ivot.barIndex + a_rray.indexof(a_rray.max())  
         else
-            a_rray      := parsedLows.slice(p_ivot.barIndex,bar_index)
+            a_rray      = parsedLows.slice(p_ivot.barIndex,bar_index)
             parsedIndex := p_ivot.barIndex + a_rray.indexof(a_rray.min())                        
 
         orderBlock o_rderBlock          = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex),bias)
@@ -393,13 +393,13 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
 drawOrderBlocks(bool internal = false) =>        
     array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
     orderBlocksSize = orderBlocks.size()
-    
+
     if orderBlocksSize > 0        
         maxOrderBlocks                      = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
         array<orderBlock> parsedOrdeBlocks  = orderBlocks.slice(0, math.min(maxOrderBlocks,orderBlocksSize))
         array<box> b_oxes                   = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes        
-        
-        for [index,eachOrderBlock] in parsedOrdeBlocks    
+
+        for [index,eachOrderBlock] in parsedOrdeBlocks
             orderBlockColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
 
             box b_ox        = b_oxes.get(index)
@@ -427,7 +427,7 @@ displayStructure(bool internal = false) =>
 
     if ta.crossover(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BEARISH ? CHOCH : BOS
-        
+
         if internal
             currentAlerts.internalBullishCHoCH  := tag == CHOCH
             currentAlerts.internalBullishBOS    := tag == BOS
@@ -452,7 +452,7 @@ displayStructure(bool internal = false) =>
 
     if ta.crossunder(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BULLISH ? CHOCH : BOS
-        
+
         if internal
             currentAlerts.internalBearishCHoCH  := tag == CHOCH
             currentAlerts.internalBearishBOS    := tag == BOS
@@ -495,7 +495,7 @@ drawFairValueGaps() =>
         fairValueGaps.unshift(fairValueGap.new(currentLow,last2High,BULLISH,fairValueGapBox(lastTime,currentTime,currentLow,math.avg(currentLow,last2High),fairValueGapBullishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentLow,last2High),last2High,fairValueGapBullishColor)))
     if bearishFairValueGap
         currentAlerts.bearishFairValueGap := true
-        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),fairValueGapBearishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapBearishColor)))
+        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),last2Low,fairValueGapBullishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapBearishColor)))
 
 getStyle(string style) =>
     switch style
@@ -557,16 +557,16 @@ drawHighLowSwings() =>
 
     topLine.set_first_point(    chart.point.new(trailing.lastTopTime, na, trailing.top))
     topLine.set_second_point(   chart.point.new(rightTimeBar, na, trailing.top))
-    topLabel.set_point(         chart.point.new(rightTimeBar, na,trailing.top))
+    topLabel.set_point(         chart.point.new(rightTimeBar, na, trailing.top))
     topLabel.set_text(          swingTrend.bias == BEARISH ? 'Strong High' : 'Weak High')
 
     bottomLine.set_first_point( chart.point.new(trailing.lastBottomTime, na, trailing.bottom))
-    bottomLine.set_second_point(chart.point.new(rightTimeBar, na,trailing.bottom))
-    bottomLabel.set_point(      chart.point.new(rightTimeBar, na,trailing.bottom))
+    bottomLine.set_second_point(chart.point.new(rightTimeBar, na, trailing.bottom))
+    bottomLabel.set_point(      chart.point.new(rightTimeBar, na, trailing.bottom))
     bottomLabel.set_text(       swingTrend.bias == BULLISH ? 'Strong Low' : 'Weak Low')
 
 drawZone(float labelLevel, int labelIndex, float top, float bottom, string tag, color zoneColor, string style) =>
-    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor=zoneColor, style = style, size = size.small)
+    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor = zoneColor, style = style, size = size.small)
     var box b_ox        = box.new(na,na,na,na,bgcolor = color.new(zoneColor,80),border_color = color(na), xloc = xloc.bar_time)
 
     b_ox.set_top_left_point(    chart.point.new(trailing.barTime,na,top))
