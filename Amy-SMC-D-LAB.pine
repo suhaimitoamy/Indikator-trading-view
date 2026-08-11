@@ -248,7 +248,7 @@ times.push(time)
 leg(int size) =>
     var leg     = 0    
     newLegHigh  = high[size] > ta.highest( size)
-    newLegLow   = low[size]  < ta.lowest(  size)
+    newLegLow   = low[size]  < ta.lowest( size)
     
     if newLegHigh
         leg := BEARISH_LEG
@@ -274,31 +274,31 @@ drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHigh) =>
     string tag          = 'EQL'
     color equalColor    = swingBullishColor
     string labelStyle   = label.style_label_up
-
+    
     if equalHigh
         tag         := 'EQH'
         equalColor  := swingBearishColor
         labelStyle  := label.style_label_down
-
+    
     if modeInput == PRESENT
         line.delete(    e_qualDisplay.l_ine)
         label.delete(   e_qualDisplay.l_abel)
         
     e_qualDisplay.l_ine     := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time[size],na,level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
     labelPosition           = math.round(0.5*(p_ivot.barIndex + bar_index - size))
-    e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+    e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color=color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
 
 getCurrentStructure(int size,bool equalHighLow = false, bool internal = false) =>        
     currentLeg              = leg(size)
     newPivot                = startOfNewLeg(currentLeg)
     pivotLow                = startOfBullishLeg(currentLeg)
     pivotHigh               = startOfBearishLeg(currentLeg)
-
+    
     if newPivot
         if pivotLow
             pivot p_ivot    = equalHighLow ? equalLow : internal ? internalLow : swingLow    
 
-            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure                
+            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure
                 drawEqualHighLow(p_ivot, low[size], size, false)
                 currentAlerts.equalLows := true
 
@@ -321,7 +321,7 @@ getCurrentStructure(int size,bool equalHighLow = false, bool internal = false) =
 
             if equalHighLow and math.abs(p_ivot.currentLevel - high[size]) < equalHighsLowsThresholdInput * atrMeasure
                 drawEqualHighLow(p_ivot,high[size],size,true)
-                currentAlerts.equalHighs := true               
+                currentAlerts.equalHighs := true
 
             p_ivot.lastLevel    := p_ivot.currentLevel
             p_ivot.currentLevel := high[size]
@@ -368,11 +368,11 @@ deleteOrderBlocks(bool internal = false) =>
             else
                 currentAlerts.swingBullishOrderBlock    := true
         if crossedOderBlock                    
-            orderBlocks.remove(index)            
+            orderBlocks.remove(index)
 
 storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
     if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
-
+        
         array<float> a_rray = na
         int parsedIndex = na
 
@@ -393,13 +393,13 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
 drawOrderBlocks(bool internal = false) =>        
     array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
     orderBlocksSize = orderBlocks.size()
-
+    
     if orderBlocksSize > 0        
         maxOrderBlocks                      = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
         array<orderBlock> parsedOrdeBlocks  = orderBlocks.slice(0, math.min(maxOrderBlocks,orderBlocksSize))
         array<box> b_oxes                   = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes        
-
-        for [index,eachOrderBlock] in parsedOrdeBlocks
+        
+        for [index,eachOrderBlock] in parsedOrdeBlocks    
             orderBlockColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
 
             box b_ox        = b_oxes.get(index)
@@ -427,7 +427,7 @@ displayStructure(bool internal = false) =>
 
     if ta.crossover(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BEARISH ? CHOCH : BOS
-
+        
         if internal
             currentAlerts.internalBullishCHoCH  := tag == CHOCH
             currentAlerts.internalBullishBOS    := tag == BOS
@@ -452,7 +452,7 @@ displayStructure(bool internal = false) =>
 
     if ta.crossunder(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BULLISH ? CHOCH : BOS
-
+        
         if internal
             currentAlerts.internalBearishCHoCH  := tag == CHOCH
             currentAlerts.internalBearishBOS    := tag == BOS
@@ -557,16 +557,16 @@ drawHighLowSwings() =>
 
     topLine.set_first_point(    chart.point.new(trailing.lastTopTime, na, trailing.top))
     topLine.set_second_point(   chart.point.new(rightTimeBar, na, trailing.top))
-    topLabel.set_point(         chart.point.new(rightTimeBar, na, trailing.top))
+    topLabel.set_point(         chart.point.new(rightTimeBar, na,trailing.top))
     topLabel.set_text(          swingTrend.bias == BEARISH ? 'Strong High' : 'Weak High')
 
     bottomLine.set_first_point( chart.point.new(trailing.lastBottomTime, na, trailing.bottom))
-    bottomLine.set_second_point(chart.point.new(rightTimeBar, na, trailing.bottom))
-    bottomLabel.set_point(      chart.point.new(rightTimeBar, na, trailing.bottom))
+    bottomLine.set_second_point(chart.point.new(rightTimeBar, na,trailing.bottom))
+    bottomLabel.set_point(      chart.point.new(rightTimeBar, na,trailing.bottom))
     bottomLabel.set_text(       swingTrend.bias == BULLISH ? 'Strong Low' : 'Weak Low')
 
 drawZone(float labelLevel, int labelIndex, float top, float bottom, string tag, color zoneColor, string style) =>
-    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor = zoneColor, style = style, size = size.small)
+    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor=zoneColor, style = style, size = size.small)
     var box b_ox        = box.new(na,na,na,na,bgcolor = color.new(zoneColor,80),border_color = color(na), xloc = xloc.bar_time)
 
     b_ox.set_top_left_point(    chart.point.new(trailing.barTime,na,top))
@@ -1456,6 +1456,9 @@ if amyRound5H1 and amySweepContinuationQualified
 
 bool amyHasExecutionSignal = amyNextDirection != 0
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : amyNextDirection == BEARISH ? 'DOWN' : 'WAIT'
+// Pullback mirrors the already-gated Next Move state; it adds no independent predictor or classifier.
+int amyPullbackDirection = amyNextDirection == BULLISH ? BEARISH : amyNextDirection == BEARISH ? BULLISH : 0
+string amyPullback = amyPullbackDirection == BULLISH ? 'UP' : amyPullbackDirection == BEARISH ? 'DOWN' : 'WAIT'
 // Select invalidation from the actual execution direction. WAIT has no synthetic invalidation/target.
 float amyExecutionInvalidation = amyNextDirection == BULLISH ? amyBullInvalidation : amyNextDirection == BEARISH ? amyBearInvalidation : na
 // AMY SMC Z ROUND 8 TARGET V1 — target is available whenever Next Move is actionable.
@@ -1497,11 +1500,11 @@ if amyHasExecutionSignal and math.abs(amyNextRaw) < 18
     amyConfidenceRaw -= 5
 int amyConfidence = amyHasExecutionSignal ? int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw)))) : 0
 
-var table amyDashboard = table.new(position.bottom_right, 2, 16, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
+var table amyDashboard = table.new(position.bottom_right, 2, 17, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
 
 if barstate.isfirst
     table.merge_cells(amyDashboard, 0, 0, 1, 0)
-    table.merge_cells(amyDashboard, 0, 12, 1, 12)
+    table.merge_cells(amyDashboard, 0, 13, 1, 13)
 
 if barstate.islast
     if amyShowDashboard
@@ -1509,6 +1512,7 @@ if barstate.islast
         color amyBearColor = RED
         color amyFinalColor = amyFinalBias == BULLISH ? amyBullColor : amyBearColor
         color amyNextColor = amyNextDirection == BULLISH ? amyBullColor : amyNextDirection == BEARISH ? amyBearColor : GRAY
+        color amyPullbackColor = amyPullbackDirection == BULLISH ? amyBullColor : amyPullbackDirection == BEARISH ? amyBearColor : GRAY
         string amyHeader = 'MARKET BIAS — ' + amyTfName(timeframe.period)
         table.cell(amyDashboard, 0, 0, amyHeader, bgcolor = color.new(BLUE, 72), text_color = color.white, text_size = size.small)
         table.cell(amyDashboard, 0, 1, 'HTF Swing', text_color = color.silver, text_size = size.tiny)
@@ -1527,15 +1531,17 @@ if barstate.islast
         table.cell(amyDashboard, 1, 7, amyPrice(amyExecutionInvalidation), text_color = color.white, text_size = size.tiny)
         table.cell(amyDashboard, 0, 8, 'Next Move', text_color = color.white, bgcolor = color.new(amyNextColor, 82), text_size = size.tiny)
         table.cell(amyDashboard, 1, 8, amyNextMove, text_color = amyNextColor, bgcolor = color.new(amyNextColor, 82), text_size = size.tiny)
-        table.cell(amyDashboard, 0, 9, 'Target', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 9, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 10, 'Regime', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 10, amyRound10Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 11, 'Confidence', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 11, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 12, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 9, 'Pullback', text_color = color.white, bgcolor = color.new(amyPullbackColor, 82), text_size = size.tiny)
+        table.cell(amyDashboard, 1, 9, amyPullback, text_color = amyPullbackColor, bgcolor = color.new(amyPullbackColor, 82), text_size = size.tiny)
+        table.cell(amyDashboard, 0, 10, 'Target', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 10, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 11, 'Regime', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 11, amyRound10Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 12, 'Confidence', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 12, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 13, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
         for historyIndex = 0 to 2
-            int historyRow = 13 + historyIndex
+            int historyRow = 14 + historyIndex
             if historyIndex < array.size(amyEventNames)
                 string eventName = array.get(amyEventNames, historyIndex)
                 float eventLevel = array.get(amyEventLevels, historyIndex)
@@ -1549,7 +1555,7 @@ if barstate.islast
                 table.cell(amyDashboard, 0, historyRow, '-', text_color = color.new(GRAY, 50), text_size = size.tiny)
                 table.cell(amyDashboard, 1, historyRow, '-', text_color = color.new(GRAY, 50), text_size = size.tiny)
     else
-        for dashboardRow = 0 to 15
+        for dashboardRow = 0 to 16
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
 
