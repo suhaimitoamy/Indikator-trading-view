@@ -2710,4 +2710,139 @@ alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull AT
 // - The interrupted executable implementation was stopped before repository write.
 // - Hybrid remains LAB-only production candidate pending Amy confirmation of the $5 SL / $5 TP floor as final.
 // - Amy-SMC-D.pine remains byte-identical; K1-K21, Pullback and all existing executable/dashboard logic remain untouched.
+//---------------------------------------------------------------------------------------------------------------------}//
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — TP/R RE-OPTIMIZATION UNDER REALISTIC $5/$5 FLOOR (2026-08-12)
+// COMMENT-ONLY RESEARCH PAYLOAD. No executable Pine logic is changed by this block.
+// Frozen production baseline Amy-SMC-D.pine remains d6e6d7c979dd5a852bddd9661bef0480caa2eb35.
+// Existing K1-K21, Pullback, Phase-3/realism-floor payloads, dashboard fields and executable modules remain untouched.
+// Scope is ONLY K1 M15 and Hybrid Causal Repair. No new entry construction/filter/source population is introduced.
+//
+// LOCKED CONDITIONS
+// - Source universe: same 878 OOS K1 M15 source events, OOS 2012-2026.
+// - SL realism floor = absolute $5.00 XAUUSD; TP realism floor = absolute $5.00 XAUUSD.
+// - Candidate TP ratios = 0.20R..1.50R inclusive, step 0.10R.
+// - Floor is checked as soon as route entry/SL geometry is causally known, BEFORE fill/no-fill classification.
+// - Exact TP = selected ratio * raw R; no target/stop is widened to satisfy a floor.
+// - Same-bar TP+SL = SL first. Account replay = $10,000 start, risk 1% current equity, chronological source order.
+// - HC = OOS year with >=30 valid executions.
+// - Hybrid routing remains literal/causal: +1 classification; valid local pending +2..+32; invalid local fallback +2 OPEN;
+//   valid local NO-FILL through +32 fallback +33 OPEN; local/fallback each use their own locked stop geometry.
+//
+// WALK-FORWARD SELECTION — ANTI-OVERFIT LOCK
+// - Each OOS year selects TP ratio from the immediately preceding 8 calendar years only.
+// - 2012 therefore uses 2004-2011 as its exact eight-year TRAIN window; 2004 is never OOS-scored.
+// - Any TRAIN trade whose 32-bar lifecycle would cross the OOS Jan-1 boundary is excluded from TRAIN scoring to avoid leak.
+// - TRAIN selection uses equal-rank/Borda across the four user-requested robustness dimensions:
+//     higher Net, lower MaxDD, higher HC, higher Coverage. Smallest summed rank wins.
+//   Tie-break: more positive TRAIN years, then higher TRAIN net, then smaller ratio.
+// - Full-OOS fixed-ratio table below is DIAGNOSTIC only. It must NOT be used by itself to promote a ratio because that is hindsight.
+//
+// IMPORTANT FLOOR GEOMETRY EFFECT
+// - With TP floor fixed at $5, lower TP ratios REQUIRE larger raw R to be eligible: R >= $5/ratio.
+// - Therefore the intuitive trade-off is inverted versus a no-floor sweep: low ratio => LOWER coverage / HIGHER WR;
+//   high ratio => HIGHER coverage / LOWER WR. This is mechanical, not a new signal filter.
+//
+// =====================================================================================================================
+// K1 NEXT OPEN — FIXED-RATIO OOS DIAGNOSTIC CURVE
+// Ratio | Trades | Coverage | WR | Net | MaxDD | HC | +Years
+// 0.20R | 286 |  32.57% | 54.55% |   +713.89 |   2.44% |  2/15 |  9/15
+// 0.30R | 481 |  54.78% | 40.96% |   -116.99 |  14.15% |  8/15 |  5/15
+// 0.40R | 623 |  70.96% | 33.07% |   -347.53 |  19.74% | 11/15 |  7/15
+// 0.50R | 725 |  82.57% | 26.90% |    -11.08 |  17.94% | 14/15 |  8/15
+// 0.60R | 782 |  89.07% | 22.38% |   +365.11 |  17.64% | 15/15 |  8/15
+// 0.70R | 827 |  94.19% | 17.05% |   -564.45 |  18.93% | 15/15 | 10/15
+// 0.80R | 847 |  96.47% | 14.52% |    -33.38 |  16.92% | 15/15 |  8/15
+// 0.90R | 861 |  98.06% | 13.01% |   +702.92 |  15.00% | 15/15 |  8/15
+// 1.00R | 871 |  99.20% | 11.02% |   +845.61 |  16.29% | 15/15 | 10/15
+// 1.10R | 871 |  99.20% |  8.15% |   +139.44 |  18.82% | 15/15 |  9/15
+// 1.20R | 871 |  99.20% |  7.35% |   +624.57 |  17.75% | 15/15 |  9/15
+// 1.30R | 871 |  99.20% |  5.74% |   +775.75 |  17.07% | 15/15 |  9/15
+// 1.40R | 871 |  99.20% |  4.25% |   +279.31 |  18.57% | 15/15 |  9/15
+// 1.50R | 871 |  99.20% |  3.56% |   +322.53 |  18.28% | 15/15 |  9/15
+//
+// K1 0.40R incumbent under $5/$5: 623 trades /70.96%; WR33.07%; Net -$347.53; DD19.74%; HC11/15; +years7/15.
+// Fixed diagnostic best balance = 1.00R: 871 trades /99.20%; WR11.02%; Net +$845.61; DD16.29%; HC15/15; +years10/15.
+// This fixed 1.00R point improves versus 0.40R on Net, DD, Coverage, HC and positive years; only hit-rate is lower, as expected.
+//
+// K1 WALK-FORWARD TRAIN-SELECTED RATIOS
+// OOS | Selected ratio | TRAIN Net | TRAIN DD | TRAIN HC | TRAIN Coverage
+// 2012 | 1.40R |  +1880.54 |   6.65% | 6/8 |  90.52%
+// 2013 | 1.00R |  +1780.71 |   6.93% | 7/8 |  92.76%
+// 2014 | 1.00R |  +1773.11 |   6.93% | 8/8 |  96.93%
+// 2015 | 1.00R |  +2534.36 |   6.74% | 8/8 |  97.23%
+// 2016 | 1.00R |  +3058.33 |   6.74% | 8/8 |  99.43%
+// 2017 | 1.00R |  +2058.84 |   6.01% | 8/8 |  99.21%
+// 2018 | 1.00R |  +2760.46 |   5.79% | 8/8 |  99.20%
+// 2019 | 1.00R |  +2174.19 |   5.79% | 8/8 |  99.18%
+// 2020 | 1.00R |   +679.46 |   5.79% | 8/8 |  98.57%
+// 2021 | 1.00R |   +965.14 |   6.03% | 8/8 |  98.58%
+// 2022 | 1.00R |    +85.36 |  11.64% | 8/8 |  98.58%
+// 2023 | 1.00R |   -506.17 |  14.42% | 8/8 |  98.56%
+// 2024 | 1.00R |   -909.53 |  14.42% | 8/8 |  98.55%
+// 2025 | 1.30R |   -389.42 |  17.07% | 8/8 |  98.77%
+// 2026 | 0.90R |   -203.53 |  15.00% | 8/8 |  98.59%
+// Ratio selection frequency: 1.00R = 12/15 folds; 0.90R = 1; 1.30R = 1; 1.40R = 1.
+// Combined causal WF OOS: 871 trades /99.20% coverage; TP90 / SL75 / collision0 / Timeout706; WR10.33%;
+//   Net +$681.77; MaxDD16.29%; HC15/15; positive years9/15.
+// K1 VERDICT: RE-TUNING CHANGES THE CONCLUSION. 0.40R is no longer appropriate after the $5/$5 floor.
+//   RECOMMENDED K1 TP = 1.00R. It is the TRAIN-selected mode in 12/15 folds and the fixed curve is robustly superior to 0.40R.
+//   The causal WF schedule also turns the 0.40R -$347.53 result into +$681.77 while restoring near-full coverage/HC.
+//
+// =====================================================================================================================
+// HYBRID CAUSAL REPAIR — FIXED-RATIO OOS DIAGNOSTIC CURVE
+// Ratio | Trades | Coverage | WR | Net | MaxDD | HC | +Years
+// 0.20R | 300 |  34.17% | 50.67% |   +251.83 |   6.96% |  4/15 |  9/15
+// 0.30R | 482 |  54.90% | 41.91% |   +616.31 |  10.86% |  9/15 |  7/15
+// 0.40R | 624 |  71.07% | 35.10% |   +670.50 |  10.56% | 12/15 |  7/15
+// 0.50R | 717 |  81.66% | 29.57% |   +126.12 |  15.05% | 14/15 |  8/15
+// 0.60R | 780 |  88.84% | 26.41% |   +648.74 |  13.85% | 15/15 | 10/15
+// 0.70R | 818 |  93.17% | 22.49% |   -649.82 |  19.09% | 15/15 |  7/15
+// 0.80R | 843 |  96.01% | 19.45% |   -985.15 |  20.54% | 15/15 |  8/15
+// 0.90R | 855 |  97.38% | 19.42% |  +1026.25 |  18.56% | 15/15 | 10/15
+// 1.00R | 862 |  98.18% | 16.59% |   -334.14 |  22.61% | 15/15 | 10/15
+// 1.10R | 862 |  98.18% | 14.27% |   -711.04 |  24.51% | 15/15 |  8/15
+// 1.20R | 862 |  98.18% | 12.06% |   -703.65 |  23.51% | 15/15 | 10/15
+// 1.30R | 862 |  98.18% | 11.14% |   -271.69 |  21.83% | 15/15 |  8/15
+// 1.40R | 862 |  98.18% |  9.51% |    -57.40 |  24.49% | 15/15 |  8/15
+// 1.50R | 862 |  98.18% |  7.77% |   -310.46 |  24.53% | 15/15 |  8/15
+//
+// Hybrid 0.40R incumbent under $5/$5: 624 trades /71.07%; WR35.10%; Net +$670.50; DD10.56%; HC12/15; +years7/15.
+// Fixed diagnostic best balance = 0.90R: 855 trades /97.38%; WR19.42%; Net +$1,026.25; DD18.56%; HC15/15; +years10/15.
+// Fixed 0.90R therefore adds +$355.75 net, +26.31 pp coverage, +3 HC years and +3 positive years versus 0.40R,
+// but MaxDD rises materially by +7.99 pp (10.56% -> 18.56%).
+// 0.60R is the lower-DD broad alternative: 780 trades /88.84%; +$648.74; DD13.85%; HC15/15; +years10/15.
+//
+// HYBRID WALK-FORWARD TRAIN-SELECTED RATIOS
+// OOS | Selected ratio | TRAIN Net | TRAIN DD | TRAIN HC | TRAIN Coverage
+// 2012 | 0.70R |  +1649.67 |   4.62% | 6/8 |  78.88%
+// 2013 | 0.70R |  +1407.42 |   6.78% | 7/8 |  83.10%
+// 2014 | 0.60R |  +1489.21 |   5.74% | 8/8 |  85.25%
+// 2015 | 0.90R |  +2521.53 |   5.87% | 8/8 |  94.82%
+// 2016 | 0.90R |  +3443.36 |   5.40% | 8/8 |  97.34%
+// 2017 | 0.90R |  +3054.51 |   5.40% | 8/8 |  97.04%
+// 2018 | 0.90R |  +3759.11 |   5.40% | 8/8 |  96.20%
+// 2019 | 1.00R |  +1506.42 |   7.29% | 8/8 |  97.75%
+// 2020 | 1.00R |   +132.40 |   8.31% | 8/8 |  97.34%
+// 2021 | 0.90R |  +1523.02 |   9.85% | 8/8 |  95.73%
+// 2022 | 0.90R |    -20.01 |  18.56% | 8/8 |  96.14%
+// 2023 | 0.90R |   +221.45 |  18.56% | 8/8 |  96.08%
+// 2024 | 0.60R |   -102.32 |  12.40% | 8/8 |  85.95%
+// 2025 | 0.60R |   -180.14 |  13.85% | 8/8 |  87.73%
+// 2026 | 0.60R |    +52.15 |  13.85% | 8/8 |  90.93%
+// Ratio selection frequency: 0.90R = 7/15 folds; 0.60R = 4; 0.70R = 2; 1.00R = 2.
+// Combined causal WF OOS: 846 trades /96.36% coverage; TP183 / SL120 / collision0 / Timeout543; WR21.63%;
+//   Net +$271.85; MaxDD21.49%; HC15/15; positive years9/15.
+// HYBRID VERDICT: the full-OOS fixed curve makes 0.90R look strongest, but that fixed choice is hindsight and is NOT promoted.
+//   TRAIN choices are materially less stable than K1 and the actual causal WF-selected schedule (+$271.85 /21.49% DD)
+//   does NOT beat the locked 0.40R incumbent (+$670.50 /10.56% DD) on the combined net+DD criterion.
+//   Therefore the validated Hybrid recommendation REMAINS 0.40R for now; 0.90R is recorded only as the diagnostic fixed-curve leader.
+//
+// =====================================================================================================================
+// FINAL RECOMMENDATION UNDER FINAL $5/$5 FLOOR
+// - K1 NEXT OPEN: change TP from 0.40R -> 1.00R. Evidence is strong: 12/15 TRAIN-fold mode, WF net positive, HC15/15, 99.20% coverage.
+// - Hybrid Causal Repair: retain TP at 0.40R. Do NOT hindsight-promote fixed 0.90R because the causal TRAIN-selected WF schedule
+//   is inferior to the 0.40R incumbent on net and DD despite broader coverage/HC.
+// - Thus TP retuning rescues K1 under the new floor, but does NOT provide leakage-safe evidence to change Hybrid TP yet.
+// - This payload changes research conclusions only. No executable signal, floor, source population or production baseline is modified.
 //---------------------------------------------------------------------------------------------------------------------}
