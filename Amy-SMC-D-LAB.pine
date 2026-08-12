@@ -2597,3 +2597,117 @@ alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull AT
 // - No additional construction is requested or proposed. Phase 3 entry-construction research is CLOSED with Hybrid Causal Repair
 //   as the selected production candidate and K1 NEXT OPEN retained as the frozen benchmark/reference.
 //---------------------------------------------------------------------------------------------------------------------}
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — REALISM FLOOR CORRECTION + RE-AUDIT (2026-08-12)
+// COMMENT-ONLY CORRECTION PAYLOAD. No executable Pine signal is added/changed by this block.
+// Frozen production baseline Amy-SMC-D.pine remains d6e6d7c979dd5a852bddd9661bef0480caa2eb35.
+// Existing K1-K21, Pullback, Human/Hybrid/Stop research payloads, dashboard fields, and all executable logic above remain untouched.
+// This payload supersedes the OLD execution realism floor ($1 SL / $2 TP) for future D-LAB execution research.
+//
+// NEW REALISM FLOOR — LOCKED FOR THIS RE-AUDIT
+// - Absolute SL distance must be >= $5.00 XAUUSD.
+// - Absolute TP distance must be >= $5.00 XAUUSD.
+// - Exact TP remains 0.40R; target is NOT moved outward to satisfy the floor.
+// - Therefore, for every 0.40R construction, TP >= $5 mechanically requires raw R >= $12.50.
+// - The SL >= $5 rule is still checked independently and reported separately even though the $5 TP floor is stricter at 0.40R.
+// - Basis: Amy's confirmed manual execution constraint (realistic working stop roughly 50-100 pips / $5-$10 XAUUSD).
+//   No universal broker-spread/slippage claim is introduced because those costs vary by broker/account/session; this is a manual
+//   execution realism constraint supplied by Amy, not a fitted parameter and not an optimization result.
+// - Floor validity is checked as soon as entry/SL geometry for a route is causally known, BEFORE pending-fill/no-fill classification.
+// - Same 878 K1 M15 source events; same raw/audited data, 2004 warm-up, OOS 2012-2026, 32-bar lifecycle, SL-first collisions,
+//   1% current-equity chronological account replay, and HC >=30 valid executions/year. No predictor/filter is re-optimized.
+//
+// IMPORTANT COMPARISON NOTE
+// - "OLD STRICT" below means the former $1 SL / $2 TP floor reapplied uniformly and causally to every route.
+// - This is the apples-to-apples floor comparison. The historical published K1 benchmark (878 trades / +$1,320.72) did not
+//   enforce that floor on the benchmark itself; strict old-floor K1 is 871 trades / +$1,164.43.
+// - The previously audited Hybrid Literal old-floor result (+$1,964.86) already equals OLD STRICT semantics.
+//
+// =====================================================================================================================
+// A) K1 NEXT OPEN — FULL STRUCTURAL SWING SL
+// =====================================================================================================================
+// Source structural-R distribution at +1 NEXT OPEN:
+// - R < $5.00: 7/878 = 0.80%.
+// - R < $12.50 (therefore 0.40R TP < $5): 255/878 = 29.04% total.
+// OLD STRICT $1/$2: 871 trades (99.20% coverage); TP345 / SL58 / Timeout468; WR39.61%; Timeout53.73%;
+//   Net +$1,164.43; MaxDD13.90%; HC15/15; positive years9/15.
+// NEW $5/$5: 623 trades (70.96% coverage); 255 INVALID; TP206 / SL34 / Timeout383; WR33.07%; Timeout61.48%;
+//   Net -$347.53; MaxDD19.74%; HC11/15; positive years7/15.
+// VERDICT CHANGE: YES. Once the new TP realism floor removes structural R<$12.50 trades, K1 is no longer a positive-net
+// broad-coverage benchmark. Its retained sample becomes less efficient, with higher Timeout rate and materially worse DD.
+//
+// =====================================================================================================================
+// B) HUMAN LOCAL SL RETEST — INTERNAL SIZE-5
+// =====================================================================================================================
+// Raw local geometry population: 749/878 have a finite/right-side local R before floor; 129/878 remain geometry-invalid.
+// - Raw local R < $5: 150/878 = 17.08% of all sources (150/749 = 20.03% of finite local geometries).
+// - Raw local R < $12.50: 541/878 = 61.62% of all sources.
+// Critical nuance: among the 458 OLD valid filled 0.40R Human trades, ZERO have R<$5 because the former TP >=$2 floor already
+// implied R>=$5 for a 0.40R target. The major new removal is the higher TP floor: 310/458 = 67.69% of old valid fills have
+// R $5..<12.50 and therefore now fail TP >=$5.
+// OLD STRICT $1/$2: 458 trades (52.16% source coverage); 279 INVALID; 141 NO FILL; TP274 / SL77 / collision2 / Timeout105;
+//   WR59.83%; Timeout22.93%; Net +$802.70; MaxDD8.27%; HC10/15; positive years6/15.
+// NEW $5/$5: 148 trades (16.86% coverage); 670 INVALID; 60 NO FILL; TP83 / SL11 / collision0 / Timeout54;
+//   WR56.08%; Timeout36.49%; Net +$1,160.99; MaxDD2.53%; HC1/15; positive years12/15.
+// VERDICT: core conclusion remains NO as a primary replacement despite attractive surviving-subset P/L/DD. Coverage collapses to
+// 16.86% and HC to 1/15, so the apparent quality improvement is a sparse eligible subset rather than robust broad executability.
+//
+// =====================================================================================================================
+// C) HYBRID CAUSAL REPAIR — LITERAL ROUTING, NEW FLOOR APPLIED TO LOCAL + FALLBACK
+// =====================================================================================================================
+// Literal causality is retained: +1 classification; local valid -> pending +2..+32; local invalid -> structural fallback +2 OPEN;
+// valid local NO FILL through +32 -> structural fallback +33 OPEN. Every route checks SL >=$5 and exact 0.40R TP >=$5 when its
+// entry/SL geometry becomes known. A fallback failing either floor is INVALID; no artificial SL/TP widening is allowed.
+// OLD STRICT $1/$2 literal: 862 trades (98.18% coverage); 16 INVALID; Local458 / Fallback-Invalid263 / Fallback-Delayed141;
+//   TP411 / SL101 / collision2 / Timeout348; WR47.68%; Timeout40.37%; Net +$1,964.86; MaxDD9.38%; HC15/15; +years9/15.
+// NEW $5/$5: 624 trades (71.07% coverage); 254 INVALID; Local148 / Fallback-after-local-invalid417 /
+//   Fallback-delayed59; TP219 / SL38 / collision0 / Timeout367; WR35.10%; Timeout58.81%;
+//   Net +$670.50; MaxDD10.56%; HC12/15; positive years7/15.
+// New final-invalid reasons after fallback geometry is known: 19 fail fallback SL<$5; 235 have fallback R $5..<12.50 and fail
+// exact 0.40R TP<$5. Hybrid therefore loses the old 100%/98% near-full coverage property under the realistic floor.
+// VERDICT: ABSOLUTE PERFORMANCE CHANGES MATERIALLY, but relative candidate decision remains supported versus the alternatives below.
+//
+// =====================================================================================================================
+// D) BUY/SELL STOP + LOCAL SIZE-5 SL
+// =====================================================================================================================
+// Stop-entry local-R distribution:
+// - R < $5: 45/878 = 5.13%.
+// - R < $12.50: 494/878 = 56.26% total.
+// As with Human, ZERO of the 688 OLD valid fills have R<$5 because old TP >=$2 already forced R>=$5. The new $5 TP floor removes
+// 358/688 = 52.03% of old valid Stop+Local fills (R $5..<12.50).
+// OLD STRICT $1/$2: 688 trades (78.36% coverage); 45 INVALID; 145 NO FILL; TP381 / SL94 / collision3 / Timeout210;
+//   WR55.38%; Timeout30.52%; Net +$775.17; MaxDD11.99%; HC14/15; positive years8/15.
+// NEW $5/$5: 330 trades (37.59% coverage); 494 INVALID; 54 NO FILL; TP162 / SL34 / collision1 / Timeout133;
+//   WR49.09%; Timeout40.30%; Net +$117.25; MaxDD11.90%; HC3/15; positive years10/15.
+// VERDICT: unchanged — not a robust replacement. New floor materially reduces coverage/HC and leaves only marginal total net.
+//
+// =====================================================================================================================
+// BEFORE / AFTER SUMMARY — UNIFORM FLOOR SEMANTICS
+// =====================================================================================================================
+// Candidate              | OLD $1/$2 trades/coverage | OLD Net / DD / HC / +Y | NEW $5/$5 trades/coverage | NEW Net / DD / HC / +Y
+// K1 NEXT OPEN           | 871 / 99.20%              | +$1,164.43 /13.90/15/9 | 623 / 70.96%              | -$347.53 /19.74/11/7
+// Human Local Retest     | 458 / 52.16%              | +$802.70 / 8.27/10/6   | 148 / 16.86%              | +$1,160.99/ 2.53/ 1/12
+// Hybrid Causal Literal  | 862 / 98.18%              | +$1,964.86/ 9.38/15/9  | 624 / 71.07%              | +$670.50 /10.56/12/7
+// Stop + Local SL        | 688 / 78.36%              | +$775.17 /11.99/14/8   | 330 / 37.59%              | +$117.25 /11.90/ 3/10
+//
+// =====================================================================================================================
+// RECOMMENDATION AFTER FLOOR CORRECTION
+// =====================================================================================================================
+// HYBRID CAUSAL REPAIR REMAINS THE PRODUCTION CANDIDATE, BUT ITS STATUS IS DOWNGRADED FROM near-full-coverage risk upgrade to a
+// narrower realistic-floor candidate. Under the SAME new $5/$5 rules, Hybrid is the strongest balance of breadth and account result:
+// - Hybrid: +$670.50, 10.56% DD, 71.07% coverage, HC12/15.
+// - K1:     -$347.53, 19.74% DD, 70.96% coverage, HC11/15.
+// - Human:  +$1,160.99, 2.53% DD, but only 16.86% coverage and HC1/15 — too sparse to be the primary production construction.
+// - Stop:   +$117.25, 11.90% DD, 37.59% coverage, HC3/15 — also too sparse/weak.
+// Therefore the identity of the preferred broad candidate does NOT change: Hybrid remains ahead of K1 at essentially equal broad
+// coverage and materially better net/DD, while Human's surviving subset is not HC-robust. However, previous claims that Hybrid has
+// 100% coverage / HC15/15 / ~$1.96k under realistic execution are superseded. The correct new-floor values are 71.07% / HC12/15 /
+// +$670.50 / 10.56% DD / 7 positive years.
+//
+// STATUS / IMPLEMENTATION LOCK
+// - No executable Hybrid toggle/alert/plot is committed in this correction phase.
+// - The interrupted executable implementation was stopped before repository write.
+// - Hybrid remains LAB-only production candidate pending Amy confirmation of the $5 SL / $5 TP floor as final.
+// - Amy-SMC-D.pine remains byte-identical; K1-K21, Pullback and all existing executable/dashboard logic remain untouched.
+//---------------------------------------------------------------------------------------------------------------------}
