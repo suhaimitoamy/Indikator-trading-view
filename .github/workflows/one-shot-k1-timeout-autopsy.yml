@@ -12,145 +12,98 @@ permissions:
 jobs:
   append-diagnostic:
     runs-on: ubuntu-latest
+    env:
+      PAYLOAD_B64: >-
+        Ci8vLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t
+        LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tfQovLyBBTVkgU01DIEQtTEFCIOKAlCBLMSBNMTUgVElNRU9VVCBBVVRPUFNZIFBIQVNFIDIgKDIwMjYt
+        MDgtMTIpCi8vIERJQUdOT1NUSUMgT05MWS4gQ29udGludWF0aW9uIG9mIFBoYXNlLTEgYXV0b3BzeSBAIGYwNmZmNDRkMDE0YzVjZjQyNzY2YmE3NjBiNjRm
+        NjhiZTU0NDNkNWIuCi8vIE5vIEsxLUsyMS9QdWxsYmFjayBydWxlLCBlbnRyeSwgU0wsIFRQLCBmaWx0ZXIsIHByb2R1Y3Rpb24gZmllbGQsIG9yIGV4ZWN1
+        dGFibGUgUGluZSBsb2dpYyBpcyBjaGFuZ2VkIGhlcmUuCi8vIFBoYXNlLTEgcGFyaXR5IGdhdGUgcmVwcm9kdWNlZCBFWEFDVExZIGJlZm9yZSB0aGlzIGFu
+        YWx5c2lzOiBLMSBNMTUgPSA4NzggZXZlbnRzOyBvcmlnaW5hbCAzMi1iYXIgVGltZW91dCA9IDQ2OC4KLy8gTG9ja2VkIGxpZmVjeWNsZSByZW1haW5zIE5F
+        WFQgT1BFTiArIHNpZ25hbC1sb2NrZWQgc3RydWN0dXJhbCBTTCArIFRQIDAuNDBSICsgTTE1IHNhbWUtYmFyIFNMLWZpcnN0IG9yZGVyaW5nLgovLwovLyBT
+        VEVQIDEg4oCUIEVYVEVOREVEIE9CU0VSVkFUSU9OIE9GIFRIRSA0NjggT1JJR0lOQUwgVElNRU9VVFMKLy8gVGhpcyBpcyBvYnNlcnZhdGlvbiBvbmx5OiBl
+        bnRyeSwgU0wgYW5kIFRQIGFyZSBmcm96ZW4gYXQgdGhlaXIgb3JpZ2luYWwgdmFsdWVzLiBUcmFja2luZyByZXN1bWVzIGFmdGVyIG9yaWdpbmFsIGJhciAz
+        Mi4KLy8gRmlyc3QgcmVzb2x1dGlvbiB0aHJvdWdoIFRPVEFMIGJhciA2NDoKLy8gLSBMYXRlIFRQIDogIDg4IC8gNDY4ID0gMTguODAlCi8vIC0gTGF0ZSBT
+        TCA6ICAzNCAvIDQ2OCA9ICA3LjI2JQovLyAtIFN0aWxsIHVucmVzb2x2ZWQ6IDM0NiAvIDQ2OCA9IDczLjkzJQovLyBGaXJzdCByZXNvbHV0aW9uIHRocm91
+        Z2ggVE9UQUwgYmFyIDk2ICgzeCBvcmlnaW5hbCBob3Jpem9uKToKLy8gLSBMYXRlIFRQIDogMTQ2IC8gNDY4ID0gMzEuMjAlCi8vIC0gTGF0ZSBTTCA6ICA3
+        MCAvIDQ2OCA9IDE0Ljk2JQovLyAtIFN0aWxsIHVucmVzb2x2ZWQ6IDI1MiAvIDQ2OCA9IDUzLjg1JQovLyAtIFNhbWUtTTE1LWJhciBUUC9TTCBjb2xsaXNp
+        b24gaW4gdGhlIGV4dGVuc2lvbjogMC4KLy8gQW1vbmcgdGhlIDIxNiBldmVudHMgdGhhdCBESUQgcmVzb2x2ZSBieSBiYXIgOTYsIDY3LjU5JSByZXNvbHZl
+        ZCBUUC1maXJzdCBhbmQgMzIuNDElIFNMLWZpcnN0LgovLyBFeHRyYSB0aW1lIGJleW9uZCBvcmlnaW5hbCBiYXIgMzIsIHJlc29sdmVkLWJ5LTk2IHBvcHVs
+        YXRpb246Ci8vIC0gQWxsIHJlc29sdmVkIG49MjE2OiBtZWRpYW4gKzI3IE0xNSBiYXJzOyBtZWRpYW4gd2FsbC1jbG9jayArNy4yNWguCi8vIC0gTGF0ZSBU
+        UCBuPTE0NjogbWVkaWFuICsyMy41IE0xNSBiYXJzIChQMjUvUDc1ICs4LjI1Lys0MS4wKTsgd2FsbC1jbG9jayBtZWRpYW4gKzYuNzVoLgovLyAtIExhdGUg
+        U0wgbj03MDogbWVkaWFuICszMyBNMTUgYmFycyAoUDI1L1A3NSArMTQuMC8rNTAuNzUpOyB3YWxsLWNsb2NrIG1lZGlhbiArOS4wMGguCi8vIFRhaWwtcGVy
+        c2lzdGVuY2Ugc2Vuc2l0aXZpdHksIHN0aWxsIHdpdGggdGhlIFNBTUUgZnJvemVuIFRQL1NMOiBiYXIxMjggdW5yZXNvbHZlZCAxOTMvNDY4PTQxLjI0JTsK
+        Ly8gYmFyMTkyIHVucmVzb2x2ZWQgMTMzLzQ2OD0yOC40MiU7IGJhcjI1NiB1bnJlc29sdmVkIDk1LzQ2OD0yMC4zMCUuIFRoZXNlIGFyZSBvYnNlcnZhdGlv
+        biB0YWlscywgbm90IG5ldyBob3Jpem9ucyBmb3IgSzEuCi8vCi8vIFNURVAgMiDigJQgT1JJR0lOQUwtMzItQkFSIE1GRSBJTlNJREUgVElNRU9VVCBQT1BV
+        TEFUSU9OCi8vIFBoYXNlLTEgcGFyaXR5IE1GRSBSIFAyNS9QNTAvUDc1L1A5MCA9IDAuMDc2NSAvIDAuMTY3NSAvIDAuMjc3MCAvIDAuMzUwNC4KLy8gVGhy
+        ZXNob2xkIGNvdW50cyBhcmUgZGVzY3JpcHRpdmUgcHJvYmVzIG9ubHk7IG5vbmUgd2FzIG9wdGltaXplZCBvciBwcm9tb3RlZCBhcyBhIHJ1bGU6Ci8vIC0g
+        TUZFID49IDAuMTBSOiAzMTMgLyA0NjggPSA2Ni44OCUKLy8gLSBNRkUgPj0gMC4yMFI6IDIwMSAvIDQ2OCA9IDQyLjk1JQovLyAtIE1GRSA+PSAwLjI1Ujog
+        MTQzIC8gNDY4ID0gMzAuNTYlCi8vIC0gTUZFID49IDAuMzBSOiAgOTIgLyA0NjggPSAxOS42NiUKLy8gLSBNRkUgPj0gMC4zNVI6ICA0OCAvIDQ2OCA9IDEw
+        LjI2JQovLyAtIE1GRSA+PSAwLjM3NVI6IDIzIC8gNDY4ID0gIDQuOTElCi8vIC0gTUZFID49IDAuMzlSOiAgIDggLyA0NjggPSAgMS43MSUKLy8gVGhlcmVm
+        b3JlIDM3Ni80Njg9ODAuMzQlIG5ldmVyIGV2ZW4gcmVhY2hlZCAwLjMwUiwgYW5kIDI2Ny80Njg9NTcuMDUlIG5ldmVyIHJlYWNoZWQgMC4yMFIgaW4gdGhl
+        IG9yaWdpbmFsIGhvcml6b24uCi8vIEV4dGVuZGVkIG91dGNvbWUgYXNzb2NpYXRpb24gKHBvc3QtZW50cnkgZGlhZ25vc3RpYyBvbmx5KToKLy8gLSBPcmln
+        aW5hbCBNRkUgPj0wLjMwUiAobj05Mik6IGJ5IGJhcjk2IFRQIDU3LjYxJSwgU0wgMTcuMzklLCB1bnJlc29sdmVkIDI1LjAwJS4KLy8gLSBPcmlnaW5hbCBN
+        RkUgPCAwLjMwUiAobj0zNzYpOiBieSBiYXI5NiBUUCAyNC43MyUsIFNMIDE0LjM2JSwgdW5yZXNvbHZlZCA2MC45MCUuCi8vIFRodXMgYSByZWFsICJhbG1v
+        c3QgcmVhY2hlZCAwLjQwUiIgc3Vic2V0IGV4aXN0cywgYnV0IGl0IGlzIGEgbWlub3JpdHkgcmF0aGVyIHRoYW4gdGhlIGRvbWluYW50IFRpbWVvdXQgbWVj
+        aGFuaXNtLgovLwovLyBTVEVQIDMg4oCUIFBSRS1FTlRSWSBERVNDUklQVElWRSBDSEFSQUNURVJJU1RJQ1M6IENMRUFOIFdJTk5FUiB2cyBUSU1FT1VUCi8v
+        IEdyb3VwcyBhcmUgZnJvemVuIGZyb20gUGhhc2UgMTogQ2xlYW4gV2lubmVyIG49MzI0OyBUaW1lb3V0IG49NDY4LgovLyBRdWFudGlsZXMgYmVsb3cgYXJl
+        IFAyNSAvIFA1MCAvIFA3NSAvIFA5MCBhbmQgYXJlIG1lYXN1cmVkIG9uL2F0IHRoZSBDT05GSVJNRUQgc2lnbmFsIGNhbmRsZSB1bmxlc3Mgc3RhdGVkLgov
+        LyBRVkIgYm9keSAvIEFUUjE0OgovLyAtIENsZWFuICA6IDEuNTE1MSAvIDEuODg4MyAvIDIuNTkzOCAvIDMuMjg0MgovLyAtIFRpbWVvdXQ6IDEuNDg4MiAv
+        IDEuOTM0MiAvIDIuNTU2OCAvIDMuMzY3NgovLyBRVkIgYm9keSAvIGNhbmRsZSByYW5nZToKLy8gLSBDbGVhbiAgOiAwLjczNjAgLyAwLjgxMDEgLyAwLjg4
+        ODggLyAwLjk0NTAKLy8gLSBUaW1lb3V0OiAwLjc2MzYgLyAwLjgyODggLyAwLjkwMTMgLyAwLjk0OTQKLy8gUVZCIGZ1bGwgcmFuZ2UgLyBBVFIxNDoKLy8g
+        LSBDbGVhbiAgOiAxLjg3NDAgLyAyLjM5MDIgLyAzLjEyMDcgLyAzLjk2NTAKLy8gLSBUaW1lb3V0OiAxLjgwOTQgLyAyLjM4NjkgLyAzLjE1NjcgLyAzLjkz
+        MDAKLy8gQVRSMTQgcmF3IFhBVVVTRDoKLy8gLSBDbGVhbiAgOiAxLjI5ODMgLyAxLjgzMjAgLyAyLjgwODkgLyA0LjgyMzAKLy8gLSBUaW1lb3V0OiAxLjM5
+        MzMgLyAyLjE2NDMgLyAzLjA5MzQgLyA0LjcwOTQKLy8gQVRSMTQgYXMgJSBvZiBzaWduYWwgY2xvc2U6Ci8vIC0gQ2xlYW4gIDogMC4wODUwIC8gMC4xMTQz
+        IC8gMC4xNTMyIC8gMC4yMTIyJQovLyAtIFRpbWVvdXQ6IDAuMDk1OSAvIDAuMTMwMiAvIDAuMTczMSAvIDAuMjE1NiUKLy8gU2lnbmFsLWNsb3NlIHN0cnVj
+        dHVyYWwgcm9vbSB0byB0aGUgbG9ja2VkIG9wcG9zaXRlIFN3aW5nIGJvdW5kYXJ5IC8gQVRSMTQgKHN0cmljdGx5IGtub3duIGJlZm9yZSBORVhUIE9QRU4p
+        OgovLyAtIENsZWFuICA6IDYuNTA3MCAvIDcuODgwOSAvIDkuOTM1NiAvIDEyLjM0OTggQVRSCi8vIC0gVGltZW91dDogNy44OTk5IC8gMTAuNTc3NiAvIDEz
+        Ljk4MzcgLyAxOS44NDYyIEFUUgovLyBBY3R1YWwgTkVYVC1PUEVOIDAuNDBSIFRQIGRpc3RhbmNlIGV4cHJlc3NlZCBpbiBBVFIxNCAoZXhlY3V0aW9uIGdl
+        b21ldHJ5LCBub3QgYSBwcmUtZW50cnkgZmVhdHVyZSk6Ci8vIC0gQ2xlYW4gIDogMi41OTk4IC8gMy4xNjYwIC8gMy45NzUzIC8gNC45NDUxIEFUUgovLyAt
+        IFRpbWVvdXQ6IDMuMTc0OCAvIDQuMjM0NSAvIDUuNTkzNCAvIDcuOTM1NSBBVFIKLy8gTWVkaWFuIGNvbXBhcmlzb246IGJvZHkvQVRSIGRpZmZlcnMgb25s
+        eSArMi40MyUgVGltZW91dC12cy1DbGVhbjsgZnVsbC1yYW5nZS9BVFIgaXMgZWZmZWN0aXZlbHkgaWRlbnRpY2FsICgtMC4xNCUpLgovLyBJbiBjb250cmFz
+        dCwgbWVkaWFuIHNpZ25hbCBzdHJ1Y3R1cmFsIHJvb20gaXMgKzM0LjIyJSBsYXJnZXIgYW5kIHRoZSBhY3R1YWwgMC40MFIgVFAgaXMgKzMzLjc1JSBmYXJ0
+        aGVyIGluIEFUUiB1bml0cy4KLy8gRGVzY3JpcHRpdmUgQ2xpZmYncyBkZWx0YSAoVGltZW91dCBtaW51cyBDbGVhbik6IGJvZHkvQVRSIC0wLjAwNCwgYm9k
+        eS9yYW5nZSArMC4wODgsIHJhbmdlL0FUUiAtMC4wMjYsCi8vIEFUUiByYXcgKzAuMTE5LCBBVFIlICswLjE0MCwgc2lnbmFsLXJvb20vQVRSICswLjQxMCwg
+        ZGlyZWN0aW9uLW5vcm1hbGl6ZWQgRFIgbG9jYXRpb24gKzAuMTgzLgovLyBUaGUgc3Ryb25nZXN0IHNlcGFyYXRpb24gaXMgdGhlcmVmb3JlIHN0cnVjdHVy
+        YWwtcm9vbSBnZW9tZXRyeSwgbm90IHdlYWsgUVZCIGNhbmRsZSBkaXNwbGFjZW1lbnQuCi8vCi8vIFNFU1NJT04gREVTQ1JJUFRJVkUgUFJPRklMRQovLyBD
+        bG9jayBub3JtYWxpemF0aW9uIGZvciBjb21wYXJhYmlsaXR5OiAyMDEyLTIwMjUgSGlzdERhdGEgZml4ZWQgVVRDLTA1IHNvdXJjZSB3YWxsLXRpbWUgLT4g
+        VVRDICgrNWgpOyAyMDI2IER1a2FzY29weSBpcyBVVEMuCi8vIEZpeGVkIG5vbi1vcHRpbWl6ZWQgYmlucyAobm8gRFNUIGFkanVzdG1lbnQpOiBBc2lhIDAw
+        LTA4IFVUQzsgTG9uZG9uIDA4LTEzOyBMb25kb24tTlkgb3ZlcmxhcCAxMy0xNzsKLy8gTlktb25seSAxNy0yMjsgcm9sbG92ZXIvb2ZmIDIyLTI0LgovLyAt
+        IENsZWFuIG49MzI0ICA6IEFzaWEgMjEuOTElIHwgTG9uZG9uIDM0LjU3JSB8IE92ZXJsYXAgMzYuMTElIHwgTlkgNi4xNyUgfCBSb2xsb3ZlciAxLjIzJQov
+        LyAtIFRpbWVvdXQgbj00Njg6IEFzaWEgMjUuODUlIHwgTG9uZG9uIDE5LjAyJSB8IE92ZXJsYXAgNDEuNDUlIHwgTlkgMTAuOTAlIHwgUm9sbG92ZXIgMi43
+        OCUKLy8gTGFyZ2VzdCBkZXNjcmlwdGl2ZSBzaGlmdCBpcyBMb25kb24tb25seTogVGltZW91dCAtMTUuNTUgcGVyY2VudGFnZSBwb2ludHMgdnMgQ2xlYW47
+        IG92ZXJsYXAvTlkvQXNpYSBhcmUgaGlnaGVyIGluIFRpbWVvdXQuCi8vIFRoaXMgcGF0dGVybiByZW1haW5zIHZpc2libGUgd2hlbiBCVVkvU0VMTCBhcmUg
+        aW5zcGVjdGVkIHNlcGFyYXRlbHk7IGl0IGlzIE5PVCB0ZXN0ZWQgYXMgYSBmaWx0ZXIgb3IgY2F1c2FsIHJ1bGUgaGVyZS4KLy8KLy8gREVBTElORy1SQU5H
+        RSBERVNDUklQVElWRSBQUk9GSUxFCi8vIE5hdGl2ZSBNMTUgRC1maXggaXMgcmV0YWluZWQgZXhhY3RseSAoNjAvNDApLiBLMSBRVkIgZXZlbnRzIG1lY2hh
+        bmljYWxseSBzaXQgb24gdGhlIHByZWRpY3RlZC1zaWRlIGV4dHJlbWU6Ci8vIENsZWFuID0gMTU2IFBSRU1JVU0gQlVZLXNpZGUgLyAxNjggRElTQ09VTlQg
+        U0VMTC1zaWRlIGJ5IGRpcmVjdGlvbiBtYXBwaW5nOyBUaW1lb3V0ID0gMjU1IC8gMjEzOyBubyBFUVVJTElCUklVTSBjYXNlcy4KLy8gRGlyZWN0aW9uLW5v
+        cm1hbGl6ZWQgRFIgbG9jYXRpb24gKDEuMCA9IGZhcnRoZXIgdG93YXJkIHByZWRpY3RlZC1zaWRlIGVkZ2UpLCBQMjUvUDUwL1A3NS9QOTA6Ci8vIC0gQ2xl
+        YW4gIDogMC45MzczIC8gMC45NjcyIC8gMC45ODU1IC8gMC45OTQ5Ci8vIC0gVGltZW91dDogMC45NTUzIC8gMC45Nzc2IC8gMC45OTA1IC8gMC45OTY3Ci8v
+        IEJvdGggZ3JvdXBzIGFyZSBhbHJlYWR5IGhpZ2hseSBleHRyZW1lOyBEUiBsb2NhdGlvbiBpcyBhIG11Y2ggd2Vha2VyIHNlcGFyYXRvciB0aGFuIHN0cnVj
+        dHVyYWwtcm9vbSBnZW9tZXRyeS4KLy8KLy8gSU5URVJOQUwgQ09NUE9TSVRJT04gT0YgVEhFIDQ2OCBUSU1FT1VUUyBBVCBCQVIgOTYgKERFU0NSSVBUSVZF
+        LCBOT1QgQSBGSUxURVIgVEVTVCkKLy8gTGF0ZSBUUCBuPTE0NjogbWVkaWFuIGJvZHkvQVRSIDEuOTkyOyBBVFIgMi4yMjU7IHNpZ25hbC1yb29tIDkuMjgy
+        IEFUUjsgb3JpZ2luYWwgTUZFIDAuMjQ2UjsgTUFFIDAuMjY1Ui4KLy8gTGF0ZSBTTCBuPTcwIDogbWVkaWFuIGJvZHkvQVRSIDIuMDY0OyBBVFIgMS42NTU7
+        IHNpZ25hbC1yb29tIDcuNzA0IEFUUjsgb3JpZ2luYWwgTUZFIDAuMTUwUjsgTUFFIDAuNjI4Ui4KLy8gU3RpbG....948 chars truncated...bnRyYWwgbG9jY2VkIHN0cnVjdHVyYWwgcm9vbSwK        Ly8gd2hpY2ggbWFrZXMgdGhlIHVuY2hhbmdlZCAwLjQwUiBUUCBtYXRlcmlhbGx5IGZhcnRoZXIgYXdheSBpbiBBVFIgdW5pdHM7IHNlcGFyYXRlbHksIG1v        c3QgVGltZW91dHMgc2hvdyB3ZWFrIHJlYWxpemVkIGZvbGxvdy10aHJvdWdoCi8vIGluc2lkZSAzMiBiYXJzICg4MC4zNCUgbmV2ZXIgcmVhY2hlZCAwLjMw        UikuIFRodXMgdGhlIHBvcHVsYXRpb24gaXMgYmVzdCBkZXNjcmliZWQgYXMgYSBtaXh0dXJlIG9mIGRlbGF5ZWQgZm9sbG93LXRocm91Z2ggYW5kCi8vIHBl        cnNpc3RlbnQgcGFjZS9nZW9tZXRyeSBzdGFsbCwgbm90IGEgc2luZ2xlICJiYWQgZGlyZWN0aW9uIiBvciAid2VhayBicmVha291dCBjYW5kbGUiIGNsYXNz        LgovLyBUaGlzIHBheWxvYWQgZGVsaWJlcmF0ZWx5IHN0b3BzIGF0IGRpYWdub3Npcy4gTm8gSzEgZmlsdGVyLCBzZXNzaW9uIGdhdGUsIERSIGdhdGUsIFRQ        L1NMIGNoYW5nZSwgb3IgcHJvZHVjdGlvbiBwcm9tb3Rpb24gd2FzIHRlc3RlZC4KLy8tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t        LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS19Cg==
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Append diagnostic payload only
+      - name: Append verified comment-only payload
         shell: bash
         run: |
           set -euo pipefail
-
-          # Safety gate: this staging commit must not have altered the LAB relative to the requested Phase-1 head.
-          test "$(git rev-parse HEAD^)" = "f06ff44d014c5cf42766ba760b64f68be5443d5b"
-          git diff --quiet HEAD^ HEAD -- Amy-SMC-D-LAB.pine
-
-          cat >> Amy-SMC-D-LAB.pine <<'PAYLOAD'
-
-//---------------------------------------------------------------------------------------------------------------------}
-// AMY SMC D-LAB — K1 M15 TIMEOUT AUTOPSY PHASE 2 (2026-08-12)
-// DIAGNOSTIC ONLY. Continuation of Phase-1 autopsy @ f06ff44d014c5cf42766ba760b64f68be5443d5b.
-// No K1-K21/Pullback rule, entry, SL, TP, filter, production field, or executable Pine logic is changed here.
-// Phase-1 parity gate reproduced EXACTLY before this analysis: K1 M15 = 878 events; original 32-bar Timeout = 468.
-// Locked lifecycle remains NEXT OPEN + signal-locked structural SL + TP 0.40R + M15 same-bar SL-first ordering.
-//
-// STEP 1 — EXTENDED OBSERVATION OF THE 468 ORIGINAL TIMEOUTS
-// This is observation only: entry, SL and TP are frozen at their original values. Tracking resumes after original bar 32.
-// First resolution through TOTAL bar 64:
-// - Late TP :  88 / 468 = 18.80%
-// - Late SL :  34 / 468 =  7.26%
-// - Still unresolved: 346 / 468 = 73.93%
-// First resolution through TOTAL bar 96 (3x original horizon):
-// - Late TP : 146 / 468 = 31.20%
-// - Late SL :  70 / 468 = 14.96%
-// - Still unresolved: 252 / 468 = 53.85%
-// - Same-M15-bar TP/SL collision in the extension: 0.
-// Among the 216 events that DID resolve by bar 96, 67.59% resolved TP-first and 32.41% SL-first.
-// Extra time beyond original bar 32, resolved-by-96 population:
-// - All resolved n=216: median +27 M15 bars; median wall-clock +7.25h.
-// - Late TP n=146: median +23.5 M15 bars (P25/P75 +8.25/+41.0); wall-clock median +6.75h.
-// - Late SL n=70: median +33 M15 bars (P25/P75 +14.0/+50.75); wall-clock median +9.00h.
-// Tail-persistence sensitivity, still with the SAME frozen TP/SL: bar128 unresolved 193/468=41.24%;
-// bar192 unresolved 133/468=28.42%; bar256 unresolved 95/468=20.30%. These are observation tails, not new horizons for K1.
-//
-// STEP 2 — ORIGINAL-32-BAR MFE INSIDE TIMEOUT POPULATION
-// Phase-1 parity MFE R P25/P50/P75/P90 = 0.0765 / 0.1675 / 0.2770 / 0.3504.
-// Threshold counts are descriptive probes only; none was optimized or promoted as a rule:
-// - MFE >= 0.10R: 313 / 468 = 66.88%
-// - MFE >= 0.20R: 201 / 468 = 42.95%
-// - MFE >= 0.25R: 143 / 468 = 30.56%
-// - MFE >= 0.30R:  92 / 468 = 19.66%
-// - MFE >= 0.35R:  48 / 468 = 10.26%
-// - MFE >= 0.375R: 23 / 468 =  4.91%
-// - MFE >= 0.39R:   8 / 468 =  1.71%
-// Therefore 376/468=80.34% never even reached 0.30R, and 267/468=57.05% never reached 0.20R in the original horizon.
-// Extended outcome association (post-entry diagnostic only):
-// - Original MFE >=0.30R (n=92): by bar96 TP 57.61%, SL 17.39%, unresolved 25.00%.
-// - Original MFE < 0.30R (n=376): by bar96 TP 24.73%, SL 14.36%, unresolved 60.90%.
-// Thus a real "almost reached 0.40R" subset exists, but it is a minority rather than the dominant Timeout mechanism.
-//
-// STEP 3 — PRE-ENTRY DESCRIPTIVE CHARACTERISTICS: CLEAN WINNER vs TIMEOUT
-// Groups are frozen from Phase 1: Clean Winner n=324; Timeout n=468.
-// Quantiles below are P25 / P50 / P75 / P90 and are measured on/at the CONFIRMED signal candle unless stated.
-// QVB body / ATR14:
-// - Clean  : 1.5151 / 1.8883 / 2.5938 / 3.2842
-// - Timeout: 1.4882 / 1.9342 / 2.5568 / 3.3676
-// QVB body / candle range:
-// - Clean  : 0.7360 / 0.8101 / 0.8888 / 0.9450
-// - Timeout: 0.7636 / 0.8288 / 0.9013 / 0.9494
-// QVB full range / ATR14:
-// - Clean  : 1.8740 / 2.3902 / 3.1207 / 3.9650
-// - Timeout: 1.8094 / 2.3869 / 3.1567 / 3.9300
-// ATR14 raw XAUUSD:
-// - Clean  : 1.2983 / 1.8320 / 2.8089 / 4.8230
-// - Timeout: 1.3933 / 2.1643 / 3.0934 / 4.7094
-// ATR14 as % of signal close:
-// - Clean  : 0.0850 / 0.1143 / 0.1532 / 0.2122%
-// - Timeout: 0.0959 / 0.1302 / 0.1731 / 0.2156%
-// Signal-close structural room to the locked opposite Swing boundary / ATR14 (strictly known before NEXT OPEN):
-// - Clean  : 6.5070 / 7.8809 / 9.9356 / 12.3498 ATR
-// - Timeout: 7.8999 / 10.5776 / 13.9837 / 19.8462 ATR
-// Actual NEXT-OPEN 0.40R TP distance expressed in ATR14 (execution geometry, not a pre-entry feature):
-// - Clean  : 2.5998 / 3.1660 / 3.9753 / 4.9451 ATR
-// - Timeout: 3.1748 / 4.2345 / 5.5934 / 7.9355 ATR
-// Median comparison: body/ATR differs only +2.43% Timeout-vs-Clean; full-range/ATR is effectively identical (-0.14%).
-// In contrast, median signal structural room is +34.22% larger and the actual 0.40R TP is +33.75% farther in ATR units.
-// Descriptive Cliff's delta (Timeout minus Clean): body/ATR -0.004, body/range +0.088, range/ATR -0.026,
-// ATR raw +0.119, ATR% +0.140, signal-room/ATR +0.410, direction-normalized DR location +0.183.
-// The strongest separation is therefore structural-room geometry, not weak QVB candle displacement.
-//
-// SESSION DESCRIPTIVE PROFILE
-// Clock normalization for comparability: 2012-2025 HistData fixed UTC-05 source wall-time -> UTC (+5h); 2026 Dukascopy is UTC.
-// Fixed non-optimized bins (no DST adjustment): Asia 00-08 UTC; London 08-13; London-NY overlap 13-17;
-// NY-only 17-22; rollover/off 22-24.
-// - Clean n=324  : Asia 21.91% | London 34.57% | Overlap 36.11% | NY 6.17% | Rollover 1.23%
-// - Timeout n=468: Asia 25.85% | London 19.02% | Overlap 41.45% | NY 10.90% | Rollover 2.78%
-// Largest descriptive shift is London-only: Timeout -15.55 percentage points vs Clean; overlap/NY/Asia are higher in Timeout.
-// This pattern remains visible when BUY/SELL are inspected separately; it is NOT tested as a filter or causal rule here.
-//
-// DEALING-RANGE DESCRIPTIVE PROFILE
-// Native M15 D-fix is retained exactly (60/40). K1 QVB events mechanically sit on the predicted-side extreme:
-// Clean = 156 PREMIUM BUY-side / 168 DISCOUNT SELL-side by direction mapping; Timeout = 255 / 213; no EQUILIBRIUM cases.
-// Direction-normalized DR location (1.0 = farther toward predicted-side edge), P25/P50/P75/P90:
-// - Clean  : 0.9373 / 0.9672 / 0.9855 / 0.9949
-// - Timeout: 0.9553 / 0.9776 / 0.9905 / 0.9967
-// Both groups are already highly extreme; DR location is a much weaker separator than structural-room geometry.
-//
-// INTERNAL COMPOSITION OF THE 468 TIMEOUTS AT BAR 96 (DESCRIPTIVE, NOT A FILTER TEST)
-// Late TP n=146: median body/ATR 1.992; ATR 2.225; signal-room 9.282 ATR; original MFE 0.246R; MAE 0.265R.
-// Late SL n=70 : median body/ATR 2.064; ATR 1.655; signal-room 7.704 ATR; original MFE 0.150R; MAE 0.628R.
-// Still unresolved n=252: median body/ATR 1.903; ATR 2.299; signal-room 11.912 ATR; original MFE 0.115R; MAE 0.271R.
-// Persistent unresolved events therefore have the largest structural room and the lowest original favorable excursion,
-// while their QVB candle strength remains close to the other Timeout subgroups.
-//
-// PHASE-2 DIAGNOSIS — NO FILTER/SOLUTION RECOMMENDATION
-// Classification is (c) MIXTURE, with explicit 3x-horizon proportions from the original 468 Timeout events:
-// (a-like) delayed winners: 146/468 = 31.20% reached the SAME 0.40R TP after bar32 but by bar96.
-// delayed failures:          70/468 = 14.96% hit the SAME locked SL after bar32 but by bar96.
-// persistent stall:         252/468 = 53.85% still hit neither boundary even by bar96.
-// Therefore Timeout is NOT simply "wait longer and it wins": more than half remain unresolved at 3x horizon.
-// It is also NOT well described as a weak QVB-trigger population: pre-entry body/ATR, body/range and range/ATR are nearly the same
-// as Clean Winner, and Timeout ATR is actually somewhat higher. The dominant pre-entry difference is larger locked structural room,
-// which makes the unchanged 0.40R TP materially farther away in ATR units; separately, most Timeouts show weak realized follow-through
-// inside 32 bars (80.34% never reached 0.30R). Thus the population is best described as a mixture of delayed follow-through and
-// persistent pace/geometry stall, not a single "bad direction" or "weak breakout candle" class.
-// This payload deliberately stops at diagnosis. No K1 filter, session gate, DR gate, TP/SL change, or production promotion was tested.
-//---------------------------------------------------------------------------------------------------------------------}
-PAYLOAD
-
-          # Enforce comment-only append: every new LAB line relative to Phase-1 head must be empty or begin with //.
+          git diff --quiet f06ff44d014c5cf42766ba760b64f68be5443d5b HEAD -- Amy-SMC-D-LAB.pine
+          printf '%s' "$PAYLOAD_B64" | base64 -d >> Amy-SMC-D-LAB.pine
           python - <<'PY'
           import subprocess
           old = subprocess.check_output(['git','show','f06ff44d014c5cf42766ba760b64f68be5443d5b:Amy-SMC-D-LAB.pine'], text=True)
           new = open('Amy-SMC-D-LAB.pine', encoding='utf-8').read()
           assert new.startswith(old), 'Existing LAB content changed; aborting.'
           tail = new[len(old):]
+          assert 'K1 M15 TIMEOUT AUTOPSY PHASE 2' in tail
           for line in tail.splitlines():
               assert (not line.strip()) or line.lstrip().startswith('//'), f'Non-comment appended line: {line!r}'
-          assert 'K1 M15 TIMEOUT AUTOPSY PHASE 2' in tail
           PY
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/one-shot-k1-timeout-autopsy.yml
