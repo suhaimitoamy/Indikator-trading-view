@@ -1,0 +1,192 @@
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — K1 HUMAN ENTRY CONSTRUCTION — CAUSAL ACCEPTANCE/REJECTION + LOCAL SL (2026-08-12)
+// CORRECTED EXPERIMENT / RESEARCH ONLY. Documentation payload only; no executable Pine logic is changed by this block.
+// Frozen production baseline Amy-SMC-D.pine remains d6e6d7c979dd5a852bddd9661bef0480caa2eb35.
+// Existing K1-K21, Pullback, Phase-1/Phase-2 autopsy payloads and all production fields above remain untouched.
+// This block supersedes the earlier experiment payload commit 4b3e71cf24a3abbf8b2742df03216485b9fbbb40 because that
+// draft allowed the +1 M15 candle to influence rejection routing by its CLOSE while also allowing an earlier +1-bar fill.
+// The corrected replay below removes that intra-bar close-conditioned lookahead by reserving +1 strictly for classification.
+// Dataset: repaired/audited raw XAUUSD; 2004 warm-up; rolling 8y train -> 1y OOS; OOS 2012-2026; no synthetic candles.
+// PARITY GATE before experiment: K1 M15 source = 878; old TP=351; SL=59; Timeout=468; directional survival=796/878=90.6606%.
+//
+// =====================================================================================================================
+// CAUSAL CONSTRUCTION LOCK
+// =====================================================================================================================
+// SOURCE SIGNAL
+// - Exact same K1 M15 signal population: confirmed Qualified Valid Break + same-direction Internal Structure.
+// - No new predictor/filter creates or removes any of the 878 source signals before execution construction.
+// - Broken level = source BSL for bullish QVB / source SSL for bearish QVB.
+//
+// BUFFER / WALK-FORWARD SELECTION
+// - Candidate buffer = absolute $1.00 or $2.00 XAUUSD; not broker ticks.
+// - Bull continuation entry level = BSL + buffer; bear continuation = SSL - buffer.
+// - Rolling selection uses only preceding 8 calendar years. Objective = mean 0.40R terminal lifecycle R per SOURCE signal;
+//   NO FILL / invalid geometry / TP-floor-ineligible = 0R for parameter selection. Tie: more valid fills, then smaller buffer.
+// - OOS-selected buffer is $1.00 in ALL 15 folds (2012-2026). $2.00 never beats $1.00 on its own preceding train slice.
+// - The same train-selected buffer is reused unchanged for 0.40R, 1.00R, 1.50R and fixed-nominal TP reports.
+//
+// CAUSAL +1 CLASSIFICATION / ENTRY WINDOW
+// - Exactly the next M15 candle (+1) is classification-only because its CLOSE is required to know Acceptance vs Rejection.
+// - Bullish QVB rejection = +1 close <= broken BSL; bearish QVB rejection = +1 close >= broken SSL.
+// - If no rejection, branch=CONTINUATION. If rejection, branch=SWEEP and direction reverses.
+// - No fill is permitted inside +1; doing so would let the still-unknown +1 close retroactively choose the branch.
+// - Entry can fill from +2 through +32 relative to QVB, preserving the original 32-bar post-signal information boundary.
+// - Unfilled by +32 = NO FILL, never Timeout.
+//
+// LOCAL SL
+// - Continuation BUY = latest CONFIRMED internalLow size-5 strictly before QVB; SELL = latest internalHigh strictly before QVB.
+// - Sweep reverse SL is immediate confirmed internalHigh/internalLow known at rejection (+1) close.
+// - No fallback/walk-back to farther local pivots. Wrong-side pivot = INVALID_LOCAL_STOP.
+// - Raw local R < $1.00 = INVALID_SL_FLOOR; stop is not moved artificially.
+//
+// TP / LIFECYCLE
+// - Primary = 0.40R from actual local R; parallels = 1.00R and 1.50R.
+// - Exact R construction is preserved. If its raw TP distance is < $2.00 realism floor, that construction is INELIGIBLE;
+//   TP is NOT moved outward to $2 because that would stop being the requested exact R multiple.
+// - Fixed nominal buckets are descriptive and never train-tuned: actual local R $1.00-<7.50 = '~5' bucket; R $7.50-<12.50
+//   = '~10' bucket. Fixed targets = $10 for ~5; $10/$15/$20 for ~10. Actual local pivot SL remains unchanged.
+// - Filled lifecycle = fill bar plus next 31 M15 bars. Same-M15-bar TP+SL reachability is financially SL-first.
+// - Collision is retained as taxonomy bucket #5 while its account return is -1R. Timeout = neither boundary hit by horizon.
+// - Timeout account return = horizon-close mark-to-market. Capital starts $10,000; 1% current-equity risk per valid fill.
+// - Signals are event-scored without suppressing overlaps; this is not a margin/concurrency portfolio simulator.
+// - HC = OOS year with >=30 valid executions.
+//
+// DIRECTIONAL METRIC LOCK
+// - Directional accuracy remains the ORIGINAL K1 metric: original QVB direction survives the full opposite Swing boundary
+//   during the next 32 M15 bars from the signal. Local SL and reverse fork do not redefine predictor correctness.
+// - Full source directional accuracy therefore remains 796/878 = 90.6606%. Among primary valid fills: 415/458 = 90.61%.
+//
+// =====================================================================================================================
+// OOS ROUTING / COVERAGE — SAME 878 SOURCE SIGNALS
+// =====================================================================================================================
+// Immediate +1 rejection frequency: 171/878 = 19.48%; continuation route = 707/878 = 80.52%.
+// Continuation geometry with selected $1 buffer: 549 raw fills + 158 NO FILL = 707; no local-stop invalids.
+// Sweep geometry: 129 INVALID_LOCAL_STOP + 30 INVALID_SL_FLOOR + 12 raw fills = 171; no causal sweep NO FILL occurred.
+// Thus the reverse fork is mechanically fragile: 159/171 = 92.98% fail local geometry/floor before TP-specific eligibility.
+//
+// Primary 0.40R source accounting after TP>=2 floor:
+// - valid filled = 458/878 = 52.16%
+// - NO FILL = 158/878 = 18.00%
+// - invalid geometry/SL floor = 159/878 = 18.11%
+// - additional exact-0.40R TP-floor ineligible = 103/878 = 11.73%
+// - total invalid = 262/878 = 29.84%; valid+NO_FILL+invalid = 878 exactly.
+//
+// =====================================================================================================================
+// MAIN ROUTED TP CONSTRUCTION COMPARISON
+// =====================================================================================================================
+// Columns: TP | valid fills | TP WR(fill) | Timeout(fill) | Timeout/source | NO FILL/source | Exp | Net | MaxDD | HC | +Years
+// 0.40R | 458 | 59.83% | 22.93% | 11.96% | 18.00% | +0.01835R | +$802.70  |  8.27% | 10/15 | 6/15
+// 1.00R | 553 | 26.40% | 44.30% | 27.90% | 18.00% | -0.02773R | -$1,568.70| 20.60% | 14/15 | 7/15
+// 1.50R | 556 | 14.21% | 55.04% | 34.85% | 18.00% | -0.03203R | -$1,805.20| 22.76% | 14/15 | 7/15
+// Primary 0.40R outcome counts: TP=274; SL=77; same-bar collision=2 (booked SL-first); Timeout=105.
+// TP/source on primary = 274/878 = 31.21%; a higher filled WR does NOT mean more original K1 signals ultimately hit TP.
+// 1.00R outcome counts: TP146 / SL161 / collision1 / Timeout245. TP-floor ineligible=8; total invalid=167.
+// 1.50R outcome counts: TP79 / SL169 / collision2 / Timeout306. TP-floor ineligible=5; total invalid=164.
+//
+// =====================================================================================================================
+// FIXED NOMINAL CONSTRUCTIONS — GROUP-SPECIFIC DENOMINATORS
+// =====================================================================================================================
+// ~5 bucket (actual local R $1.00-<7.50), fixed TP=$10:
+// - eligible source population=310; valid fills=262; NO FILL=48/310=15.48%.
+// - TP=30 (11.45% WR); SL=112; Timeout=120 (45.80% of fills).
+// - expectancy=-0.04297R; Net=-$1,184.98; MaxDD=14.64%; HC=2/15; positive years=7/15.
+// ~10 bucket (actual local R $7.50-<12.50), fixed TP=$10:
+// - eligible source=201; fills=151; NO FILL=50/201=24.88%.
+// - TP=26 (17.22% WR); SL=41; Timeout=84 (55.63%).
+// - expectancy=-0.09600R; Net=-$1,385.03; MaxDD=14.34%; HC=0/15; positive years=5/15.
+// ~10 bucket, fixed TP=$15: same 201 eligible /151 fills /50 NO FILL; TP=14 (9.27%); SL=42; Timeout=95 (62.91%);
+//   expectancy=-0.10321R; Net=-$1,482.94; MaxDD=16.72%; HC=0/15; positive years=6/15.
+// ~10 bucket, fixed TP=$20: same 201 eligible /151 fills /50 NO FILL; TP=4 (2.65%); SL=42; Timeout=105 (69.54%);
+//   expectancy=-0.12219R; Net=-$1,722.68; MaxDD=17.67%; HC=0/15; positive years=6/15.
+// Fixed nominal conclusion: none beats the local-R primary construction; all are negative in exact OOS account replay.
+//
+// =====================================================================================================================
+// APPLE-TO-APPLE: OLD K1 NEXT OPEN vs CAUSAL HUMAN ENTRY
+// =====================================================================================================================
+// OLD K1 — same 878 source signals, NEXT OPEN + full Swing SL + 0.40R:
+// - filled=878; NO FILL=0; TP=351=39.98%; SL=59; Timeout=468=53.30%; collision=0.
+// - exact event-sequence terminal-marked expectancy=+0.01502R; Net=+$1,320.72; MaxDD=13.90%; HC=15/15; +years=8/15.
+// - median full structural R=18.1835 XAUUSD; median R/ATR=8.9383.
+// CAUSAL HUMAN 0.40R ROUTED:
+// - valid fills=458; NO FILL=158=18.00% source; total invalid=262=29.84% source.
+// - TP WR among valid fills=59.83%; Timeout=22.93% of fills /11.96% of source; TP/source=31.21%.
+// - expectancy=+0.01835R; Net=+$802.70; MaxDD=8.27%; HC=10/15; +years=6/15.
+// Interpretation: human construction sharply improves barrier efficiency among executable fills, but loses enough coverage that
+// total exact OOS dollar profit and original-source TP count are lower than old K1. It is NOT proven as a replacement strategy.
+//
+// =====================================================================================================================
+// STRONGEST MECHANISM TEST — SAME EXACT 457 CONTINUATION FILLS
+// =====================================================================================================================
+// This ablation fixes signal, buffer, entry price, fill candle and horizon. ONLY SL/R geometry changes.
+// Full Swing geometry on those same fills:
+// - median R=18.0500; TP=181/457=39.61%; SL=35/457=7.66%; Timeout=241/457=52.74%; collision=0.
+// - expectancy=+0.00987R; Net=+$417.63; MaxDD=9.73%.
+// Immediate size-5 local geometry on the SAME fills:
+// - median R=9.3600; TP=273/457=59.74%; SL=77/457=16.85%; Timeout=105/457=22.98%; collision=2.
+// - expectancy=+0.01752R; Net=+$759.66; MaxDD=8.27%.
+// Geometry-only delta:
+// - median R -48.14%; TP +20.13 pp; Timeout -29.76 pp; SL +9.19 pp.
+// Therefore the Phase-2 structural-room diagnosis survives a matched-fill causal test: local SL materially shortens R and target
+// distance, converting many old Timeouts into TP hits, at the explicit cost of more local stop-outs.
+// Across all primary valid fills, median local R=9.3550 and median local R/ATR=4.6836, versus old-universe 18.1835 / 8.9383.
+//
+// =====================================================================================================================
+// PRIMARY 0.40R SIX-BUCKET AUTOPSY — 458 VALID FILLS
+// =====================================================================================================================
+// #1 Clean Winner                          : 249 / 458 = 54.37%
+// #2 Dirty Winner (pre-TP MAE >=0.50R)     :  25 / 458 =  5.46%
+// #3 Directionally Correct Execution Loss :  55 / 458 = 12.01%
+// #4 True Directional Failure              :  22 / 458 =  4.80%
+// #5 Ambiguous/same-bar Collision          :   2 / 458 =  0.44% (financially SL-first)
+// #6 Timeout                               : 105 / 458 = 22.93%
+// The new #3 population is expected: a local size-5 stop can fail while the old full-Swing directional thesis remains alive.
+//
+// MAE/MFE BEFORE RESOLUTION — P25 / P50 / P75 / P90
+// Clean Winner n249:
+//   MAE R 0.0722/0.1308/0.2299/0.3457 | XAU 0.6600/1.4000/2.1700/3.6596
+//   MFE R 0.4339/0.4914/0.5947/0.7510 | XAU 3.4000/5.0100/7.4800/11.9820
+// Dirty Winner n25:
+//   MAE R 0.5683/0.6871/0.7918/0.8684 | XAU 4.7900/6.1830/10.6530/22.9440
+//   MFE R 0.4772/0.5542/0.6188/0.8454 | XAU 3.5800/5.6300/13.1000/17.6340
+// Directionally Correct Execution Loss n55:
+//   MAE R 1.0459/1.1377/1.2195/1.4657 | XAU 7.3700/9.4300/12.3700/15.9920
+//   MFE R 0.0948/0.1819/0.2876/0.3415 | XAU 0.8335/1.3000/2.6200/3.6242
+// True Directional Failure n22:
+//   MAE R 1.1322/1.3254/1.6352/1.9068 | XAU 7.7725/9.2800/14.3300/17.7720
+//   MFE R 0.1232/0.2035/0.2766/0.3388 | XAU 0.8275/1.3550/2.1745/2.9313
+// Ambiguous Collision n2:
+//   MAE R 1.4711/1.5180/1.5648/1.5930 | XAU 9.4500/10.3400/11.2300/11.7640
+//   MFE R 0.4500/0.4837/0.5175/0.5377 | XAU 3.1758/3.2215/3.2673/3.2947
+// Timeout n105:
+//   MAE R 0.2615/0.4788/0.7327/0.9168 | XAU 3.3300/5.2200/9.4700/15.5786
+//   MFE R 0.1419/0.2049/0.3039/0.3494 | XAU 1.5400/2.7000/4.1100/7.6654
+//
+// =====================================================================================================================
+// SWEEP FORK — SEPARATE PERFORMANCE
+// =====================================================================================================================
+// Rejection occurs 171/878 = 19.48% of source signals, but immediate reverse local geometry is mostly unusable:
+// 129/171=75.44% wrong-side local pivot; 30/171=17.54% local R<$1; only 12 raw reverse fills remain.
+// 0.40R + TP>=2 leaves only 1 valid sweep fill; it wins (+0.40R), sample meaningless.
+// 1.00R: 4 valid fills; 2 TP /2 SL; expectancy 0.000R; HC 0/15.
+// 1.50R: 7 valid fills; 2 TP /4 SL /1 same-bar collision; expectancy -0.2857R; Net about -$202.66; HC 0/15.
+// Fixed ~5/TP10: 12 valid fills; TP1 / SL10 / Timeout1; expectancy -0.5951R; Net about -$695.84; HC 0/15.
+// No valid ~10 reverse population exists. SWEEP fork is NOT validated and should not be promoted.
+//
+// =====================================================================================================================
+// FINAL DIAGNOSIS / STATUS
+// =====================================================================================================================
+// HYPOTHESIS "SL LOKAL MANUSIA MENGURANGI TIMEOUT": SUPPORTED / MECHANISM PROVEN FOR K1 CONTINUATION.
+// The leakage-safe matched-fill test cuts median R 48.14% and Timeout 52.74% -> 22.98% with identical signals/entries/fills.
+// This directly confirms Phase-2's structural-room diagnosis rather than merely selecting easier signals.
+//
+// BUT STRATEGY-LEVEL REPLACEMENT IS NOT PROVEN:
+// - causal classification forces +1 to be observation-only; retest begins +2, creating 18.00% NO FILL;
+// - local/TP realism invalids remove another 29.84% of source signals for primary 0.40R;
+// - TP/source drops from old K1 39.98% to 31.21%; exact OOS net $802.70 is below old K1 $1,320.72;
+// - local stop-outs rise materially and create 12.01% Directionally Correct Execution Losses among primary fills.
+//
+// TP VERDICT: 0.40R is the only tested routed construction with positive OOS expectancy. 1.00R and 1.50R are negative;
+// fixed nominal groups are also negative. Therefore only local 0.40R continuation is research-worthy for a later dedicated phase.
+// SWEEP reverse fork: REJECT current construction. No production promotion. K1 source predictor remains frozen and unchanged.
+//---------------------------------------------------------------------------------------------------------------------}
