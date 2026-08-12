@@ -1,0 +1,41 @@
+name: Append D-LAB realism floor re-audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-floor5-reaudit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  append-payload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Append verified comment-only correction payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Amy-SMC-D.pine)" = 'd6e6d7c979dd5a852bddd9661bef0480caa2eb35'
+          test "$(git hash-object Amy-SMC-D-LAB.pine)" = 'ce91f9e728c92f38681112a867399aa78075119e'
+          test -f .tmp/k1-floor5-reaudit-payload.txt
+          ! grep -q 'REALISM FLOOR CORRECTION + RE-AUDIT' Amy-SMC-D-LAB.pine
+          if grep -Ev '^[[:space:]]*(//.*)?$' .tmp/k1-floor5-reaudit-payload.txt; then
+            echo 'Payload contains a non-comment line'
+            exit 1
+          fi
+          cp Amy-SMC-D.pine /tmp/production.before
+          cat .tmp/k1-floor5-reaudit-payload.txt >> Amy-SMC-D-LAB.pine
+          cmp -s Amy-SMC-D.pine /tmp/production.before
+          git diff --exit-code -- Amy-SMC-D.pine
+          test "$(git diff --name-only)" = 'Amy-SMC-D-LAB.pine'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-D-LAB.pine
+          git commit -m 'docs: correct D-LAB execution realism floor'
+          git push origin main
