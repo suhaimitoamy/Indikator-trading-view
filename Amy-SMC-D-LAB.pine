@@ -1932,9 +1932,9 @@ bool amyDlabBslMacroBull = not na(amyDlabBslH1Close) and not na(amyDlabBslH1Ema5
 bool amyDlabBslAtrExpansion = not na(amyDlabBslH1Atr14) and not na(amyDlabBslH1AtrMedian240) and amyDlabBslH1Atr14 > 1.15 * amyDlabBslH1AtrMedian240
 bool amyDlabBslValidatedTF = timeframe.period == '15' or timeframe.period == '60'
 
-// Native BSL sweep is the trigger source. No standalone BSL/SSL semantics are overwritten.
+// Native BSL continuation is the trigger source: BSL sweep + bullish Internal Structure. No standalone BSL/SSL semantics are overwritten.
 // M15/H1 only: these are the signal timeframes actually carried by the combinatorial OOS research.
-bool amyDlabBslStrongBullAtrSignal = barstate.isconfirmed and amyDlabBslValidatedTF and amyBSLSweep and amyDlabBslMacroBull and amyDlabBslAtrExpansion and not na(amyBullInvalidation) and amyBullInvalidation < close
+bool amyDlabBslStrongBullAtrSignal = barstate.isconfirmed and amyDlabBslValidatedTF and amySweepContinuationBias == BULLISH and amyDlabBslMacroBull and amyDlabBslAtrExpansion and not na(amyBullInvalidation) and amyBullInvalidation < close
 
 // Executable plan is locked at the NEXT bar open, matching the D-LAB next-open execution convention.
 // SL = opposite structural invalidation captured on the signal candle, floored to >= 1.00 XAUUSD.
@@ -1991,7 +1991,7 @@ alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull AT
 // This is NOT expected to reproduce the old 716 research-port checkpoint because that checkpoint used
 // rolling-50 sweep proxy semantics, ATR-SMA research features, train-selected TF/ATR exits, and no explicit Macro-Bull gate.
 // Exact native-trigger replay with the executable filters produced:
-// M15: 32 raw signals / 30 non-overlapping executions | WR 86.67% | End $10,678.93 | MaxDD 1.00% | MedSL 23.53 | MedTP 9.73.
+// M15: 30 raw signals / 28 non-overlapping executions | WR 85.71% | End $10,572.32 | MaxDD 1.00% | MedSL 24.45 | MedTP 9.78.
 // H1 : 9 raw signals / 2 non-overlapping executions | sample too small for HC; do not infer robustness.
-// Research-fold TF proxy (H1 through 2022, M15 2023-2026): 17 executions | End $10,111.64 | MaxDD 2.00%.
+// Research-fold TF proxy (H1 through 2022, M15 2023-2026): 16 executions | WR 75.00% | End $10,069.60 | MaxDD 2.00%.
 // Therefore this code is LAB/FORWARD-TEST ONLY. The old $14,934.91 / 716-trade result is not claimed as executable validation.
