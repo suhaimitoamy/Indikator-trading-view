@@ -1,0 +1,120 @@
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — K1 ENTRY CONSTRUCTION PHASE 3 — HYBRID FALLBACK + BREAKOUT STOP (2026-08-12)
+// EXPERIMENT / RESEARCH ONLY. Documentation payload only; no executable Pine logic is changed by this block.
+// Frozen production baseline Amy-SMC-D.pine remains d6e6d7c979dd5a852bddd9661bef0480caa2eb35.
+// Existing K1-K21, Pullback, Phase-1/Phase-2 and prior causal Human Entry payload remain untouched.
+// Dataset: raw/audited XAUUSD; 2004 warm-up only; OOS 2012-2026; no synthetic candles / no gap interpolation.
+// Validation discipline: same 878 K1 M15 source events; no predictor/filter change; no future candle may create a source signal.
+// Account replay: start $10,000; risk 1% current equity per valid trade; chronological by source signal; same-bar TP/SL = SL-first.
+// TP = exact 0.40R. SL realism floor = $1.00 XAUUSD. Exact TP distance < $2.00 = ineligible; target is not moved.
+// Filled lifecycle = fill bar + next 31 M15 bars. Pending-order expiry is NO FILL, not Timeout. Timeout is terminal M2M.
+// HC = OOS year with >=30 valid executions.
+//
+// =====================================================================================================================
+// PARITY GATE — REPRODUCED BEFORE NEW EXPERIMENTS
+// =====================================================================================================================
+// Source K1 M15 OOS population = 878 exactly.
+// OLD K1 NEXT OPEN: TP=351 / SL=59 / Timeout=468; TP WR=39.98%; Timeout=53.30%.
+// Exact chronological expectancy=+0.01502R; Net=+$1,320.72; MaxDD=13.90%; HC=15/15; positive years=8/15.
+// Prior causal Human Local Retest also reproduces exactly:
+// - route = 707 continuation /171 immediate rejection;
+// - 458 valid fills; 158 NO FILL; 262 total invalid (129 wrong-side +30 SL-floor +103 exact-TP-floor);
+// - TP=274 / SL=77 / collision=2 / Timeout=105; TP WR=59.83%; Timeout=22.93%;
+// - Net=+$802.70; MaxDD=8.27%; HC=10/15; positive years=6/15.
+// Therefore Phase 3 starts from exact event/lifecycle parity, not a redefined K1 population.
+//
+// =====================================================================================================================
+// PART A — REQUESTED HYBRID FALLBACK: CAUSALITY AUDIT
+// =====================================================================================================================
+// Requested routing was: use Human Local Retest only if it eventually proves VALID+FILLED in +2..+32; otherwise retroactively
+// use classic K1 NEXT OPEN at +1. This is NOT causally executable for the 158 NO FILL cases: NO FILL is only known after +32,
+// so it cannot be used at +32 to decide that a trade had already been entered at +1. The requested result is therefore retained
+// only as an ORACLE / UPPER-BOUND DIAGNOSTIC and is NOT eligible for promotion or executable implementation.
+//
+// REQUESTED ORACLE HYBRID (NON-CAUSAL; DIAGNOSTIC ONLY):
+// - local path = 458/878 = 52.16%; retro NEXT-OPEN fallback = 420/878 = 47.84%; no-trade = 0.
+// - fallback reasons: 158 NO FILL +129 wrong-side local stop +30 local SL-floor +103 TP-floor.
+// - TP=466 / SL=107 / collision=2 / Timeout=303.
+// - TP WR=53.08%; Timeout=34.51%; coverage=100.00%.
+// - expectancy=+0.03633R; Net=+$3,610.72; MaxDD=9.41%; HC=15/15; positive years=11/15.
+// - This apparently large gain MUST NOT be treated as a valid OOS strategy because routing uses future executability knowledge.
+//
+// CAUSAL REPAIR OF THE HYBRID (VALID DIAGNOSTIC):
+// - +1 remains observation/classification only, exactly as locked in the prior Human Entry experiment.
+// - If the selected local branch is already invalid after +1 classification, fallback enters original K1 direction at +2 OPEN,
+//   with the signal-frozen full structural Swing SL and exact 0.40R.
+// - If the local branch is mechanically valid, its pending retest remains active +2..+32. If it fills, use Local as before.
+// - If it expires as NO FILL at +32, fallback can only begin causally at +33 OPEN; lifecycle then runs 32 bars from +33.
+// - No retrospective +1 fill is permitted.
+// Results:
+// - local = 458/878 = 52.16%; causal fallback = 420/878 = 47.84%; no-trade = 0; coverage=100.00%.
+// - TP=412 / SL=104 / collision=4 / Timeout=358.
+// - TP WR=46.92%; Timeout=40.77%.
+// - expectancy=+0.01538R; Net=+$1,329.25; MaxDD=9.38%; HC=15/15; positive years=7/15.
+// - vs OLD K1: Net delta only +$8.54 while positive years fall 8/15 -> 7/15; MaxDD improves 13.90% -> 9.38% and
+//   Timeout improves 53.30% -> 40.77%. This is NOT a robust profit replacement; it is a risk/Timeout trade-off candidate.
+//
+// =====================================================================================================================
+// PART B — BUY STOP / SELL STOP BREAKOUT CHASE
+// =====================================================================================================================
+// Construction is original K1 direction only; it does NOT use Acceptance/Rejection routing.
+// After confirmed QVB close:
+// - bullish K1: BUY STOP = QVB signal high + absolute $1.00;
+// - bearish K1: SELL STOP = QVB signal low - absolute $1.00.
+// - fixed $1.00 is prescribed by experiment, so there is no OOS-selected stop-entry parameter.
+// - pending stop is active +1..+32. BUY fills when high reaches/exceeds trigger; SELL fills when low reaches/below trigger.
+// - if untriggered by +32 => NO FILL. Trigger price is the modeled entry; no synthetic candle or lookahead is used.
+// Two SL geometries are tested separately with the same source/entry rule and exact 0.40R TP.
+//
+// B1 — BREAKOUT STOP + LOCAL INTERNAL SIZE-5 SL
+// - local SL = latest confirmed internalLow/internalHigh size-5 strictly before QVB, same local reference as prior continuation.
+// - valid fills=688/878 = 78.36%; NO FILL=145/878=16.51%; TP-floor invalid=45/878=5.13%.
+// - no wrong-side or $1 SL-floor failures survived as separate OOS categories; all 45 invalids are exact 0.40R TP<$2.
+// - TP=381 / SL=94 / collision=3 / Timeout=210.
+// - TP WR=55.38%; Timeout=30.52%; expectancy=+0.01221R.
+// - Net=+$775.17; MaxDD=11.99%; HC=14/15; positive years=8/15.
+// - annual valid executions: 2012 45, 2013 55, 2014 49, 2015 43, 2016 40, 2017 33, 2018 42, 2019 47,
+//   2020 56, 2021 50, 2022 48, 2023 48, 2024 50, 2025 54, 2026 28. HC miss is 2026 only.
+// Interpretation: breakout chase recovers substantial coverage versus Human Retest (78.36% vs 52.16%), but the recovered
+// executions do not improve aggregate money result: +$775.17 is slightly below Human Retest +$802.70 and far below OLD K1.
+//
+// B2 — BREAKOUT STOP + FULL STRUCTURAL SWING SL
+// - structural SL = frozen K1 full Swing invalidation from the source QVB.
+// - valid fills=721/878 = 82.12%; NO FILL=154/878=17.54%; TP-floor invalid=3/878=0.34%.
+// - TP=268 / SL=37 / collision=1 / Timeout=415.
+// - TP WR=37.17%; Timeout=57.56%; expectancy=+0.01546R.
+// - Net=+$1,115.30; MaxDD=11.67%; HC=14/15; positive years=11/15.
+// - annual valid executions: 2012 45, 2013 56, 2014 54, 2015 48, 2016 40, 2017 38, 2018 50, 2019 55,
+//   2020 56, 2021 50, 2022 48, 2023 49, 2024 50, 2025 54, 2026 28. HC miss is 2026 only.
+// Interpretation: structural Stop variant is more year-stable (11/15 positive years) and has lower DD than OLD K1, but
+// its TP WR is lower and Timeout is higher; Net +$1,115.30 does not beat OLD K1 +$1,320.72.
+//
+// =====================================================================================================================
+// COMPLETE ENTRY-CONSTRUCTION COMPARISON TO DATE — PRIMARY 0.40R
+// =====================================================================================================================
+// Construction                         | TP WR  | Coverage | NO FILL | Invalid | Timeout/fill | Net        | MaxDD | HC    | +Years
+// OLD K1 NEXT OPEN                     | 39.98% | 100.00%  |  0.00%  |  0.00%  | 53.30%       | +$1,320.72 | 13.90%| 15/15 | 8/15
+// Human Local SL Retest (causal)       | 59.83% |  52.16%  | 18.00%  | 29.84%  | 22.93%       |   +$802.70 |  8.27%| 10/15 | 6/15
+// Hybrid Fallback requested ORACLE (*) | 53.08% | 100.00%  |  0.00%  |  0.00%  | 34.51%       | +$3,610.72 |  9.41%| 15/15 |11/15
+// Hybrid Fallback causal repair        | 46.92% | 100.00%  |  0.00%  |  0.00%  | 40.77%       | +$1,329.25 |  9.38%| 15/15 | 7/15
+// Buy/Sell Stop + Local size-5 SL      | 55.38% |  78.36%  | 16.51%  |  5.13%  | 30.52%       |   +$775.17 | 11.99%| 14/15 | 8/15
+// Buy/Sell Stop + Structural Swing SL  | 37.17% |  82.12%  | 17.54%  |  0.34%  | 57.56%       | +$1,115.30 | 11.67%| 14/15 |11/15
+// (*) NON-CAUSAL upper bound only. It violates the locked no-future-leak rule and cannot be implemented as stated.
+//
+// =====================================================================================================================
+// PHASE-3 VERDICT
+// =====================================================================================================================
+// 1) Requested retroactive Hybrid is REJECTED AS EXECUTABLE CONSTRUCTION despite its +$3.61k oracle result: causality violation.
+// 2) Causal Hybrid is VALID but does not establish a meaningful profit edge over OLD K1: +$1,329.25 vs +$1,320.72 is only
+//    +$8.54, while positive OOS years decline to 7/15. Its real benefit is lower DD and fewer Timeouts, not higher robust profit.
+// 3) Breakout Stop + Local SL successfully improves executability/coverage versus Human Retest (78.36% vs 52.16%), proving
+//    that NO FILL is partly entry-style dependent. However, extra fills include enough weaker executions that net does not improve.
+// 4) Breakout Stop + Structural SL is relatively stable across years (11/15 positive) but recreates the large-R Timeout problem;
+//    it also fails to beat OLD K1 net.
+// 5) No new construction in this phase is proven as a production replacement for OLD K1. The strongest causal benchmark remains
+//    OLD K1 NEXT OPEN for total net/coverage, while Human Local Retest remains the most TP-efficient/lowest-DD local construction.
+// 6) If a later executable phase is authorized, the only research-worthy hybrid direction is a truly causal routing rule decided
+//    with information available at the decision bar; do NOT reuse future NO-FILL status to choose an earlier fallback entry.
+// 7) No production promotion is made. Amy-SMC-D.pine, K1-K21, Pullback, and all prior LAB research payloads remain unchanged.
+//---------------------------------------------------------------------------------------------------------------------}
