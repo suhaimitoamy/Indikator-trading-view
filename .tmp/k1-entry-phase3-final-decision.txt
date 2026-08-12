@@ -1,0 +1,96 @@
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — PHASE 3 FINAL ENTRY-CONSTRUCTION DECISION (2026-08-12)
+// RESEARCH CLOSURE / COMMENT-ONLY PAYLOAD. No executable Pine logic is changed by this block.
+// Frozen production baseline Amy-SMC-D.pine remains d6e6d7c979dd5a852bddd9661bef0480caa2eb35.
+// Existing K1-K21, Pullback, all prior Phase-1/Phase-2/Phase-3 payloads and source predictor logic remain untouched.
+// Decision scope is deliberately limited to the already-tested K1 NEXT OPEN versus Phase-3 Hybrid Causal Repair.
+// No new entry construction, predictor, filter or parameter is introduced here.
+//
+// =====================================================================================================================
+// TASK 1 — WHY HYBRID POSITIVE YEARS FALL FROM 8/15 TO 7/15
+// =====================================================================================================================
+// Per-year compounded account returns, same 878 OOS K1 source events:
+// Year | K1 NEXT OPEN | Hybrid Causal | Delta (percentage points) | K1 Timeout | Hybrid Timeout
+// 2012 | -2.373%      | -0.555%       | +1.819 pp                 | 32         | 18
+// 2013 | +1.454%      | +2.168%       | +0.714 pp                 | 38         | 28
+// 2014 | +5.728%      | +2.043%       | -3.684 pp                 | 31         | 30
+// 2015 | -0.602%      | -1.170%       | -0.568 pp                 | 25         | 28
+// 2016 | -0.847%      | -1.645%       | -0.798 pp                 | 28         | 19
+// 2017 | +2.414%      | -2.109%       | -4.523 pp                 | 28         | 19
+// 2018 | -1.063%      | -2.273%       | -1.210 pp                 | 40         | 34
+// 2019 | +4.289%      | +3.394%       | -0.895 pp                 | 33         | 25
+// 2020 | +0.762%      | +3.371%       | +2.609 pp                 | 33         | 27
+// 2021 | -7.164%      | -6.198%       | +0.966 pp                 | 42         | 30
+// 2022 | -0.579%      | +7.027%       | +7.606 pp                 | 32         | 19
+// 2023 | -2.391%      | -1.061%       | +1.330 pp                 | 32         | 26
+// 2024 | +5.864%      | -1.080%       | -6.944 pp                 | 25         | 16
+// 2025 | +5.713%      | +7.780%       | +2.067 pp                 | 31         | 27
+// 2026 | +2.174%      | +3.820%       | +1.646 pp                 | 18         | 12
+//
+// Positive -> negative flips:
+// - 2017: K1 +2.414% -> Hybrid -2.109%, deterioration -4.523 pp. In exact account dollars for that year,
+//   K1 made +$249.18 while Hybrid lost -$212.50 (different start-of-year equities because replay compounds chronologically).
+// - 2024: K1 +5.864% -> Hybrid -1.080%, deterioration -6.944 pp. K1 made +$580.53 while Hybrid lost -$110.56.
+// Negative -> positive offsetting flip:
+// - 2022: K1 -0.579% -> Hybrid +7.027%, improvement +7.606 pp. K1 lost -$59.06 while Hybrid made +$679.23.
+// Therefore the 8/15 -> 7/15 count is NOT caused by one near-zero year randomly crossing breakeven. Two materially positive K1
+// years are lost, but one materially negative K1 year becomes strongly positive under Hybrid.
+//
+// Mechanism decomposition versus the same K1 signals:
+// - Hybrid LOCAL path improves matched K1 aggregate R in 10/15 years and worsens it in only 5/15. Therefore there is no evidence
+//   that local SL is systematically inferior across OOS years. Its weakness is episodic/path-dependent, not universally regime-bad.
+// - 2017 LOCAL contributes -0.864R delta versus matched K1, but causal FALLBACK contributes a larger -3.626R delta. Thus 2017's
+//   sign flip is driven mainly by delayed fallback timing, not by local SL alone.
+// - 2024 is the clearest local-execution stress year: LOCAL contributes -3.516R versus matched K1 and changes matched outcomes from
+//   17 TP /1 SL /20 Timeout under old geometry to 23 TP /10 SL /5 Timeout. The local geometry converts many Timeouts to TP, but the
+//   extra local stop-outs are large enough to erase the gain. FALLBACK adds another -3.232R delta in 2024.
+// - Causal FALLBACK is the systematic drag: versus K1 NEXT OPEN on the same fallback signals it is worse in 13/15 years and better
+//   only in 2022 and 2023. This is expected mechanically because invalid branches enter at +2 and expired NO-FILL branches at +33,
+//   whereas K1 NEXT OPEN enters at +1. The price-path opportunity set is therefore later and usually weaker.
+// - No locked Phase-3 regime label proves that 2017/2024 are a common 'choppy regime'. Calling them choppy would be an unsupported
+//   post-hoc label. The supported conclusion is timing/geometry sensitivity: local stop-out concentration can hurt some years,
+//   while delayed fallback is a persistent structural cost.
+//
+// =====================================================================================================================
+// TASK 2 — EXPLICIT RISK-ADJUSTED COMPARISON
+// =====================================================================================================================
+// K1 NEXT OPEN:
+// - Net +$1,320.72; MaxDD 13.90%; HC 15/15; positive years 8/15; Timeout 468/878 = 53.30%.
+// - Profit per one MaxDD percentage point = $1,320.72 / 13.9034 = $94.99 per 1% DD.
+// Hybrid Causal Repair:
+// - Net +$1,329.25; MaxDD 9.38%; HC 15/15; positive years 7/15; Timeout 358/878 = 40.77%.
+// - Profit per one MaxDD percentage point = $1,329.25 / 9.3833 = $141.66 per 1% DD.
+// Risk-adjusted delta:
+// - Hybrid profit/DD efficiency is 1.491x K1, approximately +49.1% better.
+// - MaxDD falls by 4.52 percentage points, a 32.5% relative DD reduction, while total net remains effectively equal (+$8.54).
+//
+// Timeout consistency by OOS year (15 years):
+// - K1: mean 31.20 Timeouts/year; population SD 5.89; range 18..42. Mean annual Timeout rate 53.46%; SD 5.70 pp.
+// - Hybrid: mean 23.87 Timeouts/year; population SD 6.03; range 12..34. Mean annual Timeout rate 40.55%; SD 6.64 pp.
+// - Aggregate reduction = 110 Timeouts, or -23.5% relative to K1.
+// - Hybrid has fewer Timeouts in 14/15 OOS years. The only exception is 2015: 28 versus K1 25 (+3).
+// Interpretation for manual execution: Hybrid materially reduces how often signals remain unresolved/stuck, but it does NOT make
+// the year-to-year Timeout rate statistically smoother; its level is much lower while rate variation is slightly higher.
+//
+// =====================================================================================================================
+// TASK 3 — FINAL DECISION
+// =====================================================================================================================
+// FINAL RECOMMENDATION: OPTION (b) — UPGRADE TO HYBRID CAUSAL REPAIR AS THE ENTRY PRODUCTION CHOICE.
+// Reasoning from existing Phase-3 evidence only:
+// 1) Absolute OOS profit is effectively tied: +$1,329.25 Hybrid versus +$1,320.72 K1 (+$8.54, not treated as a profit edge).
+// 2) Coverage remains 100% and HC remains 15/15, so the risk improvement is not purchased by dropping source coverage.
+// 3) MaxDD improves materially: 13.90% -> 9.38% (-32.5% relative).
+// 4) Timeout improves materially: 53.30% -> 40.77%, 110 fewer unresolved trades across OOS and fewer Timeouts in 14/15 years.
+// 5) Profit per DD point improves from $94.99 to $141.66 (+49.1%). This is the strongest objective advantage between the two.
+// 6) The counterweight is real: positive years fall 8/15 -> 7/15 and annual-return median is weaker, so Hybrid is NOT declared
+//    superior as a raw alpha engine. The recommendation is specifically a risk-adjusted/execution-quality upgrade.
+// 7) The 2017/2024 losses are not dismissed as random noise. They expose local/fallback path sensitivity, especially delayed
+//    fallback drag. Nevertheless, the full OOS account still preserves equal net with substantially lower drawdown/Timeout burden.
+//
+// PRODUCTION DECISION BOUNDARY:
+// - This payload records the research choice only. It does NOT modify Amy-SMC-D.pine or promote executable code by itself.
+// - Any actual production implementation still requires a separate explicit Amy instruction.
+// - No additional construction is requested or proposed. Phase 3 entry-construction research is CLOSED with Hybrid Causal Repair
+//   as the selected production candidate and K1 NEXT OPEN retained as the frozen benchmark/reference.
+//---------------------------------------------------------------------------------------------------------------------}
