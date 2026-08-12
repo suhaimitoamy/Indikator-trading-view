@@ -12,101 +12,35 @@ permissions:
 jobs:
   append-diagnostic:
     runs-on: ubuntu-latest
-    env:
-      PAYLOAD_B64: >-
-        Ci8vLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t
-        LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tfQovLyBBTVkgU01DIEQtTEFCIOKAlCBLMSBNMTUgVElNRU9VVCBBVVRPUFNZIFBIQVNFIDIgKDIwMjYt
-        MDgtMTIpCi8vIERJQUdOT1NUSUMgT05MWS4gQ29udGludWF0aW9uIG9mIFBoYXNlLTEgYXV0b3BzeSBAIGYwNmZmNDRkMDE0YzVjZjQyNzY2YmE3NjBiNjRm
-        NjhiZTU0NDNkNWIuCi8vIE5vIEsxLUsyMS9QdWxsYmFjayBydWxlLCBlbnRyeSwgU0wsIFRQLCBmaWx0ZXIsIHByb2R1Y3Rpb24gZmllbGQsIG9yIGV4ZWN1
-        dGFibGUgUGluZSBsb2dpYyBpcyBjaGFuZ2VkIGhlcmUuCi8vIFBoYXNlLTEgcGFyaXR5IGdhdGUgcmVwcm9kdWNlZCBFWEFDVExZIGJlZm9yZSB0aGlzIGFu
-        YWx5c2lzOiBLMSBNMTUgPSA4NzggZXZlbnRzOyBvcmlnaW5hbCAzMi1iYXIgVGltZW91dCA9IDQ2OC4KLy8gTG9ja2VkIGxpZmVjeWNsZSByZW1haW5zIE5F
-        WFQgT1BFTiArIHNpZ25hbC1sb2NrZWQgc3RydWN0dXJhbCBTTCArIFRQIDAuNDBSICsgTTE1IHNhbWUtYmFyIFNMLWZpcnN0IG9yZGVyaW5nLgovLwovLyBT
-        VEVQIDEg4oCUIEVYVEVOREVEIE9CU0VSVkFUSU9OIE9GIFRIRSA0NjggT1JJR0lOQUwgVElNRU9VVFMKLy8gVGhpcyBpcyBvYnNlcnZhdGlvbiBvbmx5OiBl
-        bnRyeSwgU0wgYW5kIFRQIGFyZSBmcm96ZW4gYXQgdGhlaXIgb3JpZ2luYWwgdmFsdWVzLiBUcmFja2luZyByZXN1bWVzIGFmdGVyIG9yaWdpbmFsIGJhciAz
-        Mi4KLy8gRmlyc3QgcmVzb2x1dGlvbiB0aHJvdWdoIFRPVEFMIGJhciA2NDoKLy8gLSBMYXRlIFRQIDogIDg4IC8gNDY4ID0gMTguODAlCi8vIC0gTGF0ZSBT
-        TCA6ICAzNCAvIDQ2OCA9ICA3LjI2JQovLyAtIFN0aWxsIHVucmVzb2x2ZWQ6IDM0NiAvIDQ2OCA9IDczLjkzJQovLyBGaXJzdCByZXNvbHV0aW9uIHRocm91
-        Z2ggVE9UQUwgYmFyIDk2ICgzeCBvcmlnaW5hbCBob3Jpem9uKToKLy8gLSBMYXRlIFRQIDogMTQ2IC8gNDY4ID0gMzEuMjAlCi8vIC0gTGF0ZSBTTCA6ICA3
-        MCAvIDQ2OCA9IDE0Ljk2JQovLyAtIFN0aWxsIHVucmVzb2x2ZWQ6IDI1MiAvIDQ2OCA9IDUzLjg1JQovLyAtIFNhbWUtTTE1LWJhciBUUC9TTCBjb2xsaXNp
-        b24gaW4gdGhlIGV4dGVuc2lvbjogMC4KLy8gQW1vbmcgdGhlIDIxNiBldmVudHMgdGhhdCBESUQgcmVzb2x2ZSBieSBiYXIgOTYsIDY3LjU5JSByZXNvbHZl
-        ZCBUUC1maXJzdCBhbmQgMzIuNDElIFNMLWZpcnN0LgovLyBFeHRyYSB0aW1lIGJleW9uZCBvcmlnaW5hbCBiYXIgMzIsIHJlc29sdmVkLWJ5LTk2IHBvcHVs
-        YXRpb246Ci8vIC0gQWxsIHJlc29sdmVkIG49MjE2OiBtZWRpYW4gKzI3IE0xNSBiYXJzOyBtZWRpYW4gd2FsbC1jbG9jayArNy4yNWguCi8vIC0gTGF0ZSBU
-        UCBuPTE0NjogbWVkaWFuICsyMy41IE0xNSBiYXJzIChQMjUvUDc1ICs4LjI1Lys0MS4wKTsgd2FsbC1jbG9jayBtZWRpYW4gKzYuNzVoLgovLyAtIExhdGUg
-        U0wgbj03MDogbWVkaWFuICszMyBNMTUgYmFycyAoUDI1L1A3NSArMTQuMC8rNTAuNzUpOyB3YWxsLWNsb2NrIG1lZGlhbiArOS4wMGguCi8vIFRhaWwtcGVy
-        c2lzdGVuY2Ugc2Vuc2l0aXZpdHksIHN0aWxsIHdpdGggdGhlIFNBTUUgZnJvemVuIFRQL1NMOiBiYXIxMjggdW5yZXNvbHZlZCAxOTMvNDY4PTQxLjI0JTsK
-        Ly8gYmFyMTkyIHVucmVzb2x2ZWQgMTMzLzQ2OD0yOC40MiU7IGJhcjI1NiB1bnJlc29sdmVkIDk1LzQ2OD0yMC4zMCUuIFRoZXNlIGFyZSBvYnNlcnZhdGlv
-        biB0YWlscywgbm90IG5ldyBob3Jpem9ucyBmb3IgSzEuCi8vCi8vIFNURVAgMiDigJQgT1JJR0lOQUwtMzItQkFSIE1GRSBJTlNJREUgVElNRU9VVCBQT1BV
-        TEFUSU9OCi8vIFBoYXNlLTEgcGFyaXR5IE1GRSBSIFAyNS9QNTAvUDc1L1A5MCA9IDAuMDc2NSAvIDAuMTY3NSAvIDAuMjc3MCAvIDAuMzUwNC4KLy8gVGhy
-        ZXNob2xkIGNvdW50cyBhcmUgZGVzY3JpcHRpdmUgcHJvYmVzIG9ubHk7IG5vbmUgd2FzIG9wdGltaXplZCBvciBwcm9tb3RlZCBhcyBhIHJ1bGU6Ci8vIC0g
-        TUZFID49IDAuMTBSOiAzMTMgLyA0NjggPSA2Ni44OCUKLy8gLSBNRkUgPj0gMC4yMFI6IDIwMSAvIDQ2OCA9IDQyLjk1JQovLyAtIE1GRSA+PSAwLjI1Ujog
-        MTQzIC8gNDY4ID0gMzAuNTYlCi8vIC0gTUZFID49IDAuMzBSOiAgOTIgLyA0NjggPSAxOS42NiUKLy8gLSBNRkUgPj0gMC4zNVI6ICA0OCAvIDQ2OCA9IDEw
-        LjI2JQovLyAtIE1GRSA+PSAwLjM3NVI6IDIzIC8gNDY4ID0gIDQuOTElCi8vIC0gTUZFID49IDAuMzlSOiAgIDggLyA0NjggPSAgMS43MSUKLy8gVGhlcmVm
-        b3JlIDM3Ni80Njg9ODAuMzQlIG5ldmVyIGV2ZW4gcmVhY2hlZCAwLjMwUiwgYW5kIDI2Ny80Njg9NTcuMDUlIG5ldmVyIHJlYWNoZWQgMC4yMFIgaW4gdGhl
-        IG9yaWdpbmFsIGhvcml6b24uCi8vIEV4dGVuZGVkIG91dGNvbWUgYXNzb2NpYXRpb24gKHBvc3QtZW50cnkgZGlhZ25vc3RpYyBvbmx5KToKLy8gLSBPcmln
-        aW5hbCBNRkUgPj0wLjMwUiAobj05Mik6IGJ5IGJhcjk2IFRQIDU3LjYxJSwgU0wgMTcuMzklLCB1bnJlc29sdmVkIDI1LjAwJS4KLy8gLSBPcmlnaW5hbCBN
-        RkUgPCAwLjMwUiAobj0zNzYpOiBieSBiYXI5NiBUUCAyNC43MyUsIFNMIDE0LjM2JSwgdW5yZXNvbHZlZCA2MC45MCUuCi8vIFRodXMgYSByZWFsICJhbG1v
-        c3QgcmVhY2hlZCAwLjQwUiIgc3Vic2V0IGV4aXN0cywgYnV0IGl0IGlzIGEgbWlub3JpdHkgcmF0aGVyIHRoYW4gdGhlIGRvbWluYW50IFRpbWVvdXQgbWVj
-        aGFuaXNtLgovLwovLyBTVEVQIDMg4oCUIFBSRS1FTlRSWSBERVNDUklQVElWRSBDSEFSQUNURVJJU1RJQ1M6IENMRUFOIFdJTk5FUiB2cyBUSU1FT1VUCi8v
-        IEdyb3VwcyBhcmUgZnJvemVuIGZyb20gUGhhc2UgMTogQ2xlYW4gV2lubmVyIG49MzI0OyBUaW1lb3V0IG49NDY4LgovLyBRdWFudGlsZXMgYmVsb3cgYXJl
-        IFAyNSAvIFA1MCAvIFA3NSAvIFA5MCBhbmQgYXJlIG1lYXN1cmVkIG9uL2F0IHRoZSBDT05GSVJNRUQgc2lnbmFsIGNhbmRsZSB1bmxlc3Mgc3RhdGVkLgov
-        LyBRVkIgYm9keSAvIEFUUjE0OgovLyAtIENsZWFuICA6IDEuNTE1MSAvIDEuODg4MyAvIDIuNTkzOCAvIDMuMjg0MgovLyAtIFRpbWVvdXQ6IDEuNDg4MiAv
-        IDEuOTM0MiAvIDIuNTU2OCAvIDMuMzY3NgovLyBRVkIgYm9keSAvIGNhbmRsZSByYW5nZToKLy8gLSBDbGVhbiAgOiAwLjczNjAgLyAwLjgxMDEgLyAwLjg4
-        ODggLyAwLjk0NTAKLy8gLSBUaW1lb3V0OiAwLjc2MzYgLyAwLjgyODggLyAwLjkwMTMgLyAwLjk0OTQKLy8gUVZCIGZ1bGwgcmFuZ2UgLyBBVFIxNDoKLy8g
-        LSBDbGVhbiAgOiAxLjg3NDAgLyAyLjM5MDIgLyAzLjEyMDcgLyAzLjk2NTAKLy8gLSBUaW1lb3V0OiAxLjgwOTQgLyAyLjM4NjkgLyAzLjE1NjcgLyAzLjkz
-        MDAKLy8gQVRSMTQgcmF3IFhBVVVTRDoKLy8gLSBDbGVhbiAgOiAxLjI5ODMgLyAxLjgzMjAgLyAyLjgwODkgLyA0LjgyMzAKLy8gLSBUaW1lb3V0OiAxLjM5
-        MzMgLyAyLjE2NDMgLyAzLjA5MzQgLyA0LjcwOTQKLy8gQVRSMTQgYXMgJSBvZiBzaWduYWwgY2xvc2U6Ci8vIC0gQ2xlYW4gIDogMC4wODUwIC8gMC4xMTQz
-        IC8gMC4xNTMyIC8gMC4yMTIyJQovLyAtIFRpbWVvdXQ6IDAuMDk1OSAvIDAuMTMwMiAvIDAuMTczMSAvIDAuMjE1NiUKLy8gU2lnbmFsLWNsb3NlIHN0cnVj
-        dHVyYWwgcm9vbSB0byB0aGUgbG9ja2VkIG9wcG9zaXRlIFN3aW5nIGJvdW5kYXJ5IC8gQVRSMTQgKHN0cmljdGx5IGtub3duIGJlZm9yZSBORVhUIE9QRU4p
-        OgovLyAtIENsZWFuICA6IDYuNTA3MCAvIDcuODgwOSAvIDkuOTM1NiAvIDEyLjM0OTggQVRSCi8vIC0gVGltZW91dDogNy44OTk5IC8gMTAuNTc3NiAvIDEz
-        Ljk4MzcgLyAxOS44NDYyIEFUUgovLyBBY3R1YWwgTkVYVC1PUEVOIDAuNDBSIFRQIGRpc3RhbmNlIGV4cHJlc3NlZCBpbiBBVFIxNCAoZXhlY3V0aW9uIGdl
-        b21ldHJ5LCBub3QgYSBwcmUtZW50cnkgZmVhdHVyZSk6Ci8vIC0gQ2xlYW4gIDogMi41OTk4IC8gMy4xNjYwIC8gMy45NzUzIC8gNC45NDUxIEFUUgovLyAt
-        IFRpbWVvdXQ6IDMuMTc0OCAvIDQuMjM0NSAvIDUuNTkzNCAvIDcuOTM1NSBBVFIKLy8gTWVkaWFuIGNvbXBhcmlzb246IGJvZHkvQVRSIGRpZmZlcnMgb25s
-        eSArMi40MyUgVGltZW91dC12cy1DbGVhbjsgZnVsbC1yYW5nZS9BVFIgaXMgZWZmZWN0aXZlbHkgaWRlbnRpY2FsICgtMC4xNCUpLgovLyBJbiBjb250cmFz
-        dCwgbWVkaWFuIHNpZ25hbCBzdHJ1Y3R1cmFsIHJvb20gaXMgKzM0LjIyJSBsYXJnZXIgYW5kIHRoZSBhY3R1YWwgMC40MFIgVFAgaXMgKzMzLjc1JSBmYXJ0
-        aGVyIGluIEFUUiB1bml0cy4KLy8gRGVzY3JpcHRpdmUgQ2xpZmYncyBkZWx0YSAoVGltZW91dCBtaW51cyBDbGVhbik6IGJvZHkvQVRSIC0wLjAwNCwgYm9k
-        eS9yYW5nZSArMC4wODgsIHJhbmdlL0FUUiAtMC4wMjYsCi8vIEFUUiByYXcgKzAuMTE5LCBBVFIlICswLjE0MCwgc2lnbmFsLXJvb20vQVRSICswLjQxMCwg
-        ZGlyZWN0aW9uLW5vcm1hbGl6ZWQgRFIgbG9jYXRpb24gKzAuMTgzLgovLyBUaGUgc3Ryb25nZXN0IHNlcGFyYXRpb24gaXMgdGhlcmVmb3JlIHN0cnVjdHVy
-        YWwtcm9vbSBnZW9tZXRyeSwgbm90IHdlYWsgUVZCIGNhbmRsZSBkaXNwbGFjZW1lbnQuCi8vCi8vIFNFU1NJT04gREVTQ1JJUFRJVkUgUFJPRklMRQovLyBD
-        bG9jayBub3JtYWxpemF0aW9uIGZvciBjb21wYXJhYmlsaXR5OiAyMDEyLTIwMjUgSGlzdERhdGEgZml4ZWQgVVRDLTA1IHNvdXJjZSB3YWxsLXRpbWUgLT4g
-        VVRDICgrNWgpOyAyMDI2IER1a2FzY29weSBpcyBVVEMuCi8vIEZpeGVkIG5vbi1vcHRpbWl6ZWQgYmlucyAobm8gRFNUIGFkanVzdG1lbnQpOiBBc2lhIDAw
-        LTA4IFVUQzsgTG9uZG9uIDA4LTEzOyBMb25kb24tTlkgb3ZlcmxhcCAxMy0xNzsKLy8gTlktb25seSAxNy0yMjsgcm9sbG92ZXIvb2ZmIDIyLTI0LgovLyAt
-        IENsZWFuIG49MzI0ICA6IEFzaWEgMjEuOTElIHwgTG9uZG9uIDM0LjU3JSB8IE92ZXJsYXAgMzYuMTElIHwgTlkgNi4xNyUgfCBSb2xsb3ZlciAxLjIzJQov
-        LyAtIFRpbWVvdXQgbj00Njg6IEFzaWEgMjUuODUlIHwgTG9uZG9uIDE5LjAyJSB8IE92ZXJsYXAgNDEuNDUlIHwgTlkgMTAuOTAlIHwgUm9sbG92ZXIgMi43
-        OCUKLy8gTGFyZ2VzdCBkZXNjcmlwdGl2ZSBzaGlmdCBpcyBMb25kb24tb25seTogVGltZW91dCAtMTUuNTUgcGVyY2VudGFnZSBwb2ludHMgdnMgQ2xlYW47
-        IG92ZXJsYXAvTlkvQXNpYSBhcmUgaGlnaGVyIGluIFRpbWVvdXQuCi8vIFRoaXMgcGF0dGVybiByZW1haW5zIHZpc2libGUgd2hlbiBCVVkvU0VMTCBhcmUg
-        aW5zcGVjdGVkIHNlcGFyYXRlbHk7IGl0IGlzIE5PVCB0ZXN0ZWQgYXMgYSBmaWx0ZXIgb3IgY2F1c2FsIHJ1bGUgaGVyZS4KLy8KLy8gREVBTElORy1SQU5H
-        RSBERVNDUklQVElWRSBQUk9GSUxFCi8vIE5hdGl2ZSBNMTUgRC1maXggaXMgcmV0YWluZWQgZXhhY3RseSAoNjAvNDApLiBLMSBRVkIgZXZlbnRzIG1lY2hh
-        bmljYWxseSBzaXQgb24gdGhlIHByZWRpY3RlZC1zaWRlIGV4dHJlbWU6Ci8vIENsZWFuID0gMTU2IFBSRU1JVU0gQlVZLXNpZGUgLyAxNjggRElTQ09VTlQg
-        U0VMTC1zaWRlIGJ5IGRpcmVjdGlvbiBtYXBwaW5nOyBUaW1lb3V0ID0gMjU1IC8gMjEzOyBubyBFUVVJTElCUklVTSBjYXNlcy4KLy8gRGlyZWN0aW9uLW5v
-        cm1hbGl6ZWQgRFIgbG9jYXRpb24gKDEuMCA9IGZhcnRoZXIgdG93YXJkIHByZWRpY3RlZC1zaWRlIGVkZ2UpLCBQMjUvUDUwL1A3NS9QOTA6Ci8vIC0gQ2xl
-        YW4gIDogMC45MzczIC8gMC45NjcyIC8gMC45ODU1IC8gMC45OTQ5Ci8vIC0gVGltZW91dDogMC45NTUzIC8gMC45Nzc2IC8gMC45OTA1IC8gMC45OTY3Ci8v
-        IEJvdGggZ3JvdXBzIGFyZSBhbHJlYWR5IGhpZ2hseSBleHRyZW1lOyBEUiBsb2NhdGlvbiBpcyBhIG11Y2ggd2Vha2VyIHNlcGFyYXRvciB0aGFuIHN0cnVj
-        dHVyYWwtcm9vbSBnZW9tZXRyeS4KLy8KLy8gSU5URVJOQUwgQ09NUE9TSVRJT04gT0YgVEhFIDQ2OCBUSU1FT1VUUyBBVCBCQVIgOTYgKERFU0NSSVBUSVZF
-        LCBOT1QgQSBGSUxURVIgVEVTVCkKLy8gTGF0ZSBUUCBuPTE0NjogbWVkaWFuIGJvZHkvQVRSIDEuOTkyOyBBVFIgMi4yMjU7IHNpZ25hbC1yb29tIDkuMjgy
-        IEFUUjsgb3JpZ2luYWwgTUZFIDAuMjQ2UjsgTUFFIDAuMjY1Ui4KLy8gTGF0ZSBTTCBuPTcwIDogbWVkaWFuIGJvZHkvQVRSIDIuMDY0OyBBVFIgMS42NTU7
-        IHNpZ25hbC1yb29tIDcuNzA0IEFUUjsgb3JpZ2luYWwgTUZFIDAuMTUwUjsgTUFFIDAuNjI4Ui4KLy8gU3RpbG....948 chars truncated...bnRyYWwgbG9jY2VkIHN0cnVjdHVyYWwgcm9vbSwK        Ly8gd2hpY2ggbWFrZXMgdGhlIHVuY2hhbmdlZCAwLjQwUiBUUCBtYXRlcmlhbGx5IGZhcnRoZXIgYXdheSBpbiBBVFIgdW5pdHM7IHNlcGFyYXRlbHksIG1v        c3QgVGltZW91dHMgc2hvdyB3ZWFrIHJlYWxpemVkIGZvbGxvdy10aHJvdWdoCi8vIGluc2lkZSAzMiBiYXJzICg4MC4zNCUgbmV2ZXIgcmVhY2hlZCAwLjMw        UikuIFRodXMgdGhlIHBvcHVsYXRpb24gaXMgYmVzdCBkZXNjcmliZWQgYXMgYSBtaXh0dXJlIG9mIGRlbGF5ZWQgZm9sbG93LXRocm91Z2ggYW5kCi8vIHBl        cnNpc3RlbnQgcGFjZS9nZW9tZXRyeSBzdGFsbCwgbm90IGEgc2luZ2xlICJiYWQgZGlyZWN0aW9uIiBvciAid2VhayBicmVha291dCBjYW5kbGUiIGNsYXNz        LgovLyBUaGlzIHBheWxvYWQgZGVsaWJlcmF0ZWx5IHN0b3BzIGF0IGRpYWdub3Npcy4gTm8gSzEgZmlsdGVyLCBzZXNzaW9uIGdhdGUsIERSIGdhdGUsIFRQ        L1NMIGNoYW5nZSwgb3IgcHJvZHVjdGlvbiBwcm9tb3Rpb24gd2FzIHRlc3RlZC4KLy8tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t        LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS19Cg==
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Append verified comment-only payload
+      - name: Append verified diagnostic comments
         shell: bash
         run: |
           set -euo pipefail
           git diff --quiet f06ff44d014c5cf42766ba760b64f68be5443d5b HEAD -- Amy-SMC-D-LAB.pine
-          printf '%s' "$PAYLOAD_B64" | base64 -d >> Amy-SMC-D-LAB.pine
           python - <<'PY'
+          from pathlib import Path
           import subprocess
+          lab = Path('Amy-SMC-D-LAB.pine')
+          tmp = Path('reports/.tmp-k1-timeout-phase2.txt')
           old = subprocess.check_output(['git','show','f06ff44d014c5cf42766ba760b64f68be5443d5b:Amy-SMC-D-LAB.pine'], text=True)
-          new = open('Amy-SMC-D-LAB.pine', encoding='utf-8').read()
-          assert new.startswith(old), 'Existing LAB content changed; aborting.'
-          tail = new[len(old):]
-          assert 'K1 M15 TIMEOUT AUTOPSY PHASE 2' in tail
-          for line in tail.splitlines():
-              assert (not line.strip()) or line.lstrip().startswith('//'), f'Non-comment appended line: {line!r}'
+          current = lab.read_text(encoding='utf-8')
+          assert current == old, 'LAB differs from Phase-1 head before append.'
+          payload = tmp.read_text(encoding='utf-8')
+          assert 'K1 M15 TIMEOUT AUTOPSY PHASE 2' in payload
+          for line in payload.splitlines():
+              assert (not line.strip()) or line.lstrip().startswith('//'), f'Non-comment payload line: {line!r}'
+          lab.write_text(current + payload, encoding='utf-8')
+          new = lab.read_text(encoding='utf-8')
+          assert new.startswith(old)
+          assert new[len(old):] == payload
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/one-shot-k1-timeout-autopsy.yml
+          git rm reports/.tmp-k1-timeout-phase2.txt
           git add Amy-SMC-D-LAB.pine
           git diff --cached --check
           git commit -m "docs: add K1 M15 timeout autopsy phase 2"
