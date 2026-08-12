@@ -1,0 +1,43 @@
+name: One-shot D-LAB BSL continuation trigger fix
+on:
+  push:
+    paths:
+      - '.github/workflows/dlab-bsl-continuation-fix-oneshot.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify locks and correct continuation trigger
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Amy-SMC-D.pine)" = "d6e6d7c979dd5a852bddd9661bef0480caa2eb35"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('Amy-SMC-D-LAB.pine')
+          s=p.read_text(encoding='utf-8')
+          changes={
+            "// Native BSL sweep is the trigger source. No standalone BSL/SSL semantics are overwritten.": "// Native BSL continuation is the trigger source: BSL sweep + bullish Internal Structure. No standalone BSL/SSL semantics are overwritten.",
+            "bool amyDlabBslStrongBullAtrSignal = barstate.isconfirmed and amyDlabBslValidatedTF and amyBSLSweep and amyDlabBslMacroBull and amyDlabBslAtrExpansion and not na(amyBullInvalidation) and amyBullInvalidation < close": "bool amyDlabBslStrongBullAtrSignal = barstate.isconfirmed and amyDlabBslValidatedTF and amySweepContinuationBias == BULLISH and amyDlabBslMacroBull and amyDlabBslAtrExpansion and not na(amyBullInvalidation) and amyBullInvalidation < close",
+            "// M15: 32 raw signals / 30 non-overlapping executions | WR 86.67% | End $10,678.93 | MaxDD 1.00% | MedSL 23.53 | MedTP 9.73.": "// M15: 30 raw signals / 28 non-overlapping executions | WR 85.71% | End $10,572.32 | MaxDD 1.00% | MedSL 24.45 | MedTP 9.78.",
+            "// Research-fold TF proxy (H1 through 2022, M15 2023-2026): 17 executions | End $10,111.64 | MaxDD 2.00%.": "// Research-fold TF proxy (H1 through 2022, M15 2023-2026): 16 executions | WR 75.00% | End $10,069.60 | MaxDD 2.00%."
+          }
+          for old,new in changes.items():
+              if s.count(old)!=1:
+                  raise SystemExit(f'Expected exactly one match: {old[:80]!r}; got {s.count(old)}')
+              s=s.replace(old,new)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit correction and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dlab-bsl-continuation-fix-oneshot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Amy-SMC-D-LAB.pine .github/workflows/dlab-bsl-continuation-fix-oneshot.yml
+          git commit -m "fix: preserve native BSL continuation trigger"
+          git push origin HEAD:main
