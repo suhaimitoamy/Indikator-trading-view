@@ -1,0 +1,41 @@
+name: Append D-LAB TP retune payload
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-tp-retune-floor5.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  append-payload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Append comment-only TP retune payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Amy-SMC-D.pine)" = 'd6e6d7c979dd5a852bddd9661bef0480caa2eb35'
+          test "$(git hash-object Amy-SMC-D-LAB.pine)" = '6ab0c08f447e2df1c6148171b3f10881b1c57e00'
+          test -f .tmp/k1-hybrid-tp-retune-floor5-payload.txt
+          ! grep -q 'TP/R RE-OPTIMIZATION UNDER REALISTIC' Amy-SMC-D-LAB.pine
+          if grep -Ev '^[[:space:]]*(//.*)?$' .tmp/k1-hybrid-tp-retune-floor5-payload.txt; then
+            echo 'Payload contains a non-comment line'
+            exit 1
+          fi
+          cp Amy-SMC-D.pine /tmp/production.before
+          cat .tmp/k1-hybrid-tp-retune-floor5-payload.txt >> Amy-SMC-D-LAB.pine
+          cmp -s Amy-SMC-D.pine /tmp/production.before
+          git diff --exit-code -- Amy-SMC-D.pine
+          test "$(git diff --name-only)" = 'Amy-SMC-D-LAB.pine'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Amy-SMC-D-LAB.pine
+          git commit -m 'docs: add TP retune under realistic floor'
+          git push origin main
