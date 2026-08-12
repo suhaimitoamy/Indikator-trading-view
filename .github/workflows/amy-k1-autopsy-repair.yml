@@ -1,0 +1,45 @@
+name: One-shot K1 autopsy repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/amy-k1-autopsy-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore untouched FVG lines and remove one-shot workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('Amy-SMC-D-LAB.pine')
+          s = p.read_text(encoding='utf-8')
+
+          bad_bull = "        fairValueGaps.unshift(fairValueGap.new(currentLow,last2High,BULLISH,fairValueGapBox(lastTime,currentTime,currentLow,math.avg(currentLow,last2High),fairValueGapsBullColorInput),fairValueGapBox(lastTime,currentTime,math.avg(currentLow,last2High),last2High,fairValueGapsBullColorInput)))"
+          good_bull = "        fairValueGaps.unshift(fairValueGap.new(currentLow,last2High,BULLISH,fairValueGapBox(lastTime,currentTime,currentLow,math.avg(currentLow,last2High),fairValueGapBullishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentLow,last2High),last2High,fairValueGapBullishColor)))"
+          bad_bear = "        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),fairValueGapsBearColorInput),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapsBearColorInput)))"
+          good_bear = "        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),fairValueGapBearishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapBearishColor)))"
+
+          assert s.count(bad_bull) == 1, f'unexpected bullish match count: {s.count(bad_bull)}'
+          assert s.count(bad_bear) == 1, f'unexpected bearish match count: {s.count(bad_bear)}'
+          s = s.replace(bad_bull, good_bull).replace(bad_bear, good_bear)
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/amy-k1-autopsy-repair.yml
+          git add Amy-SMC-D-LAB.pine
+          git diff --cached --check
+          git commit -m "fix: restore untouched LAB code after K1 autopsy"
+          git push
