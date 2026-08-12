@@ -492,10 +492,10 @@ drawFairValueGaps() =>
 
     if bullishFairValueGap
         currentAlerts.bullishFairValueGap := true
-        fairValueGaps.unshift(fairValueGap.new(currentLow,last2High,BULLISH,fairValueGapBox(lastTime,currentTime,currentLow,math.avg(currentLow,last2High),fairValueGapBullishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentLow,last2High),last2High,fairValueGapBullishColor)))
+        fairValueGaps.unshift(fairValueGap.new(currentLow,last2High,BULLISH,fairValueGapBox(lastTime,currentTime,currentLow,math.avg(currentLow,last2High),fairValueGapsBullColorInput),fairValueGapBox(lastTime,currentTime,math.avg(currentLow,last2High),last2High,fairValueGapsBullColorInput)))
     if bearishFairValueGap
         currentAlerts.bearishFairValueGap := true
-        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),fairValueGapBearishColor),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapBearishColor)))
+        fairValueGaps.unshift(fairValueGap.new(currentHigh,last2Low,BEARISH,fairValueGapBox(lastTime,currentTime,currentHigh,math.avg(currentHigh,last2Low),fairValueGapsBearColorInput),fairValueGapBox(lastTime,currentTime,math.avg(currentHigh,last2Low),last2Low,fairValueGapsBearColorInput)))
 
 getStyle(string style) =>
     switch style
@@ -1995,3 +1995,87 @@ alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull AT
 // H1 : 9 raw signals / 2 non-overlapping executions | sample too small for HC; do not infer robustness.
 // Research-fold TF proxy (H1 through 2022, M15 2023-2026): 16 executions | WR 75.00% | End $10,069.60 | MaxDD 2.00%.
 // Therefore this code is LAB/FORWARD-TEST ONLY. The old $14,934.91 / 716-trade result is not claimed as executable validation.
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — K1 M15 AUTOPSY DIAGNOSTIC PAYLOAD (2026-08-12)
+// DIAGNOSTIC ONLY. No K1-K21/Pullback rule, filter, trigger, target, or production logic is changed by this block.
+// Universe parity: 878 executable K1 M15 events reconstructed from the frozen D-LAB source semantics + repaired/audited XAUUSD.
+// Replayed headline parity: directional = 796/878 = 90.6606%; TP hits = 351/878 = 39.9772%; gap = 445/878 = 50.6834 pp.
+//
+// STEP 0 — METRIC-DEFINITION AUDIT
+// Directional accuracy:
+// - Signal/reference: confirmed K1/QVB signal candle; no trade-entry price is used by this metric.
+// - Horizon: next 32 CLOSED M15 bars.
+// - Correct: the predicted direction survives all 32 bars without the locked opposite Swing structural-cancellation boundary
+//   being touched/crossed by M15 high/low. TP is ignored; end-of-horizon net displacement is NOT the correctness test.
+// TP win rate:
+// - Signal is known only after the K1/QVB M15 candle closes; execution reference = OPEN of the next M15 candle.
+// - The opposite Swing/invalidation boundary is locked from the signal candle; R = abs(NEXT OPEN - locked stop).
+// - TP = NEXT OPEN +/- 0.40R; evaluation horizon = the same next 32 M15 bars.
+// - M15 OHLC is the execution ordering source. If TP and SL are both reachable in the same M15 bar, legacy rule = SL first.
+// - Replay parity proves the historical 39.98% uses NEXT OPEN as the TP/R reference: it yields exactly 351 TP hits;
+//   signal-close target reference would yield 352 and is therefore not the historical scoring definition.
+// - The chart helper amyDlabK1TpRef is a signal-close display reference; do not confuse it with the historical NEXT-OPEN score.
+// Measurement mismatch: horizons are both 32 bars, but the metrics do NOT share an outcome definition/reference.
+// Directional = structural survival and is TP-blind. TP WR = explicit NEXT-OPEN 0.40R barrier hit.
+// Historical bookkeeping note: the older directional workbook has 877 OOS QVB rows, while executable D-LAB K1 has 878.
+// This autopsy uses the executable 878-event universe and recomputes directional survival on those same 878 events.
+//
+// STEP 1 — PATH CLASSIFICATION
+// Requested 5-bucket taxonomy is not exhaustive: 468/878 events touch NEITHER TP nor SL inside 32 bars.
+// Forcing those 468 into Winner/SL-loss/Directional-Failure/Collision would falsify the path data, so a mandatory
+// diagnostic bucket #6 (Unresolved/Timeout) is added. This is a taxonomy correction, NOT a new strategy/filter.
+// Winner split uses a predeclared non-optimized diagnostic threshold: Clean = pre-TP MAE < 0.50R; Dirty = MAE >= 0.50R.
+// #1 Clean Winner                         : 324 / 878 = 36.90%
+// #2 Dirty Winner                         :  27 / 878 =  3.08%
+// #3 Directionally Correct, Execution Loss:   0 / 878 =  0.00%
+// #4 True Directional Failure (SL-first)  :  59 / 878 =  6.72%
+// #5 Ambiguous/Intrabar Collision         :   0 / 878 =  0.00%
+// #6 Unresolved/Timeout (no TP, no SL)     : 468 / 878 = 53.30%
+// Execution x directional cross-tag (needed because TP-first and later structural failure can overlap):
+// - TP first + directional survives 32 bars : 328
+// - TP first + later structural failure      :  23
+// - SL first + directional failure           :  59
+// - Timeout + directional survives 32 bars   : 468
+// - SL first + directional survives          :   0
+// - Same-bar TP/SL collision                 :   0
+// Therefore the hypothesized #3 path (SL first, then still directionally correct under the OLD 90.66% metric) is impossible
+// in this replay: the trade SL is the same locked structural boundary whose touch makes directional-survival false.
+//
+// STEP 2 — MAE/MFE BEFORE EXECUTION RESOLUTION
+// Units below: first R-normalized percentiles P25/P50/P75/P90; then XAUUSD distance P25/P50/P75/P90.
+// #1 Clean Winner (n=324)
+// MAE R   : 0.0371 / 0.1010 / 0.1998 / 0.2765 | XAU: 0.5183 / 1.4715 / 2.9090 / 5.1459
+// MFE R   : 0.4325 / 0.4784 / 0.5712 / 0.6865 | XAU: 5.2500 / 7.2885 / 11.3775 / 19.3280
+// #2 Dirty Winner (n=27)
+// MAE R   : 0.5708 / 0.6260 / 0.7131 / 0.8258 | XAU: 5.1000 / 6.5000 / 13.3215 / 16.8712
+// MFE R   : 0.4639 / 0.5622 / 0.6098 / 0.8943 | XAU: 4.1750 / 8.0700 / 10.4585 / 13.4646
+// #3 Directionally Correct, Execution Loss (n=0)
+// MAE/MFE: N/A — no event exists under the actual structural-survival definition.
+// #4 True Directional Failure / SL-first (n=59)
+// MAE R   : 1.0514 / 1.0980 / 1.2454 / 1.4174 | XAU: 11.7250 / 15.9000 / 21.4000 / 24.2066
+// MFE R   : 0.0529 / 0.1135 / 0.1835 / 0.2963 | XAU: 0.7215 / 1.2000 / 2.7850 / 4.7710
+// #5 Ambiguous/Intrabar Collision (n=0)
+// MAE/MFE: N/A — no same-M15-bar TP+SL first-resolution collision exists in the 878-event replay.
+// #6 Unresolved/Timeout (n=468)
+// MAE R   : 0.1587 / 0.3082 / 0.5350 / 0.7309 | XAU: 3.7175 / 6.7000 / 10.9473 / 19.1652
+// MFE R   : 0.0765 / 0.1675 / 0.2770 / 0.3504 | XAU: 1.6300 / 3.2300 / 6.6300 / 12.0451
+// Additional full-32-bar directional-path diagnostic:
+// - Directional survivors n=796: MAE R P25/P50/P75/P90 = 0.1110/0.2473/0.4733/0.7020;
+//   MFE R = 0.1353/0.3294/0.6144/1.0762.
+// - Structural failures n=82: MAE R = 1.1324/1.3364/1.5719/2.0089;
+//   MFE R = 0.0796/0.1835/0.5027/0.9190.
+// #3-vs-#4 requested comparison cannot be computed because #3 n=0; this zero is itself the diagnostic result.
+//
+// STEP 3 — DIAGNOSTIC DECOMPOSITION (NO FILTER/SOLUTION RECOMMENDATION)
+// Directional-correct count 796 minus TP-hit count 351 = 445 events = 50.6834 pp headline gap.
+// Exact decomposition of that 445-event difference:
+// +468 directionally-correct TIMEOUT/no-barrier events = +53.3030 pp
+//  -23 TP-first winners that later hit structural cancellation inside the 32-bar directional horizon = -2.6196 pp
+//  =445 net events = 50.6834 pp.
+// Diagnosis: the 90.66% -> 39.98% gap is dominated by METRIC/LIFECYCLE MISMATCH + unresolved 32-bar paths,
+// NOT by a large population of "SL first, then direction becomes correct" executions. That hypothesized population is 0.
+// Directional-quality failure exists but is small by the locked metric: 82/878 = 9.34%; 59 are SL-first and 23 had TP first
+// before later structural cancellation. The largest state is 468/878 = 53.30%: structural direction survives but 0.40R TP
+// is never touched within the same 32-bar horizon. This payload intentionally stops at diagnosis; no filter is proposed/tested.
+//---------------------------------------------------------------------------------------------------------------------}
