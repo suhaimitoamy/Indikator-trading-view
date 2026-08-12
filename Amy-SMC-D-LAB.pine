@@ -1906,3 +1906,92 @@ alertcondition(amyDlabK2Event, 'D-LAB K6 QCH RETEST ARM', 'Qualified CHoCH retes
 // RESEARCH RECOMMENDATION LOCK: primary = K1, strongest deployable profile M15; K2 = secondary M15/H1.
 // K3 stays WATCH/context, not primary entry. K4 stays exploratory only. K5/K6 are optional delayed limit variants,
 // with K5 M5 archived; strict same-candle DR+QVB/QCH is archived due near-zero coverage.
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — EXECUTABLE COMBINATORIAL SIGNAL (LAB ONLY)
+// BSL Continue BUY — Strong Bull + ATR Expansion
+// Research lineage: cd2a28e11dbbe6f9b6bb9c262c6bcbf8f9728c09.
+// This block is additive. It does not feed Final Bias, Next Move, Pullback, dashboard fields, K1-K21, or production logic.
+// Trigger uses the native Amy BSL sweep event and interprets it as a BUY continuation candidate only inside the locked H1 regime.
+// H1 regime data is prior-closed only: request.security(..., [1], lookahead_on) to avoid HTF future leakage.
+// IMPORTANT RESEARCH NOTE:
+// The old 716-trade research checkpoint was produced by a research-port rolling-sweep proxy + fold-selected ATR exits.
+// It was not byte-for-byte equivalent to native amyBSLSweep and did not have one fixed structural SL rule.
+// This executable version follows the native Pine BSL event plus the explicit regime/structural-exit mandate below.
+//----------------------------------------------------------------------------------------------------------------------{
+
+amyDlabShowBslStrongBullAtr = input.bool(false, 'Show BSL Continue BUY (Strong Bull+ATR)', group = AMY_DLAB_ENTRY_GROUP)
+
+[amyDlabBslH1Close, amyDlabBslH1Ema50, amyDlabBslH1Ema200, amyDlabBslH1Ema200Back120, amyDlabBslH1Atr14, amyDlabBslH1AtrMedian240] = request.security(
+    syminfo.tickerid,
+    '60',
+    [close[1], ta.ema(close, 50)[1], ta.ema(close, 200)[1], ta.ema(close, 200)[121], ta.atr(14)[1], ta.median(ta.atr(14), 240)[1]],
+    lookahead = barmerge.lookahead_on)
+
+bool amyDlabBslMacroBull = not na(amyDlabBslH1Close) and not na(amyDlabBslH1Ema50) and not na(amyDlabBslH1Ema200) and not na(amyDlabBslH1Ema200Back120) and amyDlabBslH1Close > amyDlabBslH1Ema200 and amyDlabBslH1Ema50 > amyDlabBslH1Ema200 and amyDlabBslH1Ema200 > amyDlabBslH1Ema200Back120
+bool amyDlabBslAtrExpansion = not na(amyDlabBslH1Atr14) and not na(amyDlabBslH1AtrMedian240) and amyDlabBslH1Atr14 > 1.15 * amyDlabBslH1AtrMedian240
+bool amyDlabBslValidatedTF = timeframe.period == '15' or timeframe.period == '60'
+
+// Native BSL sweep is the trigger source. No standalone BSL/SSL semantics are overwritten.
+// M15/H1 only: these are the signal timeframes actually carried by the combinatorial OOS research.
+bool amyDlabBslStrongBullAtrSignal = barstate.isconfirmed and amyDlabBslValidatedTF and amyBSLSweep and amyDlabBslMacroBull and amyDlabBslAtrExpansion and not na(amyBullInvalidation) and amyBullInvalidation < close
+
+// Executable plan is locked at the NEXT bar open, matching the D-LAB next-open execution convention.
+// SL = opposite structural invalidation captured on the signal candle, floored to >= 1.00 XAUUSD.
+// TP = existing D-LAB projected-target geometry from structural risk (0.40 * structural distance or 0.22 * ATR),
+//      but with the manual-trading realism floor >= 2.00 XAUUSD and forced outside the signal candle.
+// The old research-port used train-selected ATR exits by fold, so no single historical ATR stop pair can be embedded
+// without hard-coding OOS-year choices. We intentionally do not hard-code those historical fold selections.
+bool amyDlabBslStrongBullAtrEntryBar = barstate.isnew and amyDlabBslStrongBullAtrSignal[1]
+float amyDlabBslStrongBullAtrRawStop = amyBullInvalidation[1]
+float amyDlabBslStrongBullAtrEntryNow = amyDlabBslStrongBullAtrEntryBar ? open : na
+bool amyDlabBslStrongBullAtrPlanValid = amyDlabBslStrongBullAtrEntryBar and not na(amyDlabBslStrongBullAtrRawStop) and amyDlabBslStrongBullAtrRawStop < amyDlabBslStrongBullAtrEntryNow
+float amyDlabBslStrongBullAtrRiskDistance = amyDlabBslStrongBullAtrPlanValid ? math.max(1.00, amyDlabBslStrongBullAtrEntryNow - amyDlabBslStrongBullAtrRawStop) : na
+float amyDlabBslStrongBullAtrStopNow = amyDlabBslStrongBullAtrPlanValid ? amyDlabBslStrongBullAtrEntryNow - amyDlabBslStrongBullAtrRiskDistance : na
+float amyDlabBslStrongBullAtrSignalAtr = nz(amyEventAtr[1], math.max(high[1] - low[1], syminfo.mintick))
+float amyDlabBslStrongBullAtrTargetDistance = amyDlabBslStrongBullAtrPlanValid ? math.max(2.00, math.max(amyDlabBslStrongBullAtrRiskDistance * 0.40, amyDlabBslStrongBullAtrSignalAtr * 0.22)) : na
+float amyDlabBslStrongBullAtrOutsidePad = math.max(amyDlabBslStrongBullAtrSignalAtr * 0.02, syminfo.mintick)
+float amyDlabBslStrongBullAtrTargetNow = amyDlabBslStrongBullAtrPlanValid ? math.max(amyDlabBslStrongBullAtrEntryNow + amyDlabBslStrongBullAtrTargetDistance, high[1] + amyDlabBslStrongBullAtrOutsidePad) : na
+
+var float amyDlabBslStrongBullAtrEntry = na
+var float amyDlabBslStrongBullAtrSL = na
+var float amyDlabBslStrongBullAtrTP = na
+var label amyDlabBslStrongBullAtrLabel = na
+
+if amyDlabBslStrongBullAtrPlanValid
+    amyDlabBslStrongBullAtrEntry := amyDlabBslStrongBullAtrEntryNow
+    amyDlabBslStrongBullAtrSL := amyDlabBslStrongBullAtrStopNow
+    amyDlabBslStrongBullAtrTP := amyDlabBslStrongBullAtrTargetNow
+
+    if amyDlabShowBslStrongBullAtr
+        if not na(amyDlabBslStrongBullAtrLabel)
+            label.delete(amyDlabBslStrongBullAtrLabel)
+        string amyDlabBslPlanText = 'BSL CONT BUY • STRONG BULL+ATR' +
+          '\nUNTRY ' + amyPrice(amyDlabBslStrongBullAtrEntry) +
+          '\nSL ' + amyPrice(amyDlabBslStrongBullAtrSL) +
+          '\nTP ' + amyPrice(amyDlabBslStrongBullAtrTP)
+        amyDlabBslStrongBullAtrLabel := label.new(
+          bar_index,
+          low - amyOffset * 2.4,
+          amyDlabBslPlanText,
+          xloc = xloc.bar_index,
+          yloc = yloc.price,
+          style = label.style_label_up,
+          color = color.new(GREEN, 84),
+          textcolor = GREEN,
+          size = size.tiny)
+
+plot(amyDlabShowBslStrongBullAtr ? amyDlabBslStrongBullAtrEntry : na, 'BSL Continue BUY Entry', color = color.new(GREEN, 15), linewidth = 1, style = plot.style_linebr)
+plot(amyDlabShowBslStrongBullAtr ? amyDlabBslStrongBullAtrSL : na, 'BSL Continue BUY SL', color = color.new(RED, 10), linewidth = 1, style = plot.style_linebr)
+plot(amyDlabShowBslStrongBullAtr ? amyDlabBslStrongBullAtrTP : na, 'BSL Continue BUY TP', color = color.new(BLUE, 10), linewidth = 1, style = plot.style_linebr)
+
+alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull ATR Expansion', 'BSL Continue BUY - Strong Bull ATR Expansion')
+
+// PRE-COMMIT SANITY LOCK — native executable semantics, repaired/audited XAUUSD, OOS 2012-2026.
+// This is NOT expected to reproduce the old 716 research-port checkpoint because that checkpoint used
+// rolling-50 sweep proxy semantics, ATR-SMA research features, train-selected TF/ATR exits, and no explicit Macro-Bull gate.
+// Exact native-trigger replay with the executable filters produced:
+// M15: 32 raw signals / 30 non-overlapping executions | WR 86.67% | End $10,678.93 | MaxDD 1.00% | MedSL 23.53 | MedTP 9.73.
+// H1 : 9 raw signals / 2 non-overlapping executions | sample too small for HC; do not infer robustness.
+// Research-fold TF proxy (H1 through 2022, M15 2023-2026): 17 executions | End $10,111.64 | MaxDD 2.00%.
+// Therefore this code is LAB/FORWARD-TEST ONLY. The old $14,934.91 / 716-trade result is not claimed as executable validation.
