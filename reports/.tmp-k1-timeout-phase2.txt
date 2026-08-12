@@ -1,0 +1,110 @@
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — K1 M15 TIMEOUT AUTOPSY PHASE 2 (2026-08-12)
+// DIAGNOSTIC ONLY. Continuation of Phase-1 autopsy @ f06ff44d014c5cf42766ba760b64f68be5443d5b.
+// No K1-K21/Pullback rule, entry, SL, TP, filter, production field, or executable Pine logic is changed here.
+// Phase-1 parity gate reproduced EXACTLY before this analysis: K1 M15 = 878 events; original 32-bar Timeout = 468.
+// Locked lifecycle remains NEXT OPEN + signal-locked structural SL + TP 0.40R + M15 same-bar SL-first ordering.
+//
+// STEP 1 — EXTENDED OBSERVATION OF THE 468 ORIGINAL TIMEOUTS
+// This is observation only: entry, SL and TP are frozen at their original values. Tracking resumes after original bar 32.
+// First resolution through TOTAL bar 64:
+// - Late TP :  88 / 468 = 18.80%
+// - Late SL :  34 / 468 =  7.26%
+// - Still unresolved: 346 / 468 = 73.93%
+// First resolution through TOTAL bar 96 (3x original horizon):
+// - Late TP : 146 / 468 = 31.20%
+// - Late SL :  70 / 468 = 14.96%
+// - Still unresolved: 252 / 468 = 53.85%
+// - Same-M15-bar TP/SL collision in the extension: 0.
+// Among the 216 events that DID resolve by bar 96, 67.59% resolved TP-first and 32.41% SL-first.
+// Extra time beyond original bar 32, resolved-by-96 population:
+// - All resolved n=216: median +27 M15 bars; median wall-clock +7.25h.
+// - Late TP n=146: median +23.5 M15 bars (P25/P75 +8.25/+41.0); wall-clock median +6.75h.
+// - Late SL n=70: median +33 M15 bars (P25/P75 +14.0/+50.75); wall-clock median +9.00h.
+// Tail-persistence sensitivity, still with the SAME frozen TP/SL: bar128 unresolved 193/468=41.24%;
+// bar192 unresolved 133/468=28.42%; bar256 unresolved 95/468=20.30%. These are observation tails, not new horizons for K1.
+//
+// STEP 2 — ORIGINAL-32-BAR MFE INSIDE TIMEOUT POPULATION
+// Phase-1 parity MFE R P25/P50/P75/P90 = 0.0765 / 0.1675 / 0.2770 / 0.3504.
+// Threshold counts are descriptive probes only; none was optimized or promoted as a rule:
+// - MFE >= 0.10R: 313 / 468 = 66.88%
+// - MFE >= 0.20R: 201 / 468 = 42.95%
+// - MFE >= 0.25R: 143 / 468 = 30.56%
+// - MFE >= 0.30R:  92 / 468 = 19.66%
+// - MFE >= 0.35R:  48 / 468 = 10.26%
+// - MFE >= 0.375R: 23 / 468 =  4.91%
+// - MFE >= 0.39R:   8 / 468 =  1.71%
+// Therefore 376/468=80.34% never even reached 0.30R, and 267/468=57.05% never reached 0.20R in the original horizon.
+// Extended outcome association (post-entry diagnostic only):
+// - Original MFE >=0.30R (n=92): by bar96 TP 57.61%, SL 17.39%, unresolved 25.00%.
+// - Original MFE < 0.30R (n=376): by bar96 TP 24.73%, SL 14.36%, unresolved 60.90%.
+// Thus a real "almost reached 0.40R" subset exists, but it is a minority rather than the dominant Timeout mechanism.
+//
+// STEP 3 — PRE-ENTRY DESCRIPTIVE CHARACTERISTICS: CLEAN WINNER vs TIMEOUT
+// Groups are frozen from Phase 1: Clean Winner n=324; Timeout n=468.
+// Quantiles below are P25 / P50 / P75 / P90 and are measured on/at the CONFIRMED signal candle unless stated.
+// QVB body / ATR14:
+// - Clean  : 1.5151 / 1.8883 / 2.5938 / 3.2842
+// - Timeout: 1.4882 / 1.9342 / 2.5568 / 3.3676
+// QVB body / candle range:
+// - Clean  : 0.7360 / 0.8101 / 0.8888 / 0.9450
+// - Timeout: 0.7636 / 0.8288 / 0.9013 / 0.9494
+// QVB full range / ATR14:
+// - Clean  : 1.8740 / 2.3902 / 3.1207 / 3.9650
+// - Timeout: 1.8094 / 2.3869 / 3.1567 / 3.9300
+// ATR14 raw XAUUSD:
+// - Clean  : 1.2983 / 1.8320 / 2.8089 / 4.8230
+// - Timeout: 1.3933 / 2.1643 / 3.0934 / 4.7094
+// ATR14 as % of signal close:
+// - Clean  : 0.0850 / 0.1143 / 0.1532 / 0.2122%
+// - Timeout: 0.0959 / 0.1302 / 0.1731 / 0.2156%
+// Signal-close structural room to the locked opposite Swing boundary / ATR14 (strictly known before NEXT OPEN):
+// - Clean  : 6.5070 / 7.8809 / 9.9356 / 12.3498 ATR
+// - Timeout: 7.8999 / 10.5776 / 13.9837 / 19.8462 ATR
+// Actual NEXT-OPEN 0.40R TP distance expressed in ATR14 (execution geometry, not a pre-entry feature):
+// - Clean  : 2.5998 / 3.1660 / 3.9753 / 4.9451 ATR
+// - Timeout: 3.1748 / 4.2345 / 5.5934 / 7.9355 ATR
+// Median comparison: body/ATR differs only +2.43% Timeout-vs-Clean; full-range/ATR is effectively identical (-0.14%).
+// In contrast, median signal structural room is +34.22% larger and the actual 0.40R TP is +33.75% farther in ATR units.
+// Descriptive Cliff's delta (Timeout minus Clean): body/ATR -0.004, body/range +0.088, range/ATR -0.026,
+// ATR raw +0.119, ATR% +0.140, signal-room/ATR +0.410, direction-normalized DR location +0.183.
+// The strongest separation is therefore structural-room geometry, not weak QVB candle displacement.
+//
+// SESSION DESCRIPTIVE PROFILE
+// Clock normalization for comparability: 2012-2025 HistData fixed UTC-05 source wall-time -> UTC (+5h); 2026 Dukascopy is UTC.
+// Fixed non-optimized bins (no DST adjustment): Asia 00-08 UTC; London 08-13; London-NY overlap 13-17;
+// NY-only 17-22; rollover/off 22-24.
+// - Clean n=324  : Asia 21.91% | London 34.57% | Overlap 36.11% | NY 6.17% | Rollover 1.23%
+// - Timeout n=468: Asia 25.85% | London 19.02% | Overlap 41.45% | NY 10.90% | Rollover 2.78%
+// Largest descriptive shift is London-only: Timeout -15.55 percentage points vs Clean; overlap/NY/Asia are higher in Timeout.
+// This pattern remains visible when BUY/SELL are inspected separately; it is NOT tested as a filter or causal rule here.
+//
+// DEALING-RANGE DESCRIPTIVE PROFILE
+// Native M15 D-fix is retained exactly (60/40). K1 QVB events mechanically sit on the predicted-side extreme:
+// Clean = 156 PREMIUM BUY-side / 168 DISCOUNT SELL-side by direction mapping; Timeout = 255 / 213; no EQUILIBRIUM cases.
+// Direction-normalized DR location (1.0 = farther toward predicted-side edge), P25/P50/P75/P90:
+// - Clean  : 0.9373 / 0.9672 / 0.9855 / 0.9949
+// - Timeout: 0.9553 / 0.9776 / 0.9905 / 0.9967
+// Both groups are already highly extreme; DR location is a much weaker separator than structural-room geometry.
+//
+// INTERNAL COMPOSITION OF THE 468 TIMEOUTS AT BAR 96 (DESCRIPTIVE, NOT A FILTER TEST)
+// Late TP n=146: median body/ATR 1.992; ATR 2.225; signal-room 9.282 ATR; original MFE 0.246R; MAE 0.265R.
+// Late SL n=70 : median body/ATR 2.064; ATR 1.655; signal-room 7.704 ATR; original MFE 0.150R; MAE 0.628R.
+// Still unresolved n=252: median body/ATR 1.903; ATR 2.299; signal-room 11.912 ATR; original MFE 0.115R; MAE 0.271R.
+// Persistent unresolved events therefore have the largest structural room and the lowest original favorable excursion,
+// while their QVB candle strength remains close to the other Timeout subgroups.
+//
+// PHASE-2 DIAGNOSIS — NO FILTER/SOLUTION RECOMMENDATION
+// Classification is (c) MIXTURE, with explicit 3x-horizon proportions from the original 468 Timeout events:
+// (a-like) delayed winners: 146/468 = 31.20% reached the SAME 0.40R TP after bar32 but by bar96.
+// delayed failures:          70/468 = 14.96% hit the SAME locked SL after bar32 but by bar96.
+// persistent stall:         252/468 = 53.85% still hit neither boundary even by bar96.
+// Therefore Timeout is NOT simply "wait longer and it wins": more than half remain unresolved at 3x horizon.
+// It is also NOT well described as a weak QVB-trigger population: pre-entry body/ATR, body/range and range/ATR are nearly the same
+// as Clean Winner, and Timeout ATR is actually somewhat higher. The dominant pre-entry difference is larger locked structural room,
+// which makes the unchanged 0.40R TP materially farther away in ATR units; separately, most Timeouts show weak realized follow-through
+// inside 32 bars (80.34% never reached 0.30R). Thus the population is best described as a mixture of delayed follow-through and
+// persistent pace/geometry stall, not a single "bad direction" or "weak breakout candle" class.
+// This payload deliberately stops at diagnosis. No K1 filter, session gate, DR gate, TP/SL change, or production promotion was tested.
+//---------------------------------------------------------------------------------------------------------------------}
