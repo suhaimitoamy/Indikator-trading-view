@@ -2846,3 +2846,77 @@ alertcondition(amyDlabBslStrongBullAtrSignal, 'BSL Continue BUY - Strong Bull AT
 // - Thus TP retuning rescues K1 under the new floor, but does NOT provide leakage-safe evidence to change Hybrid TP yet.
 // - This payload changes research conclusions only. No executable signal, floor, source population or production baseline is modified.
 //---------------------------------------------------------------------------------------------------------------------}
+
+//---------------------------------------------------------------------------------------------------------------------}
+// AMY SMC D-LAB — FINAL K1 PRODUCTION ENTRY @ 1.00R (2026-08-12)
+// Executable production-ready K1 entry signal selected after the D-LAB walk-forward research and final $5/$5 realism-floor audit.
+// Historical research is not a guarantee of future performance. Frozen Amy-SMC-D.pine baseline is not modified by this block.
+// Source construction is intentionally simple: K1 M15 QVB + same-direction Internal -> NEXT OPEN -> full structural Swing SL -> 1.00R TP.
+//---------------------------------------------------------------------------------------------------------------------{
+
+AMY_K1_PROD_GROUP = 'Amy K1 Production Entry'
+amyShowK1Production = input.bool(true, 'Show K1 Production Entry (1.00R)', group = AMY_K1_PROD_GROUP, tooltip = 'K1 M15 production entry selected from rolling walk-forward research on XAUUSD 2005-2026. Entry is the next M15 open after a qualified K1 signal; SL uses the frozen full structural Swing invalidation; TP is exactly 1.00R. Historical results are not a guarantee of future performance.')
+
+float amyK1ProdMinSL = 5.00
+float amyK1ProdMinTP = 5.00
+float amyK1ProdTpR = 1.00
+int amyK1ProdLifeBars = 32
+
+// K1 source is inherited unchanged from the original D-LAB K1 definition above.
+// The source candle is bar [1]; this bar is the actual +1 NEXT OPEN execution bar.
+bool amyK1ProdM15 = timeframe.period == '15'
+bool amyK1ProdEntryBar = amyK1ProdM15 and amyDlabK1Event[1]
+int amyK1ProdDirection = amyK1ProdEntryBar ? amyDlabK1Dir[1] : 0
+float amyK1ProdEntry = amyK1ProdEntryBar ? open : na
+// Freeze the structural invalidation exactly as known on the K1 source candle; do not substitute a later/local pivot.
+float amyK1ProdSL = amyK1ProdEntryBar ? amyDlabK1Stop[1] : na
+bool amyK1ProdGeometryOK = amyK1ProdDirection == BULLISH ? not na(amyK1ProdSL) and amyK1ProdSL < amyK1ProdEntry : amyK1ProdDirection == BEARISH ? not na(amyK1ProdSL) and amyK1ProdSL > amyK1ProdEntry : false
+float amyK1ProdRisk = amyK1ProdGeometryOK ? math.abs(amyK1ProdEntry - amyK1ProdSL) : na
+float amyK1ProdTP = amyK1ProdGeometryOK ? (amyK1ProdDirection == BULLISH ? amyK1ProdEntry + amyK1ProdRisk * amyK1ProdTpR : amyK1ProdEntry - amyK1ProdRisk * amyK1ProdTpR) : na
+float amyK1ProdTPDistance = amyK1ProdGeometryOK ? math.abs(amyK1ProdTP - amyK1ProdEntry) : na
+bool amyK1ProdFloorOK = amyK1ProdGeometryOK and amyK1ProdRisk >= amyK1ProdMinSL and amyK1ProdTPDistance >= amyK1ProdMinTP
+bool amyK1ProdValid = amyK1ProdEntryBar and amyK1ProdFloorOK
+bool amyK1ProdBuy = amyK1ProdValid and amyK1ProdDirection == BULLISH
+bool amyK1ProdSell = amyK1ProdValid and amyK1ProdDirection == BEARISH
+
+// Keep the latest valid production setup visible for the same 32-M15-bar research lifecycle.
+var float amyK1ProdPlotEntry = na
+var float amyK1ProdPlotSL = na
+var float amyK1ProdPlotTP = na
+var color amyK1ProdPlotColor = na
+var int amyK1ProdPlotUntil = na
+if amyK1ProdValid
+    amyK1ProdPlotEntry := amyK1ProdEntry
+    amyK1ProdPlotSL := amyK1ProdSL
+    amyK1ProdPlotTP := amyK1ProdTP
+    amyK1ProdPlotColor := amyK1ProdDirection == BULLISH ? GREEN : RED
+    amyK1ProdPlotUntil := bar_index + amyK1ProdLifeBars - 1
+
+bool amyK1ProdPlotActive = amyShowK1Production and not na(amyK1ProdPlotUntil) and bar_index <= amyK1ProdPlotUntil
+plot(amyK1ProdPlotActive ? amyK1ProdPlotEntry : na, 'K1 Production Entry 1.00R', color = color.new(amyK1ProdPlotColor, 0), linewidth = 2, style = plot.style_linebr)
+plot(amyK1ProdPlotActive ? amyK1ProdPlotSL : na, 'K1 Production SL', color = color.new(RED, 5), linewidth = 1, style = plot.style_linebr)
+plot(amyK1ProdPlotActive ? amyK1ProdPlotTP : na, 'K1 Production TP 1.00R', color = color.new(GREEN, 5), linewidth = 1, style = plot.style_linebr)
+
+// One visual label per +1 entry bar; invalid floor/geometry cases intentionally produce no production trade label.
+var array<label> amyK1ProdLabels = array.new<label>()
+bool amyK1ProdNewBarSignal = amyK1ProdValid and barstate.isnew
+if amyShowK1Production and amyK1ProdNewBarSignal
+    bool amyK1ProdLabelAbove = amyK1ProdDirection == BEARISH
+    float amyK1ProdLabelY = amyK1ProdLabelAbove ? high + amyOffset * 2.8 : low - amyOffset * 2.8
+    string amyK1ProdSide = amyK1ProdDirection == BULLISH ? 'BUY' : 'SELL'
+    string amyK1ProdText = 'K1 PROD 1.00R • ' + amyK1ProdSide + '\nENTRY ' + amyPrice(amyK1ProdEntry) + '\nSL ' + amyPrice(amyK1ProdSL) + '\nTP ' + amyPrice(amyK1ProdTP) + '\nWF 2005-2026 • historical'
+    label amyK1ProdLabel = label.new(bar_index, amyK1ProdLabelY, amyK1ProdText, xloc = xloc.bar_index, yloc = yloc.price, color = color.new(amyK1ProdPlotColor, 82), style = amyK1ProdLabelAbove ? label.style_label_down : label.style_label_up, textcolor = amyK1ProdPlotColor, size = size.tiny)
+    array.push(amyK1ProdLabels, amyK1ProdLabel)
+    if array.size(amyK1ProdLabels) > 24
+        label.delete(array.shift(amyK1ProdLabels))
+
+alertcondition(amyK1ProdBuy, 'K1 BUY - Production 1.00R', 'K1 BUY - Production 1.00R: execute at current M15 open; use frozen structural Swing SL and exact 1.00R TP. SL/TP floors are both >= $5 XAUUSD.')
+alertcondition(amyK1ProdSell, 'K1 SELL - Production 1.00R', 'K1 SELL - Production 1.00R: execute at current M15 open; use frozen structural Swing SL and exact 1.00R TP. SL/TP floors are both >= $5 XAUUSD.')
+
+// SANITY LOCK — fixed executable 1.00R, OOS 2012-2026, same 878 K1 M15 source events:
+// 871 valid trades = 99.20% coverage; TP=96 / SL=75 / Timeout=700; TP WR=11.02%.
+// Exact chronological account replay ($10k start, 1% current-equity risk): Net +$845.61; MaxDD 16.29%; HC 15/15; +years 10/15.
+// Same-candle TP+SL is scored SL first. The previously reported +$681.77 / +years 9/15 belongs to the causal WALK-FORWARD
+// yearly ratio schedule (1.00R on 12 folds, plus 1.40R/1.30R/0.90R on three folds), not to this fixed 1.00R executable.
+// No K1-K21 source logic, Pullback logic, dashboard field, or production Amy-SMC-D.pine logic is changed by this block.
+//---------------------------------------------------------------------------------------------------------------------}
