@@ -1967,7 +1967,7 @@ if amyDlabBslStrongBullAtrPlanValid
         if not na(amyDlabBslStrongBullAtrLabel)
             label.delete(amyDlabBslStrongBullAtrLabel)
         string amyDlabBslPlanText = 'BSL CONT BUY • STRONG BULL+ATR' +
-          '\nUNTRY ' + amyPrice(amyDlabBslStrongBullAtrEntry) +
+          '\nENTRY ' + amyPrice(amyDlabBslStrongBullAtrEntry) +
           '\nSL ' + amyPrice(amyDlabBslStrongBullAtrSL) +
           '\nTP ' + amyPrice(amyDlabBslStrongBullAtrTP)
         amyDlabBslStrongBullAtrLabel := label.new(
