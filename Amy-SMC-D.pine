@@ -1456,6 +1456,9 @@ if amyRound5H1 and amySweepContinuationQualified
 
 bool amyHasExecutionSignal = amyNextDirection != 0
 string amyNextMove = amyNextDirection == BULLISH ? 'UP' : amyNextDirection == BEARISH ? 'DOWN' : 'WAIT'
+// Pullback mirrors the already-gated Next Move state; it adds no independent predictor or classifier.
+int amyPullbackDirection = amyNextDirection == BULLISH ? BEARISH : amyNextDirection == BEARISH ? BULLISH : 0
+string amyPullback = amyPullbackDirection == BULLISH ? 'UP' : amyPullbackDirection == BEARISH ? 'DOWN' : 'WAIT'
 // Select invalidation from the actual execution direction. WAIT has no synthetic invalidation/target.
 float amyExecutionInvalidation = amyNextDirection == BULLISH ? amyBullInvalidation : amyNextDirection == BEARISH ? amyBearInvalidation : na
 // AMY SMC Z ROUND 8 TARGET V1 — target is available whenever Next Move is actionable.
@@ -1497,11 +1500,11 @@ if amyHasExecutionSignal and math.abs(amyNextRaw) < 18
     amyConfidenceRaw -= 5
 int amyConfidence = amyHasExecutionSignal ? int(math.round(math.max(35.0, math.min(85.0, amyConfidenceRaw)))) : 0
 
-var table amyDashboard = table.new(position.bottom_right, 2, 16, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
+var table amyDashboard = table.new(position.bottom_right, 2, 17, bgcolor = color.new(color.black, 12), border_color = color.new(GRAY, 65), border_width = 1)
 
 if barstate.isfirst
     table.merge_cells(amyDashboard, 0, 0, 1, 0)
-    table.merge_cells(amyDashboard, 0, 12, 1, 12)
+    table.merge_cells(amyDashboard, 0, 13, 1, 13)
 
 if barstate.islast
     if amyShowDashboard
@@ -1509,6 +1512,7 @@ if barstate.islast
         color amyBearColor = RED
         color amyFinalColor = amyFinalBias == BULLISH ? amyBullColor : amyBearColor
         color amyNextColor = amyNextDirection == BULLISH ? amyBullColor : amyNextDirection == BEARISH ? amyBearColor : GRAY
+        color amyPullbackColor = amyPullbackDirection == BULLISH ? amyBullColor : amyPullbackDirection == BEARISH ? amyBearColor : GRAY
         string amyHeader = 'MARKET BIAS — ' + amyTfName(timeframe.period)
         table.cell(amyDashboard, 0, 0, amyHeader, bgcolor = color.new(BLUE, 72), text_color = color.white, text_size = size.small)
         table.cell(amyDashboard, 0, 1, 'HTF Swing', text_color = color.silver, text_size = size.tiny)
@@ -1527,15 +1531,17 @@ if barstate.islast
         table.cell(amyDashboard, 1, 7, amyPrice(amyExecutionInvalidation), text_color = color.white, text_size = size.tiny)
         table.cell(amyDashboard, 0, 8, 'Next Move', text_color = color.white, bgcolor = color.new(amyNextColor, 82), text_size = size.tiny)
         table.cell(amyDashboard, 1, 8, amyNextMove, text_color = amyNextColor, bgcolor = color.new(amyNextColor, 82), text_size = size.tiny)
-        table.cell(amyDashboard, 0, 9, 'Target', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 9, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 10, 'Regime', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 10, amyRound10Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 11, 'Confidence', text_color = color.silver, text_size = size.tiny)
-        table.cell(amyDashboard, 1, 11, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
-        table.cell(amyDashboard, 0, 12, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 9, 'Pullback', text_color = color.white, bgcolor = color.new(amyPullbackColor, 82), text_size = size.tiny)
+        table.cell(amyDashboard, 1, 9, amyPullback, text_color = amyPullbackColor, bgcolor = color.new(amyPullbackColor, 82), text_size = size.tiny)
+        table.cell(amyDashboard, 0, 10, 'Target', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 10, amyHasExecutionSignal ? amyTargetSide + ' ' + amyPrice(amyTarget) : '-', text_color = color.white, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 11, 'Regime', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 11, amyRound10Regime, text_color = amyRound9M5TradeRegime ? amyNextColor : (amyRound9M5SweepWatch or amyRound9M5TransitionWatch) ? color.orange : color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 12, 'Confidence', text_color = color.silver, text_size = size.tiny)
+        table.cell(amyDashboard, 1, 12, amyHasExecutionSignal ? str.tostring(amyConfidence) + '%' : '-', text_color = amyNextColor, text_size = size.tiny)
+        table.cell(amyDashboard, 0, 13, 'EVENT HISTORY', bgcolor = color.new(GRAY, 82), text_color = color.white, text_size = size.tiny)
         for historyIndex = 0 to 2
-            int historyRow = 13 + historyIndex
+            int historyRow = 14 + historyIndex
             if historyIndex < array.size(amyEventNames)
                 string eventName = array.get(amyEventNames, historyIndex)
                 float eventLevel = array.get(amyEventLevels, historyIndex)
@@ -1549,7 +1555,7 @@ if barstate.islast
                 table.cell(amyDashboard, 0, historyRow, '-', text_color = color.new(GRAY, 50), text_size = size.tiny)
                 table.cell(amyDashboard, 1, historyRow, '-', text_color = color.new(GRAY, 50), text_size = size.tiny)
     else
-        for dashboardRow = 0 to 15
+        for dashboardRow = 0 to 16
             table.cell(amyDashboard, 0, dashboardRow, '', bgcolor = color.new(color.black, 100))
             table.cell(amyDashboard, 1, dashboardRow, '', bgcolor = color.new(color.black, 100))
 
