@@ -1,0 +1,176 @@
+//@version=6
+indicator("Amy Selective Swing Signals", "Amy Swing Signals", overlay = true, max_labels_count = 300, max_bars_back = 5000)
+
+// ============================================================================
+// AMY SELECTIVE SWING SIGNALS
+// New standalone indicator. It does not depend on or modify Amy ICT Evidence V2.
+//
+// Design goal:
+// - clean BUY/SELL labels similar to the visual reference
+// - not every swing receives a signal
+// - signals require a confirmed swing plus directional confirmation
+// - stronger requirements for counter-trend signals
+// - same-direction cooldown to reduce clustered entries
+// - no dashboard
+//
+// IMPORTANT:
+// Signals are printed on the confirmation candle, never back-painted onto an
+// earlier pivot. No indicator can guarantee that price will always continue in
+// the signaled direction.
+// ============================================================================
+
+string grpSignal = "1. Signal Logic"
+int swingLen = input.int(2, "Swing Strength", minval = 1, maxval = 8, group = grpSignal)
+int confirmWindow = input.int(5, "Confirmation Window (bars)", minval = 1, maxval = 20, group = grpSignal)
+int fastLen = input.int(20, "Fast EMA", minval = 2, maxval = 200, group = grpSignal)
+int slowLen = input.int(50, "Slow EMA", minval = 5, maxval = 400, group = grpSignal)
+int rsiLen = input.int(14, "RSI Length", minval = 2, maxval = 100, group = grpSignal)
+float buyRsiMax = input.float(42.0, "BUY RSI Reference", minval = 10, maxval = 60, step = 1, group = grpSignal)
+float sellRsiMin = input.float(58.0, "SELL RSI Reference", minval = 40, maxval = 90, step = 1, group = grpSignal)
+float sweepAtr = input.float(0.05, "Minimum Sweep (ATR)", minval = 0.0, maxval = 1.0, step = 0.01, group = grpSignal)
+float wickRatioMin = input.float(0.30, "Minimum Rejection Wick", minval = 0.0, maxval = 0.9, step = 0.05, group = grpSignal)
+float stretchAtr = input.float(0.25, "EMA Stretch (ATR)", minval = 0.0, maxval = 3.0, step = 0.05, group = grpSignal)
+float confirmBodyAtr = input.float(0.15, "Confirmation Body (ATR)", minval = 0.0, maxval = 2.0, step = 0.05, group = grpSignal)
+int trendScore = input.int(3, "Score Needed With Trend", minval = 2, maxval = 6, group = grpSignal)
+int counterScore = input.int(5, "Score Needed Counter-Trend", minval = 3, maxval = 6, group = grpSignal)
+
+string grpFilter = "2. Signal Spacing"
+int cooldownBars = input.int(8, "Same-Direction Cooldown", minval = 0, maxval = 100, group = grpFilter)
+float minMoveAtr = input.float(0.75, "Minimum Move From Prior Same Signal (ATR)", minval = 0.0, maxval = 10.0, step = 0.25, group = grpFilter)
+
+string grpVisual = "3. Visual"
+float labelDistanceAtr = input.float(0.25, "Label Distance (ATR)", minval = 0.05, maxval = 2.0, step = 0.05, group = grpVisual)
+bool showFvg = input.bool(false, "Show Small FVG Marks", group = grpVisual)
+
+float atr = ta.atr(14)
+float emaFast = ta.ema(close, fastLen)
+float emaSlow = ta.ema(close, slowLen)
+float rsi = ta.rsi(close, rsiLen)
+
+bool bullRegime = emaFast > emaSlow
+bool bearRegime = emaFast < emaSlow
+
+float pl = ta.pivotlow(low, swingLen, swingLen)
+float ph = ta.pivothigh(high, swingLen, swingLen)
+
+var float lastSwingLow = na
+var float lastSwingHigh = na
+
+var bool buyArmed = false
+var bool sellArmed = false
+var int buyExpiry = na
+var int sellExpiry = na
+var int buyBaseScore = 0
+var int sellBaseScore = 0
+var bool buySweepFlag = false
+var bool sellSweepFlag = false
+var float buyPivotPrice = na
+var float sellPivotPrice = na
+
+var int lastBuyBar = na
+var int lastSellBar = na
+var float lastBuyPrice = na
+var float lastSellPrice = na
+
+// ============================================================================
+// ARM A SELECTIVE BUY CANDIDATE AFTER A CONFIRMED SWING LOW.
+// ============================================================================
+if barstate.isconfirmed and not na(pl)
+    float priorLow = lastSwingLow
+    float pAtr = nz(atr[swingLen], atr)
+    float pRange = high[swingLen] - low[swingLen]
+    float lowerWick = math.min(open[swingLen], close[swingLen]) - low[swingLen]
+    bool swept = not na(priorLow) and pl < priorLow - pAtr * sweepAtr
+    bool rejected = pRange > 0 and lowerWick / pRange >= wickRatioMin
+    bool rsiExtreme = not na(rsi[swingLen]) and rsi[swingLen] <= buyRsiMax
+    bool stretched = not na(emaFast[swingLen]) and pl < emaFast[swingLen] - pAtr * stretchAtr
+
+    buyBaseScore := (swept ? 2 : 0) + (rejected ? 1 : 0) + (rsiExtreme ? 1 : 0) + (stretched ? 1 : 0)
+    buySweepFlag := swept
+    buyPivotPrice := pl
+    buyExpiry := bar_index + confirmWindow
+    buyArmed := buyBaseScore >= 2
+    lastSwingLow := pl
+
+// ============================================================================
+// ARM A SELECTIVE SELL CANDIDATE AFTER A CONFIRMED SWING HIGH.
+// ============================================================================
+if barstate.isconfirmed and not na(ph)
+    float priorHigh = lastSwingHigh
+    float pAtr = nz(atr[swingLen], atr)
+    float pRange = high[swingLen] - low[swingLen]
+    float upperWick = high[swingLen] - math.max(open[swingLen], close[swingLen])
+    bool swept = not na(priorHigh) and ph > priorHigh + pAtr * sweepAtr
+    bool rejected = pRange > 0 and upperWick / pRange >= wickRatioMin
+    bool rsiExtreme = not na(rsi[swingLen]) and rsi[swingLen] >= sellRsiMin
+    bool stretched = not na(emaFast[swingLen]) and ph > emaFast[swingLen] + pAtr * stretchAtr
+
+    sellBaseScore := (swept ? 2 : 0) + (rejected ? 1 : 0) + (rsiExtreme ? 1 : 0) + (stretched ? 1 : 0)
+    sellSweepFlag := swept
+    sellPivotPrice := ph
+    sellExpiry := bar_index + confirmWindow
+    sellArmed := sellBaseScore >= 2
+    lastSwingHigh := ph
+
+if buyArmed and bar_index > buyExpiry
+    buyArmed := false
+
+if sellArmed and bar_index > sellExpiry
+    sellArmed := false
+
+// ============================================================================
+// CONFIRMATION. The label appears NOW, not on the historical pivot bar.
+// ============================================================================
+float body = math.abs(close - open)
+bool bullConfirm = barstate.isconfirmed and close > open and close > high[1] and body >= atr * confirmBodyAtr
+bool bearConfirm = barstate.isconfirmed and close < open and close < low[1] and body >= atr * confirmBodyAtr
+
+bool oppositeAfterBuy = not na(lastSellBar) and (na(lastBuyBar) or lastSellBar > lastBuyBar)
+bool oppositeAfterSell = not na(lastBuyBar) and (na(lastSellBar) or lastBuyBar > lastSellBar)
+
+bool buySpacingOk = na(lastBuyBar) or bar_index - lastBuyBar >= cooldownBars or oppositeAfterBuy
+bool sellSpacingOk = na(lastSellBar) or bar_index - lastSellBar >= cooldownBars or oppositeAfterSell
+
+bool buyMoveOk = na(lastBuyPrice) or math.abs(close - lastBuyPrice) >= atr * minMoveAtr or oppositeAfterBuy
+bool sellMoveOk = na(lastSellPrice) or math.abs(close - lastSellPrice) >= atr * minMoveAtr or oppositeAfterSell
+
+int buyScore = buyBaseScore + (bullConfirm ? 1 : 0)
+int sellScore = sellBaseScore + (bearConfirm ? 1 : 0)
+
+int buyRequired = bullRegime ? trendScore : counterScore
+int sellRequired = bearRegime ? trendScore : counterScore
+
+// Counter-trend entries must actually sweep a prior swing. This keeps occasional
+// reversal signals while suppressing ordinary pullbacks against the dominant EMA regime.
+bool buyContextOk = bullRegime or not bearRegime or buySweepFlag
+bool sellContextOk = bearRegime or not bullRegime or sellSweepFlag
+
+bool buySignal = buyArmed and bullConfirm and buyScore >= buyRequired and buyContextOk and buySpacingOk and buyMoveOk
+bool sellSignal = sellArmed and bearConfirm and sellScore >= sellRequired and sellContextOk and sellSpacingOk and sellMoveOk
+
+if buySignal
+    float y = low - atr * labelDistanceAtr
+    label.new(bar_index, y, "BUY", yloc = yloc.price, style = label.style_label_up, color = color.rgb(38, 103, 230), textcolor = color.white, size = size.small)
+    lastBuyBar := bar_index
+    lastBuyPrice := close
+    buyArmed := false
+    sellArmed := false
+
+if sellSignal
+    float y = high + atr * labelDistanceAtr
+    label.new(bar_index, y, "SELL", yloc = yloc.price, style = label.style_label_down, color = color.rgb(190, 65, 78), textcolor = color.white, size = size.small)
+    lastSellBar := bar_index
+    lastSellPrice := close
+    sellArmed := false
+    buyArmed := false
+
+// Optional tiny FVG marks, disabled by default to keep the chart clean.
+bool bullFvg = bar_index >= 2 and low > high[2]
+bool bearFvg = bar_index >= 2 and high < low[2]
+if showFvg and bullFvg
+    label.new(bar_index - 1, (low + high[2]) * 0.5, "FVG", yloc = yloc.price, style = label.style_none, textcolor = color.new(color.teal, 35), size = size.tiny)
+if showFvg and bearFvg
+    label.new(bar_index - 1, (high + low[2]) * 0.5, "FVG", yloc = yloc.price, style = label.style_none, textcolor = color.new(color.red, 35), size = size.tiny)
+
+alertcondition(buySignal, "Amy Swing Signals — BUY", "Selective confirmed BUY signal.")
+alertcondition(sellSignal, "Amy Swing Signals — SELL", "Selective confirmed SELL signal.")
