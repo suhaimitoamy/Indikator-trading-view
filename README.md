@@ -7,6 +7,9 @@ Repositori ini berisi koleksi indikator dan strategi TradingView untuk **XAUUSD 
 | File | Tipe | Status | Isi Utama |
 |---|---|---|---|
 | `README.md` | Dokumentasi | Aktif | Dokumentasi utama dan index seluruh isi repo. |
+| `Amy-FX-Scalper-Engine.pine` | Indicator Pine v6 | Aktif | Port engine scalper Amy FX Preview: 10 driver setup, gate BT6/BT6.1, AMD, lifecycle entry/TP/SL, dashboard, dan alert close-confirmed. |
+| `Amy-Swing-Flow.pine` | Indicator Pine v6 | Aktif | Mesin swing adaptif yang dibangun dari nol tanpa future bars; reversal ATR, context trend/range, grade sinyal, ZigZag terkunci, dan alert. |
+| `Swing high & low` | Indicator Pine v5 | Diperbaiki | Swing pivot terkonfirmasi; label tidak dipindah/dihapus, alternasi swing, filter ATR/EMA, struktur HH/HL/LH/LL, dan alert. |
 | `AMY_ICT_NextGen.pine` | Indicator Pine v5 | Aktif | Market mapping utama dengan session, BOS/MSS, BSL/SSL, PDH/PDL, PWH/PWL, OB/FVG, liquidity draw, rejection context, entry map, dan dashboard. |
 | `indikator-v1.pine` | Strategy Pine v6 | Aktif | XAUUSD Smart Context + Entry PRO Non-Repaint dengan session filter, HTF bias, structure, FVG, OB, OTE, Asia range, confluence score, entry BUY/SELL, SL/TP, dan alert. |
 | `indikator-v2.pine` | Strategy Pine v6 | Aktif | Versi production lanjutan dari v1 dengan dashboard, trade level, signal memory, quality tag, compact/full mode, dan visual trade plan. |
@@ -26,6 +29,22 @@ Repositori ini berisi koleksi indikator dan strategi TradingView untuk **XAUUSD 
 | `V11` | Indicator Pine v6 | Aktif | XAUUSD SnR Breakout & Retest V5 dengan S&R MTF, breakout normal, momentum breakout langsung, retest trigger, pinbar/engulfing, dan label BUY/SELL. |
 | `GCX-Matrix-V12.pine` | Indicator Pine v5 | Aktif | GCX Matrix V12. Gold Context Execution Matrix dengan Context Engine, Warning Engine, Entry Engine, Risk Engine, projection, dashboard, delta/order-flow proxy, dan no-trade filter. |
 | `GCX-Entry-Only-V1.pine` | Indicator Pine v5 | Aktif | GCX Entry Only V1. Fokus entry trigger tanpa dashboard, HTF bias, context score, atau projection score. Menggunakan vote trigger, retest, sweep, S/R rejection, candle pattern, FVG, OB, breakout, delta filter, SL/TP, dan alert. |
+
+## Indicator Amy 2026
+
+### `Amy-FX-Scalper-Engine.pine`
+
+Port TradingView dari snapshot engine Amy FX Preview. Deteksi memakai candle yang sudah close dan registry timeframe M15/M30/H1/H4. Driver yang tersedia: FVG, CRT, Order Block, Breaker Block, Retest BOS, Trendline Break & Retest, EMA Pullback, False Breakout/Judas, Range Expansion, dan AMD. Engine mempertahankan gate BT6/BT6.1, structural stop dengan ATR buffer, target +10/+20 poin, batas hold 24 jam, serta alert dinamis.
+
+> Catatan: lifecycle aplikasi aslinya dievaluasi pada candle M1. Untuk replay lifecycle yang benar-benar presisi, gunakan level setup indikator pada data M1.
+
+### `Amy-Swing-Flow.pine`
+
+Mesin swing kausal yang dibuat dari nol—tidak memakai `ta.pivothigh`, `ta.pivotlow`, future bars, atau lookahead. Kandidat ekstrem tetap internal; label baru dibuat pada candle reversal yang sudah close dan tidak pernah dipindah atau dihapus. Context adaptif membedakan trend dan range menggunakan EMA, DMI/ADX, RSI, structure break, serta kekuatan reversal ATR.
+
+### `Swing high & low`
+
+Versi lama sudah diperbaiki menjadi confirmed non-repaint. Pivot tetap memerlukan right bars sebagai delay konfirmasi, tetapi setelah label dibuat, label tersebut tidak akan hilang walaupun arah berikutnya berbeda. Pilihan `Bar konfirmasi` menunjukkan waktu sinyal yang jujur; `Titik swing` hanya memindahkan posisi visual ke ekstrem historis yang baru diketahui setelah konfirmasi.
 
 ## Struktur Sistem
 
