@@ -1,0 +1,168 @@
+//@version=6
+indicator("Amy Selective Swing Signals V4", "Amy Swing Signals V4", overlay = true, max_labels_count = 300, max_bars_back = 5000)
+
+// ============================================================================
+// AMY SELECTIVE SWING SIGNALS V4 — MAJOR TURNING ENGINE
+// Standalone file. V1 / V2 / V3 are not modified.
+//
+// Design target:
+// - focus on major turning swings, not every local swing
+// - BUY and SELL must alternate after the first accepted turn
+// - require minimum leg amplitude before an opposite turn can qualify
+// - use confirmed pivots only
+// - print the label on the confirmation candle (no back-painting / no repaint)
+// - no dashboard
+// ============================================================================
+
+string grpTurn = "1. Major Turning Logic"
+int pivotLen = input.int(2, "Pivot Confirmation Bars", minval = 1, maxval = 8, group = grpTurn)
+int prominenceLookback = input.int(10, "Major Swing Lookback", minval = 4, maxval = 50, group = grpTurn)
+float minLegAtr = input.float(1.50, "Minimum Opposite Leg (ATR)", minval = 0.25, maxval = 10.0, step = 0.25, group = grpTurn)
+int minPivotBars = input.int(6, "Minimum Bars Between Major Turns", minval = 1, maxval = 100, group = grpTurn)
+
+string grpConfirm = "2. Reversal Confirmation"
+int confirmWindow = input.int(5, "Confirmation Window (bars)", minval = 1, maxval = 20, group = grpConfirm)
+float retraceAtr = input.float(0.35, "Minimum Reversal From Pivot (ATR)", minval = 0.05, maxval = 3.0, step = 0.05, group = grpConfirm)
+int microBreakBars = input.int(2, "Micro Structure Break Bars", minval = 1, maxval = 10, group = grpConfirm)
+float confirmBodyAtr = input.float(0.10, "Minimum Confirmation Body (ATR)", minval = 0.0, maxval = 2.0, step = 0.05, group = grpConfirm)
+
+string grpQuality = "3. Turning Quality"
+float minWickRatio = input.float(0.15, "Minimum Rejection Wick", minval = 0.0, maxval = 0.9, step = 0.05, group = grpQuality)
+bool allowNoWickIfExtreme = input.bool(true, "Allow Extreme Pivot Without Wick", group = grpQuality)
+
+string grpVisual = "4. Visual"
+float labelDistanceAtr = input.float(0.25, "Label Distance (ATR)", minval = 0.05, maxval = 2.0, step = 0.05, group = grpVisual)
+
+float atr = ta.atr(14)
+float ph = ta.pivothigh(high, pivotLen, pivotLen)
+float pl = ta.pivotlow(low, pivotLen, pivotLen)
+
+// Last accepted major turn: +1 BUY, -1 SELL, 0 none yet.
+var int lastTurn = 0
+var float lastTurnPrice = na
+var int lastTurnPivotBar = na
+
+// Pending opposite major-turn candidates.
+var bool buyArmed = false
+var float buyPivot = na
+var float buyPivotAtr = na
+var int buyPivotBar = na
+var int buyExpiry = na
+
+var bool sellArmed = false
+var float sellPivot = na
+var float sellPivotAtr = na
+var int sellPivotBar = na
+var int sellExpiry = na
+
+// ============================================================================
+// CANDIDATE: CONFIRMED MAJOR SWING HIGH
+// ============================================================================
+if barstate.isconfirmed and not na(ph) and lastTurn != -1
+    int pBar = bar_index - pivotLen
+    float pAtr = nz(atr[pivotLen], atr)
+    float pRange = high[pivotLen] - low[pivotLen]
+    float upperWick = high[pivotLen] - math.max(open[pivotLen], close[pivotLen])
+    float priorWindowHigh = ta.highest(high, prominenceLookback)[pivotLen]
+
+    bool prominent = not na(priorWindowHigh) and ph >= priorWindowHigh
+    bool wickOk = pRange > 0 and upperWick / pRange >= minWickRatio
+    bool extremeOk = allowNoWickIfExtreme and prominent
+    bool qualityOk = prominent and (wickOk or extremeOk)
+
+    bool spacingOk = na(lastTurnPivotBar) or pBar - lastTurnPivotBar >= minPivotBars
+    bool amplitudeOk = lastTurn == 0 or (lastTurn == 1 and ph - lastTurnPrice >= pAtr * minLegAtr)
+
+    if qualityOk and spacingOk and amplitudeOk
+        // If another higher confirmed high appears before reversal confirmation,
+        // keep the more extreme candidate instead of producing another SELL.
+        if not sellArmed or na(sellPivot) or ph >= sellPivot
+            sellArmed := true
+            sellPivot := ph
+            sellPivotAtr := pAtr
+            sellPivotBar := pBar
+            sellExpiry := bar_index + confirmWindow
+
+// ============================================================================
+// CANDIDATE: CONFIRMED MAJOR SWING LOW
+// ============================================================================
+if barstate.isconfirmed and not na(pl) and lastTurn != 1
+    int pBar = bar_index - pivotLen
+    float pAtr = nz(atr[pivotLen], atr)
+    float pRange = high[pivotLen] - low[pivotLen]
+    float lowerWick = math.min(open[pivotLen], close[pivotLen]) - low[pivotLen]
+    float priorWindowLow = ta.lowest(low, prominenceLookback)[pivotLen]
+
+    bool prominent = not na(priorWindowLow) and pl <= priorWindowLow
+    bool wickOk = pRange > 0 and lowerWick / pRange >= minWickRatio
+    bool extremeOk = allowNoWickIfExtreme and prominent
+    bool qualityOk = prominent and (wickOk or extremeOk)
+
+    bool spacingOk = na(lastTurnPivotBar) or pBar - lastTurnPivotBar >= minPivotBars
+    bool amplitudeOk = lastTurn == 0 or (lastTurn == -1 and lastTurnPrice - pl >= pAtr * minLegAtr)
+
+    if qualityOk and spacingOk and amplitudeOk
+        // If another lower confirmed low appears before reversal confirmation,
+        // keep the more extreme candidate instead of producing another BUY.
+        if not buyArmed or na(buyPivot) or pl <= buyPivot
+            buyArmed := true
+            buyPivot := pl
+            buyPivotAtr := pAtr
+            buyPivotBar := pBar
+            buyExpiry := bar_index + confirmWindow
+
+// Expire stale candidates.
+if sellArmed and bar_index > sellExpiry
+    sellArmed := false
+if buyArmed and bar_index > buyExpiry
+    buyArmed := false
+
+// ============================================================================
+// NON-REPAINT REVERSAL CONFIRMATION
+// ============================================================================
+float body = math.abs(close - open)
+float priorMicroHigh = ta.highest(high, microBreakBars)[1]
+float priorMicroLow = ta.lowest(low, microBreakBars)[1]
+
+bool bullBody = barstate.isconfirmed and close > open and body >= atr * confirmBodyAtr
+bool bearBody = barstate.isconfirmed and close < open and body >= atr * confirmBodyAtr
+bool bullBreak = bullBody and not na(priorMicroHigh) and close > priorMicroHigh
+bool bearBreak = bearBody and not na(priorMicroLow) and close < priorMicroLow
+
+bool buyRetraceOk = buyArmed and not na(buyPivotAtr) and close >= buyPivot + buyPivotAtr * retraceAtr
+bool sellRetraceOk = sellArmed and not na(sellPivotAtr) and close <= sellPivot - sellPivotAtr * retraceAtr
+
+bool buySignal = buyArmed and lastTurn != 1 and buyRetraceOk and bullBreak
+bool sellSignal = sellArmed and lastTurn != -1 and sellRetraceOk and bearBreak
+
+// First accepted signal establishes the alternation state. If both are somehow
+// ready on the same bar during initialization, choose the candidate with the
+// larger normalized reversal distance.
+if buySignal and sellSignal and lastTurn == 0
+    float buyMove = (close - buyPivot) / math.max(buyPivotAtr, syminfo.mintick)
+    float sellMove = (sellPivot - close) / math.max(sellPivotAtr, syminfo.mintick)
+    if buyMove >= sellMove
+        sellSignal := false
+    else
+        buySignal := false
+
+if buySignal
+    float y = low - atr * labelDistanceAtr
+    label.new(bar_index, y, "BUY", yloc = yloc.price, style = label.style_label_up, color = color.rgb(38, 103, 230), textcolor = color.white, size = size.small)
+    lastTurn := 1
+    lastTurnPrice := buyPivot
+    lastTurnPivotBar := buyPivotBar
+    buyArmed := false
+    sellArmed := false
+
+if sellSignal
+    float y = high + atr * labelDistanceAtr
+    label.new(bar_index, y, "SELL", yloc = yloc.price, style = label.style_label_down, color = color.rgb(190, 65, 78), textcolor = color.white, size = size.small)
+    lastTurn := -1
+    lastTurnPrice := sellPivot
+    lastTurnPivotBar := sellPivotBar
+    sellArmed := false
+    buyArmed := false
+
+alertcondition(buySignal, "Amy Swing Signals V4 — BUY", "Major confirmed BUY turning signal V4.")
+alertcondition(sellSignal, "Amy Swing Signals V4 — SELL", "Major confirmed SELL turning signal V4.")
