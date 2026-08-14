@@ -1,0 +1,190 @@
+//@version=6
+indicator("Amy Selective Swing Signals V7", "Amy Swing Signals V7", overlay = true, max_labels_count = 300, max_bars_back = 5000)
+
+// ============================================================================
+// AMY SELECTIVE SWING SIGNALS V7 — LEG EXTREME ENGINE
+// Standalone experiment. V1-V6 and V6 LOCK are not modified.
+//
+// Core idea:
+// - track ONE active price leg instead of evaluating every pivot independently
+// - while an up-leg is active, keep replacing the SELL candidate with the
+//   highest extreme reached by that leg
+// - while a down-leg is active, keep replacing the BUY candidate with the
+//   lowest extreme reached by that leg
+// - confirm the turn only after a meaningful ATR reversal + micro structure break
+// - labels print on the confirmation candle; no historical back-painting
+// - no dashboard
+// ============================================================================
+
+string grpLeg = "1. Leg Engine"
+int atrLen = input.int(14, "ATR Length", minval = 2, maxval = 100, group = grpLeg)
+int bootstrapLen = input.int(20, "Bootstrap EMA", minval = 5, maxval = 200, group = grpLeg)
+float minLegAtr = input.float(1.25, "Minimum Leg Size (ATR)", minval = 0.25, maxval = 10.0, step = 0.25, group = grpLeg)
+int minLegBars = input.int(4, "Minimum Leg Bars", minval = 1, maxval = 100, group = grpLeg)
+int minExtremeHold = input.int(1, "Minimum Bars After Extreme", minval = 1, maxval = 10, group = grpLeg)
+
+string grpConfirm = "2. Turning Confirmation"
+float reversalAtr = input.float(0.55, "Minimum Reversal From Extreme (ATR)", minval = 0.10, maxval = 5.0, step = 0.05, group = grpConfirm)
+int microBreakBars = input.int(2, "Micro Structure Break Bars", minval = 1, maxval = 10, group = grpConfirm)
+float confirmBodyAtr = input.float(0.10, "Minimum Confirmation Body (ATR)", minval = 0.0, maxval = 2.0, step = 0.05, group = grpConfirm)
+float strongReversalAtr = input.float(1.00, "Strong Reversal Override (ATR)", minval = 0.25, maxval = 5.0, step = 0.05, group = grpConfirm)
+
+string grpQuality = "3. Extreme Quality"
+int prominenceLookback = input.int(8, "Local Prominence Lookback", minval = 3, maxval = 50, group = grpQuality)
+float minWickRatio = input.float(0.10, "Optional Rejection Wick", minval = 0.0, maxval = 0.9, step = 0.05, group = grpQuality)
+bool requireQuality = input.bool(false, "Require Wick Or Prominence", group = grpQuality)
+
+string grpVisual = "4. Visual"
+float labelDistanceAtr = input.float(0.22, "Label Distance (ATR)", minval = 0.05, maxval = 2.0, step = 0.05, group = grpVisual)
+bool showLegMarks = input.bool(false, "Show Candidate Extreme Dots", group = grpVisual)
+
+float atr = ta.atr(atrLen)
+float ema = ta.ema(close, bootstrapLen)
+float body = math.abs(close - open)
+
+// legMode: +1 = tracking an UP leg / looking for the best SELL extreme
+//          -1 = tracking a DOWN leg / looking for the best BUY extreme
+var int legMode = 0
+var float legStartPrice = na
+var int legStartBar = na
+var float legExtreme = na
+var float legExtremeAtr = na
+var int legExtremeBar = na
+var float legExtremeOpen = na
+var float legExtremeClose = na
+var float legExtremeHigh = na
+var float legExtremeLow = na
+
+var int lastSignalDir = 0
+var float lastTurnPrice = na
+var int lastTurnBar = na
+
+// Bootstrap only establishes which extreme to track first. It does not emit a signal.
+if barstate.isconfirmed and legMode == 0 and not na(ema) and not na(atr)
+    legMode := close >= ema ? 1 : -1
+    legStartPrice := close
+    legStartBar := bar_index
+    legExtreme := legMode == 1 ? high : low
+    legExtremeAtr := atr
+    legExtremeBar := bar_index
+    legExtremeOpen := open
+    legExtremeClose := close
+    legExtremeHigh := high
+    legExtremeLow := low
+
+// ============================================================================
+// TRACK THE BEST EXTREME INSIDE THE CURRENT LEG
+// ============================================================================
+if barstate.isconfirmed and legMode == 1
+    if na(legExtreme) or high >= legExtreme
+        legExtreme := high
+        legExtremeAtr := atr
+        legExtremeBar := bar_index
+        legExtremeOpen := open
+        legExtremeClose := close
+        legExtremeHigh := high
+        legExtremeLow := low
+
+if barstate.isconfirmed and legMode == -1
+    if na(legExtreme) or low <= legExtreme
+        legExtreme := low
+        legExtremeAtr := atr
+        legExtremeBar := bar_index
+        legExtremeOpen := open
+        legExtremeClose := close
+        legExtremeHigh := high
+        legExtremeLow := low
+
+// ============================================================================
+// QUALITY OF THE STORED EXTREME
+// ============================================================================
+float extremeRange = not na(legExtremeHigh) and not na(legExtremeLow) ? legExtremeHigh - legExtremeLow : na
+float upperWick = not na(extremeRange) ? legExtremeHigh - math.max(legExtremeOpen, legExtremeClose) : na
+float lowerWick = not na(extremeRange) ? math.min(legExtremeOpen, legExtremeClose) - legExtremeLow : na
+bool sellWickOk = not na(extremeRange) and extremeRange > 0 and upperWick / extremeRange >= minWickRatio
+bool buyWickOk = not na(extremeRange) and extremeRange > 0 and lowerWick / extremeRange >= minWickRatio
+
+float recentHighBefore = ta.highest(high, prominenceLookback)[1]
+float recentLowBefore = ta.lowest(low, prominenceLookback)[1]
+bool sellProminentNow = legMode == 1 and not na(legExtreme) and (na(recentHighBefore) or legExtreme >= recentHighBefore)
+bool buyProminentNow = legMode == -1 and not na(legExtreme) and (na(recentLowBefore) or legExtreme <= recentLowBefore)
+
+bool sellQualityOk = not requireQuality or sellWickOk or sellProminentNow
+bool buyQualityOk = not requireQuality or buyWickOk or buyProminentNow
+
+// ============================================================================
+// REVERSAL CONFIRMATION
+// ============================================================================
+float priorMicroHigh = ta.highest(high, microBreakBars)[1]
+float priorMicroLow = ta.lowest(low, microBreakBars)[1]
+
+bool bullBody = barstate.isconfirmed and close > open and body >= atr * confirmBodyAtr
+bool bearBody = barstate.isconfirmed and close < open and body >= atr * confirmBodyAtr
+bool bullBreak = bullBody and not na(priorMicroHigh) and close > priorMicroHigh
+bool bearBreak = bearBody and not na(priorMicroLow) and close < priorMicroLow
+
+float legAtrDenom = math.max(nz(legExtremeAtr, atr), syminfo.mintick)
+float legSizeAtr = legMode == 1 ? (legExtreme - legStartPrice) / legAtrDenom : legMode == -1 ? (legStartPrice - legExtreme) / legAtrDenom : na
+float reversalSizeAtr = legMode == 1 ? (legExtreme - close) / legAtrDenom : legMode == -1 ? (close - legExtreme) / legAtrDenom : na
+
+bool enoughLeg = not na(legSizeAtr) and legSizeAtr >= minLegAtr
+bool enoughBars = not na(legStartBar) and bar_index - legStartBar >= minLegBars
+bool extremeHeld = not na(legExtremeBar) and bar_index - legExtremeBar >= minExtremeHold
+bool reversalEnough = not na(reversalSizeAtr) and reversalSizeAtr >= reversalAtr
+bool strongReversal = not na(reversalSizeAtr) and reversalSizeAtr >= strongReversalAtr
+
+// A normal turn needs a micro break. A very strong reversal may bypass the
+// micro-break requirement, but still needs a directional confirmation body.
+bool sellConfirm = bearBody and reversalEnough and (bearBreak or strongReversal)
+bool buyConfirm = bullBody and reversalEnough and (bullBreak or strongReversal)
+
+bool sellSignal = legMode == 1 and enoughLeg and enoughBars and extremeHeld and sellQualityOk and sellConfirm
+bool buySignal = legMode == -1 and enoughLeg and enoughBars and extremeHeld and buyQualityOk and buyConfirm
+
+// ============================================================================
+// ACCEPT TURN AND START TRACKING THE OPPOSITE LEG
+// No stale candidate lock: the new leg starts immediately from the accepted
+// prior extreme and continuously updates its own best extreme.
+// ============================================================================
+if sellSignal
+    float y = high + atr * labelDistanceAtr
+    label.new(bar_index, y, "SELL", yloc = yloc.price, style = label.style_label_down, color = color.rgb(190, 65, 78), textcolor = color.white, size = size.small)
+    lastSignalDir := -1
+    lastTurnPrice := legExtreme
+    lastTurnBar := legExtremeBar
+
+    legMode := -1
+    legStartPrice := legExtreme
+    legStartBar := legExtremeBar
+    legExtreme := low
+    legExtremeAtr := atr
+    legExtremeBar := bar_index
+    legExtremeOpen := open
+    legExtremeClose := close
+    legExtremeHigh := high
+    legExtremeLow := low
+
+if buySignal
+    float y = low - atr * labelDistanceAtr
+    label.new(bar_index, y, "BUY", yloc = yloc.price, style = label.style_label_up, color = color.rgb(38, 103, 230), textcolor = color.white, size = size.small)
+    lastSignalDir := 1
+    lastTurnPrice := legExtreme
+    lastTurnBar := legExtremeBar
+
+    legMode := 1
+    legStartPrice := legExtreme
+    legStartBar := legExtremeBar
+    legExtreme := high
+    legExtremeAtr := atr
+    legExtremeBar := bar_index
+    legExtremeOpen := open
+    legExtremeClose := close
+    legExtremeHigh := high
+    legExtremeLow := low
+
+// Optional diagnostic dots show only the currently tracked best extreme.
+plotshape(showLegMarks and legMode == 1 and bar_index == legExtremeBar, title = "Tracked High", style = shape.circle, location = location.abovebar, size = size.tiny, color = color.new(color.red, 55))
+plotshape(showLegMarks and legMode == -1 and bar_index == legExtremeBar, title = "Tracked Low", style = shape.circle, location = location.belowbar, size = size.tiny, color = color.new(color.blue, 55))
+
+alertcondition(buySignal, "Amy Swing Signals V7 — BUY", "V7 major leg reversal BUY confirmed.")
+alertcondition(sellSignal, "Amy Swing Signals V7 — SELL", "V7 major leg reversal SELL confirmed.")
