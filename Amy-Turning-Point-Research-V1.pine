@@ -1,0 +1,232 @@
+//@version=6
+indicator("Amy Turning Point Research V1", "Amy Turn Research V1", overlay = true, max_labels_count = 500, max_lines_count = 500, max_bars_back = 5000)
+
+// ============================================================================
+// AMY TURNING POINT RESEARCH V1
+// Research detector only — NO BUY / SELL signals.
+//
+// Architecture:
+// Candidate Extreme -> Extreme Replacement -> Significant Reversal -> Confirmed Turn
+//
+// Two independent scales are shown:
+//   I = Intermediate turning structure
+//   M = Major turning structure
+//
+// IMPORTANT:
+// H/L anchor labels are drawn on the historical extreme only AFTER that extreme
+// has been confirmed by a later reversal. They are for structural evaluation,
+// not proof that the extreme was known in real time. Optional confirmation dots
+// show the actual bar where the turn became known.
+// ============================================================================
+
+string grpI = "1. Intermediate Scale"
+bool showIntermediate = input.bool(true, "Show Intermediate Turns", group = grpI)
+float iReversalAtr = input.float(0.75, "Reversal Threshold (ATR)", minval = 0.10, maxval = 10.0, step = 0.05, group = grpI)
+float iMinLegAtr = input.float(1.10, "Minimum Leg Size (ATR)", minval = 0.0, maxval = 20.0, step = 0.10, group = grpI)
+float iPercentFloor = input.float(0.00, "Minimum Reversal (% price)", minval = 0.0, maxval = 5.0, step = 0.01, group = grpI)
+int iExtremeHoldBars = input.int(1, "Bars Extreme Must Survive", minval = 1, maxval = 20, group = grpI)
+
+string grpM = "2. Major Scale"
+bool showMajor = input.bool(true, "Show Major Turns", group = grpM)
+float mReversalAtr = input.float(1.50, "Reversal Threshold (ATR)", minval = 0.10, maxval = 20.0, step = 0.05, group = grpM)
+float mMinLegAtr = input.float(2.20, "Minimum Leg Size (ATR)", minval = 0.0, maxval = 30.0, step = 0.10, group = grpM)
+float mPercentFloor = input.float(0.00, "Minimum Reversal (% price)", minval = 0.0, maxval = 10.0, step = 0.01, group = grpM)
+int mExtremeHoldBars = input.int(1, "Bars Extreme Must Survive", minval = 1, maxval = 30, group = grpM)
+
+string grpEngine = "3. Engine"
+int atrLen = input.int(14, "ATR Length", minval = 2, maxval = 100, group = grpEngine)
+int bootstrapBars = input.int(20, "Bootstrap Bars", minval = 3, maxval = 200, group = grpEngine)
+bool useCloseForConfirmation = input.bool(true, "Confirm Reversal With Close", group = grpEngine, tooltip = "ON is safer for realtime use. OFF uses bar high/low and can confirm earlier but intrabar ordering is unknown on historical candles.")
+
+string grpVisual = "4. Visual"
+bool showExtremeAnchors = input.bool(true, "Show Confirmed H/L At Extreme", group = grpVisual)
+bool showConfirmationDots = input.bool(false, "Show Actual Confirmation Bars", group = grpVisual)
+bool showIntermediateZigZag = input.bool(false, "Connect Intermediate Turns", group = grpVisual)
+bool showMajorZigZag = input.bool(true, "Connect Major Turns", group = grpVisual)
+
+float atr = ta.atr(atrLen)
+float bootstrapMean = ta.sma(close, bootstrapBars)
+
+f_threshold(float price, float atrAtExtreme, float atrMultiple, float pctFloor) =>
+    float atrPart = nz(atrAtExtreme) * atrMultiple
+    float pctPart = math.abs(price) * pctFloor * 0.01
+    math.max(atrPart, pctPart)
+
+// ============================================================================
+// INTERMEDIATE DIRECTIONAL-CHANGE STATE
+// mode +1 = tracking rising leg / candidate HIGH
+// mode -1 = tracking falling leg / candidate LOW
+// ============================================================================
+var int iMode = 0
+var float iExtreme = na
+var float iExtremeAtr = na
+var int iExtremeBar = na
+var float iLastTurnPrice = na
+var int iLastTurnBar = na
+var float iPrevAnchorPrice = na
+var int iPrevAnchorBar = na
+
+bool iHighConfirmed = false
+bool iLowConfirmed = false
+float iConfirmedPrice = na
+int iConfirmedBar = na
+
+if barstate.isconfirmed and iMode == 0 and not na(bootstrapMean) and not na(atr)
+    iMode := close >= bootstrapMean ? 1 : -1
+    iExtreme := iMode == 1 ? high : low
+    iExtremeAtr := atr
+    iExtremeBar := bar_index
+
+if barstate.isconfirmed and iMode == 1
+    // Replace candidate high while the rising leg continues.
+    if na(iExtreme) or high > iExtreme
+        iExtreme := high
+        iExtremeAtr := atr
+        iExtremeBar := bar_index
+
+    float threshold = f_threshold(iExtreme, iExtremeAtr, iReversalAtr, iPercentFloor)
+    float reversalPrice = useCloseForConfirmation ? close : low
+    bool survived = not na(iExtremeBar) and bar_index - iExtremeBar >= iExtremeHoldBars
+    bool reversalOk = survived and reversalPrice <= iExtreme - threshold
+    bool legOk = na(iLastTurnPrice) or iExtreme - iLastTurnPrice >= nz(iExtremeAtr, atr) * iMinLegAtr
+
+    if reversalOk and legOk
+        iHighConfirmed := true
+        iConfirmedPrice := iExtreme
+        iConfirmedBar := iExtremeBar
+        iLastTurnPrice := iExtreme
+        iLastTurnBar := iExtremeBar
+        iMode := -1
+        // Start the new falling leg from the confirmation bar.
+        iExtreme := low
+        iExtremeAtr := atr
+        iExtremeBar := bar_index
+
+if barstate.isconfirmed and iMode == -1
+    // Replace candidate low while the falling leg continues.
+    if na(iExtreme) or low < iExtreme
+        iExtreme := low
+        iExtremeAtr := atr
+        iExtremeBar := bar_index
+
+    float threshold = f_threshold(iExtreme, iExtremeAtr, iReversalAtr, iPercentFloor)
+    float reversalPrice = useCloseForConfirmation ? close : high
+    bool survived = not na(iExtremeBar) and bar_index - iExtremeBar >= iExtremeHoldBars
+    bool reversalOk = survived and reversalPrice >= iExtreme + threshold
+    bool legOk = na(iLastTurnPrice) or iLastTurnPrice - iExtreme >= nz(iExtremeAtr, atr) * iMinLegAtr
+
+    if reversalOk and legOk
+        iLowConfirmed := true
+        iConfirmedPrice := iExtreme
+        iConfirmedBar := iExtremeBar
+        iLastTurnPrice := iExtreme
+        iLastTurnBar := iExtremeBar
+        iMode := 1
+        // Start the new rising leg from the confirmation bar.
+        iExtreme := high
+        iExtremeAtr := atr
+        iExtremeBar := bar_index
+
+// Historical anchor is drawn only now, after confirmation.
+if showIntermediate and showExtremeAnchors and iHighConfirmed
+    label.new(iConfirmedBar, iConfirmedPrice, "iH", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_down, color = color.new(color.red, 20), textcolor = color.white, size = size.tiny)
+if showIntermediate and showExtremeAnchors and iLowConfirmed
+    label.new(iConfirmedBar, iConfirmedPrice, "iL", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_up, color = color.new(color.blue, 15), textcolor = color.white, size = size.tiny)
+
+if showIntermediate and showIntermediateZigZag and (iHighConfirmed or iLowConfirmed)
+    if not na(iPrevAnchorBar) and not na(iPrevAnchorPrice)
+        line.new(iPrevAnchorBar, iPrevAnchorPrice, iConfirmedBar, iConfirmedPrice, xloc = xloc.bar_index, color = color.new(color.gray, 55), width = 1)
+    iPrevAnchorBar := iConfirmedBar
+    iPrevAnchorPrice := iConfirmedPrice
+
+// ============================================================================
+// MAJOR DIRECTIONAL-CHANGE STATE
+// Independent from Intermediate so each scale can confirm different turns.
+// ============================================================================
+var int mMode = 0
+var float mExtreme = na
+var float mExtremeAtr = na
+var int mExtremeBar = na
+var float mLastTurnPrice = na
+var int mLastTurnBar = na
+var float mPrevAnchorPrice = na
+var int mPrevAnchorBar = na
+
+bool mHighConfirmed = false
+bool mLowConfirmed = false
+float mConfirmedPrice = na
+int mConfirmedBar = na
+
+if barstate.isconfirmed and mMode == 0 and not na(bootstrapMean) and not na(atr)
+    mMode := close >= bootstrapMean ? 1 : -1
+    mExtreme := mMode == 1 ? high : low
+    mExtremeAtr := atr
+    mExtremeBar := bar_index
+
+if barstate.isconfirmed and mMode == 1
+    if na(mExtreme) or high > mExtreme
+        mExtreme := high
+        mExtremeAtr := atr
+        mExtremeBar := bar_index
+
+    float threshold = f_threshold(mExtreme, mExtremeAtr, mReversalAtr, mPercentFloor)
+    float reversalPrice = useCloseForConfirmation ? close : low
+    bool survived = not na(mExtremeBar) and bar_index - mExtremeBar >= mExtremeHoldBars
+    bool reversalOk = survived and reversalPrice <= mExtreme - threshold
+    bool legOk = na(mLastTurnPrice) or mExtreme - mLastTurnPrice >= nz(mExtremeAtr, atr) * mMinLegAtr
+
+    if reversalOk and legOk
+        mHighConfirmed := true
+        mConfirmedPrice := mExtreme
+        mConfirmedBar := mExtremeBar
+        mLastTurnPrice := mExtreme
+        mLastTurnBar := mExtremeBar
+        mMode := -1
+        mExtreme := low
+        mExtremeAtr := atr
+        mExtremeBar := bar_index
+
+if barstate.isconfirmed and mMode == -1
+    if na(mExtreme) or low < mExtreme
+        mExtreme := low
+        mExtremeAtr := atr
+        mExtremeBar := bar_index
+
+    float threshold = f_threshold(mExtreme, mExtremeAtr, mReversalAtr, mPercentFloor)
+    float reversalPrice = useCloseForConfirmation ? close : high
+    bool survived = not na(mExtremeBar) and bar_index - mExtremeBar >= mExtremeHoldBars
+    bool reversalOk = survived and reversalPrice >= mExtreme + threshold
+    bool legOk = na(mLastTurnPrice) or mLastTurnPrice - mExtreme >= nz(mExtremeAtr, atr) * mMinLegAtr
+
+    if reversalOk and legOk
+        mLowConfirmed := true
+        mConfirmedPrice := mExtreme
+        mConfirmedBar := mExtremeBar
+        mLastTurnPrice := mExtreme
+        mLastTurnBar := mExtremeBar
+        mMode := 1
+        mExtreme := high
+        mExtremeAtr := atr
+        mExtremeBar := bar_index
+
+if showMajor and showExtremeAnchors and mHighConfirmed
+    label.new(mConfirmedBar, mConfirmedPrice, "MH", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_down, color = color.rgb(145, 35, 45), textcolor = color.white, size = size.small)
+if showMajor and showExtremeAnchors and mLowConfirmed
+    label.new(mConfirmedBar, mConfirmedPrice, "ML", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_up, color = color.rgb(25, 120, 100), textcolor = color.white, size = size.small)
+
+if showMajor and showMajorZigZag and (mHighConfirmed or mLowConfirmed)
+    if not na(mPrevAnchorBar) and not na(mPrevAnchorPrice)
+        line.new(mPrevAnchorBar, mPrevAnchorPrice, mConfirmedBar, mConfirmedPrice, xloc = xloc.bar_index, color = color.new(color.orange, 15), width = 2)
+    mPrevAnchorBar := mConfirmedBar
+    mPrevAnchorPrice := mConfirmedPrice
+
+// Confirmation dots are on the bar where the reversal became known in realtime.
+plotshape(showIntermediate and showConfirmationDots and iHighConfirmed, title = "Intermediate High Confirmed", style = shape.circle, location = location.abovebar, color = color.new(color.red, 0), size = size.tiny, text = "i")
+plotshape(showIntermediate and showConfirmationDots and iLowConfirmed, title = "Intermediate Low Confirmed", style = shape.circle, location = location.belowbar, color = color.new(color.blue, 0), size = size.tiny, text = "i")
+plotshape(showMajor and showConfirmationDots and mHighConfirmed, title = "Major High Confirmed", style = shape.diamond, location = location.abovebar, color = color.new(color.orange, 0), size = size.small, text = "M")
+plotshape(showMajor and showConfirmationDots and mLowConfirmed, title = "Major Low Confirmed", style = shape.diamond, location = location.belowbar, color = color.new(color.orange, 0), size = size.small, text = "M")
+
+alertcondition(iHighConfirmed, "Intermediate High Confirmed", "Intermediate directional-change HIGH confirmed.")
+alertcondition(iLowConfirmed, "Intermediate Low Confirmed", "Intermediate directional-change LOW confirmed.")
+alertcondition(mHighConfirmed, "Major High Confirmed", "Major directional-change HIGH confirmed.")
+alertcondition(mLowConfirmed, "Major Low Confirmed", "Major directional-change LOW confirmed.")
