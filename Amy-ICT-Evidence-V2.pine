@@ -2,8 +2,7 @@
 indicator("Amy ICT Evidence Engine V2", "Amy ICT Evidence V2", overlay = true, max_labels_count = 300, max_lines_count = 100, max_bars_back = 5000)
 
 // Research-faithful implementation candidate based on frozen BT06 / BT08-A / BT09-F.
-// V2 fixes the V1 single-active-SMR limitation by keeping concurrent causal setups.
-// Session and SMT remain separate evidence layers; they are not silently added as BT09-F entry gates.
+// Visual layer is intentionally compact; research logic is unchanged.
 
 const string NY_TZ = "America/New_York"
 const int MS_MIN = 60 * 1000
@@ -15,36 +14,32 @@ const float DISP_ATR = 0.80
 string grpCore = "1. Evidence Engine"
 string dxySymbol = input.symbol("TVC:DXY", "DXY Symbol", group = grpCore)
 bool showDashboard = input.bool(true, "Show Dashboard", group = grpCore)
-bool showEntryLabels = input.bool(true, "Show HTF-Aligned Retest Labels", group = grpCore)
+bool showEntryLabels = input.bool(true, "Show BUY / SELL Labels", group = grpCore)
 bool showControlEvents = input.bool(false, "Show HTF-Nonaligned Control Retests", group = grpCore)
-bool showSmtLabels = input.bool(true, "Show SMT Divergence Labels", group = grpCore)
+bool showSmtLabels = input.bool(false, "Show SMT Labels", group = grpCore)
 bool showProcessLabels = input.bool(false, "Show Sweep / SMR Process Labels", group = grpCore)
 
 string grpVisual = "2. Visual"
-int labelOffsetTicks = input.int(20, "Label Offset (ticks)", minval = 0, maxval = 500, group = grpVisual)
+float labelOffsetAtr = input.float(0.35, "BUY/SELL Distance (ATR)", minval = 0.10, maxval = 2.00, step = 0.05, group = grpVisual)
+int labelOffsetTicks = input.int(40, "Fallback Distance (ticks)", minval = 10, maxval = 1000, group = grpVisual)
+int minSignalBars = input.int(6, "Minimum Label Spacing (bars)", minval = 0, maxval = 100, group = grpVisual)
 
 f_price(float p) =>
     na(p) ? "-" : str.tostring(p, format.mintick)
 
 f_htfText(int state) =>
-    state == 1 ? "BULL" : state == -1 ? "BEAR" : "UNDEFINED"
+    state == 1 ? "BULL" : state == -1 ? "BEAR" : "NEUTRAL"
 
 f_sameLevel(float a, float b) =>
     (na(a) and na(b)) or (not na(a) and not na(b) and a == b)
 
-// ============================================================================
-// SESSION CONTEXT — BT06 frozen America/New_York windows.
-// ============================================================================
 bool isM5 = timeframe.isminutes and timeframe.multiplier == 5
 bool inAsia = not na(time(timeframe.period, "2000-2359", NY_TZ))
 bool inLondon = not na(time(timeframe.period, "0200-0500", NY_TZ))
 bool inNewYork = not na(time(timeframe.period, "0700-1000", NY_TZ))
 bool activeExpansionWindow = inLondon or inNewYork
-string sessionText = inAsia ? "ASIA" : inLondon ? "LONDON" : inNewYork ? "NEW YORK" : "OFF SESSION"
+string sessionText = inAsia ? "ASIA" : inLondon ? "LONDON" : inNewYork ? "NEW YORK" : "OFF"
 
-// ============================================================================
-// OBSERVED M1 INSIDE CURRENT M5.
-// ============================================================================
 [m1Time, m1Open, m1High, m1Low, m1Close] = request.security_lower_tf(syminfo.tickerid, "1", [time, open, high, low, close])
 int m1Count = array.size(m1Time)
 bool m1Contiguous = m1Count == 5
@@ -53,9 +48,7 @@ if m1Contiguous
         m1Contiguous := m1Contiguous and array.get(m1Time, i) - array.get(m1Time, i - 1) == MS_MIN
 bool strictM5 = isM5 and barstate.isconfirmed and m1Count == 5 and m1Contiguous
 
-// ============================================================================
-// FROZEN NEW-YORK DAILY HTF STATE — BT01-G lineage used by BT09-F.
-// ============================================================================
+// Frozen New-York Daily HTF state.
 var int curNyDayKey = na
 var int curNyDayDow = na
 var int curNyM1Count = 0
@@ -121,9 +114,7 @@ if isM5 and barstate.isconfirmed and m1Count > 0
         curNyLow := na(curNyLow) ? il : math.min(curNyLow, il)
         curNyClose := ic
 
-// ============================================================================
-// STRICT M5 STRUCTURE + ATR14 PRIOR.
-// ============================================================================
+// Strict M5 structure + ATR14 prior.
 var float m5Prev2High = na
 var float m5Prev2Low = na
 var int m5Prev2Time = na
@@ -140,6 +131,7 @@ var bool ltfSwingLowConsumed = false
 var array<float> tr14 = array.new<float>()
 
 float atr14Prior = array.size(tr14) == 14 ? array.avg(tr14) : na
+float visualPad = not na(atr14Prior) ? atr14Prior * labelOffsetAtr : syminfo.mintick * labelOffsetTicks
 int ltfStateBefore = 0
 if not na(ltfSwingHigh) and not na(ltfPriorSwingHigh) and not na(ltfSwingLow) and not na(ltfPriorSwingLow)
     if ltfSwingHigh > ltfPriorSwingHigh and ltfSwingLow > ltfPriorSwingLow
@@ -147,18 +139,12 @@ if not na(ltfSwingHigh) and not na(ltfPriorSwingHigh) and not na(ltfSwingLow) an
     else if ltfSwingHigh < ltfPriorSwingHigh and ltfSwingLow < ltfPriorSwingLow
         ltfStateBefore := -1
 
-// Recovered first-sweep semantics: both active reclaim levels on the same M5 bar
-// are ambiguous; exclude that bar and do NOT retire either level.
 bool highReclaim = strictM5 and not ltfSwingHighConsumed and not na(ltfSwingHigh) and high > ltfSwingHigh and close < ltfSwingHigh
 bool lowReclaim = strictM5 and not ltfSwingLowConsumed and not na(ltfSwingLow) and low < ltfSwingLow and close > ltfSwingLow
 bool dualSweep = highReclaim and lowReclaim
 bool bearSweep = strictM5 and not dualSweep and ltfStateBefore == 1 and highReclaim and not na(ltfSwingLow)
 bool bullSweep = strictM5 and not dualSweep and ltfStateBefore == -1 and lowReclaim and not na(ltfSwingHigh)
 
-// ============================================================================
-// MULTI-ACTIVE SMR OBJECTS.
-// stage: 1 waiting MSS, 2 waiting first retest, 0 terminal/remove.
-// ============================================================================
 type SmrSetup
     int dir
     int stage
@@ -175,7 +161,10 @@ var array<SmrSetup> setups = array.new<SmrSetup>()
 var string lastSmrText = "WAITING"
 var string lastRetestText = "-"
 var string lastSmtText = "WAITING"
+var string lastSignalText = "WAIT"
 var int lastSmtDir = 0
+var int lastBullLabelBar = na
+var int lastBearLabelBar = na
 
 bool bullSmrEvent = false
 bool bearSmrEvent = false
@@ -186,8 +175,10 @@ bool bearControlRetestEvent = false
 bool smtBullEvent = false
 bool smtBearEvent = false
 bool smtControlEvent = false
+bool bullVisualPrinted = false
+bool bearVisualPrinted = false
 
-// Retest scan first, so a newly confirmed MSS cannot retest inside its own M5 bar.
+// First valid retest after MSS.
 if isM5 and barstate.isconfirmed and m1Count > 0 and array.size(setups) > 0
     int nRetest = array.size(setups)
     for k = 0 to nRetest - 1
@@ -232,16 +223,27 @@ if isM5 and barstate.isconfirmed and m1Count > 0 and array.size(setups) > 0
                                     bearAlignedRetestEvent := bearAlignedRetestEvent or aligned
                                     bearControlRetestEvent := bearControlRetestEvent or control
                                 lastRetestText := (s.dir == 1 ? "BULL " : "BEAR ") + (aligned ? "ALIGNED " : control ? "NONALIGNED " : "UNDEFINED ") + poi + " @ " + f_price(entry)
-                                if showEntryLabels and aligned
-                                    label.new(bar_index, s.dir == 1 ? low - syminfo.mintick * labelOffsetTicks : high + syminfo.mintick * labelOffsetTicks, (s.dir == 1 ? "BULL" : "BEAR") + " SMR RETEST\n" + poi + " " + f_price(entry), style = s.dir == 1 ? label.style_label_up : label.style_label_down, color = s.dir == 1 ? color.new(color.lime, 5) : color.new(color.red, 5), textcolor = s.dir == 1 ? color.black : color.white, size = size.small)
+                                if aligned
+                                    lastSignalText := s.dir == 1 ? "BUY" : "SELL"
+                                bool spacingOk = s.dir == 1 ? (na(lastBullLabelBar) or bar_index - lastBullLabelBar >= minSignalBars) : (na(lastBearLabelBar) or bar_index - lastBearLabelBar >= minSignalBars)
+                                bool notPrinted = s.dir == 1 ? not bullVisualPrinted : not bearVisualPrinted
+                                if showEntryLabels and aligned and spacingOk and notPrinted
+                                    if s.dir == 1
+                                        label.new(bar_index, low - visualPad, "BUY", style = label.style_label_up, color = color.new(color.blue, 0), textcolor = color.white, size = size.small)
+                                        lastBullLabelBar := bar_index
+                                        bullVisualPrinted := true
+                                    else
+                                        label.new(bar_index, high + visualPad, "SELL", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.small)
+                                        lastBearLabelBar := bar_index
+                                        bearVisualPrinted := true
                                 if showControlEvents and control
-                                    label.new(bar_index, s.dir == 1 ? low : high, (s.dir == 1 ? "BULL" : "BEAR") + " CONTROL RETEST\n" + poi, style = s.dir == 1 ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 20), textcolor = color.white, size = size.tiny)
+                                    label.new(bar_index, s.dir == 1 ? low - visualPad * 0.6 : high + visualPad * 0.6, "CTRL", style = s.dir == 1 ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 55), textcolor = color.white, size = size.tiny)
                                 s.stage := 0
                                 terminal := true
             if s.stage == 2 and m1Count > 0
                 s.lastObservedM1 := array.get(m1Time, m1Count - 1)
 
-// MSS search for every active causal sweep. Gap does NOT gate sweep->MSS.
+// MSS search for every active causal sweep.
 if strictM5 and array.size(setups) > 0
     int nMss = array.size(setups)
     for k = 0 to nMss - 1
@@ -290,7 +292,7 @@ if strictM5 and array.size(setups) > 0
                             else
                                 bearSmrEvent := true
                             if showProcessLabels
-                                label.new(bar_index, s.dir == 1 ? low : high, (s.dir == 1 ? "BULL" : "BEAR") + " SMR\nWAIT RETEST", style = s.dir == 1 ? label.style_label_up : label.style_label_down, color = color.new(color.teal, 20), textcolor = color.white, size = size.tiny)
+                                label.new(bar_index, s.dir == 1 ? low - visualPad * 0.45 : high + visualPad * 0.45, "MSS", style = s.dir == 1 ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 55), textcolor = color.white, size = size.tiny)
                     else
                         s.stage := 0
                 else
@@ -299,7 +301,7 @@ if strictM5 and array.size(setups) > 0
                     if s.dir == -1 and close > open
                         s.lastOppOpen := open
 
-// New qualifying first sweeps are appended even while older setups remain active.
+// New qualifying first sweeps.
 if strictM5
     if bearSweep
         ltfSwingHighConsumed := true
@@ -307,16 +309,15 @@ if strictM5
         array.push(setups, s)
         lastSmrText := "BEAR SWEEP_DETECTED"
         if showProcessLabels
-            label.new(bar_index, high, "BEAR SWEEP", style = label.style_label_down, color = color.new(color.orange, 15), textcolor = color.white, size = size.tiny)
+            label.new(bar_index, high + visualPad * 0.35, "SWEEP", style = label.style_label_down, color = color.new(color.gray, 60), textcolor = color.white, size = size.tiny)
     if bullSweep
         ltfSwingLowConsumed := true
         SmrSetup s = SmrSetup.new(1, 1, time_close, ltfSwingHigh, dailyState, na, na, na, na, na)
         array.push(setups, s)
         lastSmrText := "BULL SWEEP_DETECTED"
         if showProcessLabels
-            label.new(bar_index, low, "BULL SWEEP", style = label.style_label_up, color = color.new(color.blue, 15), textcolor = color.white, size = size.tiny)
+            label.new(bar_index, low - visualPad * 0.35, "SWEEP", style = label.style_label_up, color = color.new(color.gray, 60), textcolor = color.white, size = size.tiny)
 
-// Remove terminal objects in reverse order after all current-bar logic.
 if array.size(setups) > 0
     int lastIndex = array.size(setups) - 1
     for k = lastIndex to 0
@@ -324,7 +325,6 @@ if array.size(setups) > 0
         if s.stage == 0
             array.remove(setups, k)
 
-// Confirm current M5 pivot only after this bar's opportunity logic.
 if strictM5
     if not na(m5Prev2High) and not na(m5Prev1High)
         bool newPH = m5Prev1High > m5Prev2High and m5Prev1High > high
@@ -349,9 +349,7 @@ if strictM5
     m5Prev1Close := close
     m5Prev1Time := time
 
-// ============================================================================
-// SMT SELECTOR — BT08-A mechanics, using configurable TradingView DXY feed.
-// ============================================================================
+// SMT selector.
 [x15Time, x15High, x15Low] = request.security(syminfo.tickerid, "15", [time[1], high[1], low[1]], lookahead = barmerge.lookahead_on)
 [d15Time, d15High, d15Low] = request.security(dxySymbol, "15", [time[1], high[1], low[1]], lookahead = barmerge.lookahead_on, ignore_invalid_symbol = true)
 var int lastProcessedX15 = na
@@ -393,20 +391,20 @@ if isM5 and barstate.isconfirmed and newX15
         d15LowRetired := true
     if not synchronized
         if xUpFirst or xDownFirst
-            lastSmtText := "DXY BAR UNAVAILABLE"
+            lastSmtText := "DXY N/A"
             lastSmtDir := 0
     else if xDual
-        lastSmtText := "DUAL XAU — EXCLUDED"
+        lastSmtText := "XAU DUAL"
         lastSmtDir := 0
     else if (xUpFirst or xDownFirst) and dDual
-        lastSmtText := "DXY DUAL — EXCLUDED"
+        lastSmtText := "DXY DUAL"
         lastSmtDir := 0
     else if xUpFirst
         if na(d15SwingLow)
-            lastSmtText := "DXY LEVEL UNAVAILABLE"
+            lastSmtText := "DXY LEVEL N/A"
             lastSmtDir := 0
         else if dDownFirst
-            lastSmtText := "SYNC CONTROL — BEAR"
+            lastSmtText := "SYNC BEAR"
             lastSmtDir := -1
             smtControlEvent := true
         else
@@ -414,13 +412,13 @@ if isM5 and barstate.isconfirmed and newX15
             lastSmtDir := -1
             smtBearEvent := true
             if showSmtLabels
-                label.new(bar_index, high + syminfo.mintick * labelOffsetTicks, "SMT BEARISH\nXAU↑ / DXY no inverse ↓", style = label.style_label_down, color = color.new(color.fuchsia, 10), textcolor = color.white, size = size.tiny)
+                label.new(bar_index, high + visualPad * 1.45, "SMT SELL", style = label.style_label_down, color = color.new(color.fuchsia, 65), textcolor = color.white, size = size.tiny)
     else if xDownFirst
         if na(d15SwingHigh)
-            lastSmtText := "DXY LEVEL UNAVAILABLE"
+            lastSmtText := "DXY LEVEL N/A"
             lastSmtDir := 0
         else if dUpFirst
-            lastSmtText := "SYNC CONTROL — BULL"
+            lastSmtText := "SYNC BULL"
             lastSmtDir := 1
             smtControlEvent := true
         else
@@ -428,7 +426,7 @@ if isM5 and barstate.isconfirmed and newX15
             lastSmtDir := 1
             smtBullEvent := true
             if showSmtLabels
-                label.new(bar_index, low - syminfo.mintick * labelOffsetTicks, "SMT BULLISH\nXAU↓ / DXY no inverse ↑", style = label.style_label_up, color = color.new(color.aqua, 10), textcolor = color.black, size = size.tiny)
+                label.new(bar_index, low - visualPad * 1.45, "SMT BUY", style = label.style_label_up, color = color.new(color.aqua, 65), textcolor = color.white, size = size.tiny)
     if not na(x15Prev2High) and not na(x15Prev1High)
         bool xNewPH = x15Prev1High > x15Prev2High and x15Prev1High > x15High
         bool xNewPL = x15Prev1Low < x15Prev2Low and x15Prev1Low < x15Low
@@ -475,9 +473,7 @@ if isM5 and barstate.isconfirmed and newD15 and (na(x15Time) or d15Time != x15Ti
     d15Prev1Low := d15Low
     lastProcessedD15 := d15Time
 
-// ============================================================================
-// DASHBOARD.
-// ============================================================================
+// Compact dashboard — bottom right.
 int bullWaitingMss = 0
 int bearWaitingMss = 0
 int bullWaitingRetest = 0
@@ -493,29 +489,26 @@ if array.size(setups) > 0
         else if s.dir == -1 and s.stage == 2
             bearWaitingRetest += 1
 
-var table dash = table.new(position.top_right, 2, 9, border_width = 1)
+var table dash = table.new(position.bottom_right, 2, 7, border_width = 0, frame_width = 1)
 if barstate.islast and showDashboard
-    color bg = color.new(color.black, 15)
-    table.cell(dash, 0, 0, "AMY ICT EVIDENCE V2", text_color = color.white, bgcolor = color.new(color.blue, 45))
-    table.cell(dash, 1, 0, isM5 ? "M5 READY" : "USE M5", text_color = isM5 ? color.lime : color.yellow, bgcolor = bg)
-    table.cell(dash, 0, 1, "Session", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 1, sessionText + (activeExpansionWindow ? " • ACTIVE" : ""), text_color = activeExpansionWindow ? color.aqua : color.white, bgcolor = bg)
-    table.cell(dash, 0, 2, "HTF Daily", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 2, f_htfText(dailyState), text_color = dailyState == 1 ? color.lime : dailyState == -1 ? color.red : color.silver, bgcolor = bg)
-    table.cell(dash, 0, 3, "SMT", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 3, lastSmtText, text_color = lastSmtDir == 1 ? color.aqua : lastSmtDir == -1 ? color.fuchsia : color.silver, bgcolor = bg)
-    table.cell(dash, 0, 4, "Bull SMR", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 4, "MSS " + str.tostring(bullWaitingMss) + " • RETEST " + str.tostring(bullWaitingRetest), text_color = color.lime, bgcolor = bg)
-    table.cell(dash, 0, 5, "Bear SMR", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 5, "MSS " + str.tostring(bearWaitingMss) + " • RETEST " + str.tostring(bearWaitingRetest), text_color = color.red, bgcolor = bg)
-    table.cell(dash, 0, 6, "Active Lineages", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 6, str.tostring(array.size(setups)), text_color = color.white, bgcolor = bg)
-    table.cell(dash, 0, 7, "Last Timing", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 7, lastRetestText, text_color = color.white, bgcolor = bg)
-    table.cell(dash, 0, 8, "Verification", text_color = color.silver, bgcolor = bg)
-    table.cell(dash, 1, 8, "V2 • REVERIFY REQUIRED", text_color = color.yellow, bgcolor = bg)
+    color bg = color.new(color.black, 32)
+    color head = color.new(color.black, 15)
+    table.cell(dash, 0, 0, "AMY ICT V2", text_color = color.white, bgcolor = head, text_size = size.tiny)
+    table.cell(dash, 1, 0, isM5 ? "READY" : "USE M5", text_color = isM5 ? color.lime : color.yellow, bgcolor = head, text_size = size.tiny)
+    table.cell(dash, 0, 1, "Session", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 1, sessionText + (activeExpansionWindow ? " *" : ""), text_color = activeExpansionWindow ? color.aqua : color.white, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 0, 2, "HTF", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 2, f_htfText(dailyState), text_color = dailyState == 1 ? color.lime : dailyState == -1 ? color.red : color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 0, 3, "SMT", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 3, lastSmtText, text_color = lastSmtDir == 1 ? color.aqua : lastSmtDir == -1 ? color.fuchsia : color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 0, 4, "BULL", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 4, "M" + str.tostring(bullWaitingMss) + "  R" + str.tostring(bullWaitingRetest), text_color = color.lime, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 0, 5, "BEAR", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 5, "M" + str.tostring(bearWaitingMss) + "  R" + str.tostring(bearWaitingRetest), text_color = color.red, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 0, 6, "Signal", text_color = color.silver, bgcolor = bg, text_size = size.tiny)
+    table.cell(dash, 1, 6, lastSignalText, text_color = lastSignalText == "BUY" ? color.aqua : lastSignalText == "SELL" ? color.red : color.white, bgcolor = bg, text_size = size.small)
 if barstate.islast and not showDashboard
-    table.clear(dash, 0, 0, 1, 8)
+    table.clear(dash, 0, 0, 1, 6)
 
 alertcondition(smtBullEvent, "Amy ICT V2 — Bullish SMT", "Bullish XAUUSD/DXY SMT divergence on completed M15 bar.")
 alertcondition(smtBearEvent, "Amy ICT V2 — Bearish SMT", "Bearish XAUUSD/DXY SMT divergence on completed M15 bar.")
