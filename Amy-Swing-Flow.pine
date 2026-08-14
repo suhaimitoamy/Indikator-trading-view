@@ -1,0 +1,256 @@
+//@version=6
+indicator("Amy Swing Flow — Adaptive Non-Repaint", shorttitle="Amy Swing Flow", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// =============================================================================
+// AMY SWING FLOW
+// Mesin swing kausal yang dibangun dari nol.
+// - Tidak memakai ta.pivothigh/ta.pivotlow.
+// - Tidak memakai future bars, request.security, atau lookahead.
+// - Kandidat ekstrem boleh bergerak, tetapi tidak pernah digambar sebagai sinyal.
+// - Swing dan sinyal baru dikunci setelah candle reversal sudah tutup.
+// - Objek yang sudah dikunci tidak pernah dipindah atau dihapus.
+// =============================================================================
+
+const string GROUP_ENGINE  = "1. Swing Engine"
+const string GROUP_CONTEXT = "2. Adaptive Context"
+const string GROUP_VISUAL  = "3. Tampilan"
+
+string confirmationMode = input.string("Seimbang", "Mode Konfirmasi", options=["Cepat", "Seimbang", "Ketat"], group=GROUP_ENGINE,
+     tooltip="Cepat: reversal ATR. Seimbang: ATR + candle reversal + EMA. Ketat: seluruh syarat Seimbang + break struktur lokal.")
+int atrLength = input.int(14, "ATR Length", minval=2, group=GROUP_ENGINE)
+float reversalAtr = input.float(1.20, "Jarak Reversal (ATR)", minval=0.25, step=0.05, group=GROUP_ENGINE,
+     tooltip="Harga harus menjauh dari ekstrem aktif setidaknya sebesar ATR × nilai ini sebelum swing dikunci.")
+int confirmBars = input.int(1, "Bar Setelah Ekstrem", minval=1, maxval=10, group=GROUP_ENGINE,
+     tooltip="Jumlah minimum candle setelah ekstrem sebelum reversal boleh dikonfirmasi.")
+int minLegBars = input.int(2, "Panjang Minimum Leg", minval=1, maxval=50, group=GROUP_ENGINE,
+     tooltip="Jarak minimum antara dua swing terkunci agar ZigZag kecil tidak menumpuk.")
+int breakLookback = input.int(3, "Structure Break Lookback", minval=2, maxval=20, group=GROUP_ENGINE)
+
+bool useAdaptiveContext = input.bool(true, "Filter Context Adaptif", group=GROUP_CONTEXT,
+     tooltip="Saat trend kuat, sinyal dipilih searah trend. Saat range, sinyal memerlukan RSI ekstrem. Reversal sangat kuat tetap boleh menangkap pergantian trend.")
+int fastEmaLength = input.int(21, "EMA Cepat", minval=2, group=GROUP_CONTEXT)
+int slowEmaLength = input.int(55, "EMA Lambat", minval=3, group=GROUP_CONTEXT)
+int slopeLookback = input.int(3, "EMA Slope Lookback", minval=1, maxval=20, group=GROUP_CONTEXT)
+int dmiLength = input.int(14, "DMI Length", minval=2, group=GROUP_CONTEXT)
+int adxSmoothing = input.int(14, "ADX Smoothing", minval=2, group=GROUP_CONTEXT)
+float adxTrendLevel = input.float(20.0, "Batas Trend ADX", minval=5.0, maxval=60.0, step=0.5, group=GROUP_CONTEXT)
+int rsiLength = input.int(14, "RSI Length", minval=2, group=GROUP_CONTEXT)
+float rangeRsiHigh = input.float(60.0, "RSI Tinggi Saat Range", minval=50.0, maxval=90.0, step=1.0, group=GROUP_CONTEXT)
+float rangeRsiLow = input.float(40.0, "RSI Rendah Saat Range", minval=10.0, maxval=50.0, step=1.0, group=GROUP_CONTEXT)
+
+bool showBuy = input.bool(true, "Tampilkan BUY", group=GROUP_VISUAL)
+bool showSell = input.bool(true, "Tampilkan SELL", group=GROUP_VISUAL)
+bool showSwingPoints = input.bool(false, "Tampilkan HH/HL/LH/LL di Titik Swing", group=GROUP_VISUAL,
+     tooltip="Titik struktur ditempatkan pada ekstrem aslinya setelah reversal terkonfirmasi. Ini bukan waktu entry.")
+bool showZigZag = input.bool(true, "Tampilkan ZigZag Terkunci", group=GROUP_VISUAL)
+bool showEma = input.bool(true, "Tampilkan EMA Context", group=GROUP_VISUAL)
+bool showRegimeBackground = input.bool(false, "Warna Latar Regime", group=GROUP_VISUAL)
+color buyColor = input.color(color.rgb(0, 145, 210), "Warna BUY", group=GROUP_VISUAL)
+color sellColor = input.color(color.rgb(205, 40, 40), "Warna SELL", group=GROUP_VISUAL)
+color zigZagColor = input.color(color.new(color.silver, 10), "Warna ZigZag", group=GROUP_VISUAL)
+string labelSizeInput = input.string("small", "Ukuran Label", options=["tiny", "small", "normal", "large"], group=GROUP_VISUAL)
+
+getLabelSize(string value) =>
+    value == "tiny" ? size.tiny : value == "small" ? size.small : value == "normal" ? size.normal : size.large
+
+getHighStructure(float price, float previousHigh) =>
+    na(previousHigh) ? "SH" : price > previousHigh ? "HH" : price < previousHigh ? "LH" : "EQH"
+
+getLowStructure(float price, float previousLow) =>
+    na(previousLow) ? "SL" : price > previousLow ? "HL" : price < previousLow ? "LL" : "EQL"
+
+getGrade(int score) =>
+    score >= 5 ? "A+" : score == 4 ? "A" : score == 3 ? "B" : "C"
+
+// =============================================================================
+// CONTEXT SERIES
+// Semua seri dihitung pada setiap bar. State mesin hanya berubah di blok
+// barstate.isconfirmed agar hasil historical dan realtime konsisten.
+// =============================================================================
+float atr = ta.atr(atrLength)
+float emaFast = ta.ema(close, fastEmaLength)
+float emaSlow = ta.ema(close, slowEmaLength)
+float rsi = ta.rsi(close, rsiLength)
+[diPlus, diMinus, adx] = ta.dmi(dmiLength, adxSmoothing)
+
+float priorFloor = ta.lowest(low, breakLookback)[1]
+float priorCeiling = ta.highest(high, breakLookback)[1]
+float candleRange = math.max(high - low, syminfo.mintick)
+float bodyRatio = math.abs(close - open) / candleRange
+
+bool trendUp = emaFast > emaSlow and emaSlow > emaSlow[slopeLookback] and diPlus > diMinus
+bool trendDown = emaFast < emaSlow and emaSlow < emaSlow[slopeLookback] and diMinus > diPlus
+bool trendingRegime = not na(adx) and adx >= adxTrendLevel
+string regimeName = trendingRegime ? "TREND" : "RANGE"
+
+// =============================================================================
+// PERSISTENT SWING STATE
+// legDirection: 1 = mengikuti ekstrem high, -1 = mengikuti ekstrem low.
+// extremePrice adalah kandidat internal dan sengaja tidak diplot.
+// =============================================================================
+var int legDirection = 0
+var float extremePrice = na
+var int extremeBar = na
+var float extremeRsi = na
+var float extremeAtr = na
+
+var float lastLockedPrice = na
+var int lastLockedBar = na
+var float lastLockedHigh = na
+var float lastLockedLow = na
+
+bool buySignal = false
+bool sellSignal = false
+
+if barstate.isconfirmed and not na(atr) and atr > 0 and not na(emaFast) and not na(emaSlow)
+    // Inisialisasi satu kali. Belum ada label sampai reversal pertama benar-benar valid.
+    if legDirection == 0
+        legDirection := close >= close[1] ? 1 : -1
+        extremePrice := legDirection == 1 ? high : low
+        extremeBar := bar_index
+        extremeRsi := rsi
+        extremeAtr := atr
+
+    else if legDirection == 1
+        // Leg naik: kandidat high terus mengikuti harga, tetapi belum digambar.
+        if na(extremePrice) or high > extremePrice
+            extremePrice := high
+            extremeBar := bar_index
+            extremeRsi := rsi
+            extremeAtr := atr
+
+        float reversalDistance = extremePrice - close
+        float reversalRatio = reversalDistance / math.max(nz(extremeAtr, atr), syminfo.mintick)
+        bool enoughAtr = reversalRatio >= reversalAtr
+        bool enoughWait = bar_index - extremeBar >= confirmBars
+        bool enoughLeg = na(lastLockedBar) or extremeBar - lastLockedBar >= minLegBars
+        bool bearishCandle = close < open
+        bool emaReversal = close < emaFast
+        bool structureBreak = not na(priorFloor) and close < priorFloor
+
+        bool confirmationPass = confirmationMode == "Cepat" or
+             confirmationMode == "Seimbang" and bearishCandle and emaReversal or
+             confirmationMode == "Ketat" and bearishCandle and emaReversal and structureBreak
+        bool modePass = enoughAtr and enoughWait and confirmationPass
+
+        if modePass and enoughLeg
+            float lockedHigh = extremePrice
+            int lockedHighBar = extremeBar
+            string structure = getHighStructure(lockedHigh, lastLockedHigh)
+
+            bool rangeExhaustion = not na(extremeRsi) and extremeRsi >= rangeRsiHigh
+            bool strongTrendFlip = structureBreak and close < emaSlow and reversalRatio >= reversalAtr * 1.60
+            bool contextPass = not useAdaptiveContext or (trendingRegime ? trendDown or strongTrendFlip : rangeExhaustion)
+
+            int qualityScore = 1
+            qualityScore += emaReversal ? 1 : 0
+            qualityScore += structureBreak ? 1 : 0
+            qualityScore += bearishCandle and bodyRatio >= 0.35 ? 1 : 0
+            qualityScore += trendDown or rangeExhaustion ? 1 : 0
+            qualityScore += reversalRatio >= reversalAtr * 1.50 ? 1 : 0
+            string grade = getGrade(qualityScore)
+
+            if showZigZag and not na(lastLockedBar) and lockedHighBar > lastLockedBar
+                line.new(lastLockedBar, lastLockedPrice, lockedHighBar, lockedHigh, xloc=xloc.bar_index, color=zigZagColor, width=2)
+
+            if showSwingPoints
+                string swingTooltip = "Swing high dikunci " + str.tostring(bar_index - lockedHighBar) + " bar setelah ekstrem. Harga: " + str.tostring(lockedHigh, format.mintick)
+                label.new(lockedHighBar, lockedHigh, structure, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down,
+                     color=color.new(sellColor, 55), textcolor=color.white, size=size.tiny, tooltip=swingTooltip)
+
+            lastLockedPrice := lockedHigh
+            lastLockedBar := lockedHighBar
+            lastLockedHigh := lockedHigh
+
+            if contextPass
+                sellSignal := true
+                if showSell
+                    color signalColor = grade == "A+" ? sellColor : grade == "A" ? color.new(sellColor, 8) : color.new(sellColor, 20)
+                    string signalText = "SELL " + grade + "\n" + structure
+                    string signalTooltip = "Sinyal muncul pada candle konfirmasi, bukan pada candle ekstrem. Context: " + regimeName + ". Reversal: " + str.tostring(reversalRatio, "#.##") + " ATR."
+                    label.new(bar_index, high + atr * 0.12, signalText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down,
+                         color=signalColor, textcolor=color.white, size=getLabelSize(labelSizeInput), tooltip=signalTooltip)
+
+            // Mulai leg turun dari candle konfirmasi saat ini.
+            legDirection := -1
+            extremePrice := low
+            extremeBar := bar_index
+            extremeRsi := rsi
+            extremeAtr := atr
+
+    else
+        // Leg turun: kandidat low terus mengikuti harga, tetapi belum digambar.
+        if na(extremePrice) or low < extremePrice
+            extremePrice := low
+            extremeBar := bar_index
+            extremeRsi := rsi
+            extremeAtr := atr
+
+        float reversalDistance = close - extremePrice
+        float reversalRatio = reversalDistance / math.max(nz(extremeAtr, atr), syminfo.mintick)
+        bool enoughAtr = reversalRatio >= reversalAtr
+        bool enoughWait = bar_index - extremeBar >= confirmBars
+        bool enoughLeg = na(lastLockedBar) or extremeBar - lastLockedBar >= minLegBars
+        bool bullishCandle = close > open
+        bool emaReversal = close > emaFast
+        bool structureBreak = not na(priorCeiling) and close > priorCeiling
+
+        bool confirmationPass = confirmationMode == "Cepat" or
+             confirmationMode == "Seimbang" and bullishCandle and emaReversal or
+             confirmationMode == "Ketat" and bullishCandle and emaReversal and structureBreak
+        bool modePass = enoughAtr and enoughWait and confirmationPass
+
+        if modePass and enoughLeg
+            float lockedLow = extremePrice
+            int lockedLowBar = extremeBar
+            string structure = getLowStructure(lockedLow, lastLockedLow)
+
+            bool rangeExhaustion = not na(extremeRsi) and extremeRsi <= rangeRsiLow
+            bool strongTrendFlip = structureBreak and close > emaSlow and reversalRatio >= reversalAtr * 1.60
+            bool contextPass = not useAdaptiveContext or (trendingRegime ? trendUp or strongTrendFlip : rangeExhaustion)
+
+            int qualityScore = 1
+            qualityScore += emaReversal ? 1 : 0
+            qualityScore += structureBreak ? 1 : 0
+            qualityScore += bullishCandle and bodyRatio >= 0.35 ? 1 : 0
+            qualityScore += trendUp or rangeExhaustion ? 1 : 0
+            qualityScore += reversalRatio >= reversalAtr * 1.50 ? 1 : 0
+            string grade = getGrade(qualityScore)
+
+            if showZigZag and not na(lastLockedBar) and lockedLowBar > lastLockedBar
+                line.new(lastLockedBar, lastLockedPrice, lockedLowBar, lockedLow, xloc=xloc.bar_index, color=zigZagColor, width=2)
+
+            if showSwingPoints
+                string swingTooltip = "Swing low dikunci " + str.tostring(bar_index - lockedLowBar) + " bar setelah ekstrem. Harga: " + str.tostring(lockedLow, format.mintick)
+                label.new(lockedLowBar, lockedLow, structure, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up,
+                     color=color.new(buyColor, 55), textcolor=color.white, size=size.tiny, tooltip=swingTooltip)
+
+            lastLockedPrice := lockedLow
+            lastLockedBar := lockedLowBar
+            lastLockedLow := lockedLow
+
+            if contextPass
+                buySignal := true
+                if showBuy
+                    color signalColor = grade == "A+" ? buyColor : grade == "A" ? color.new(buyColor, 8) : color.new(buyColor, 20)
+                    string signalText = "BUY " + grade + "\n" + structure
+                    string signalTooltip = "Sinyal muncul pada candle konfirmasi, bukan pada candle ekstrem. Context: " + regimeName + ". Reversal: " + str.tostring(reversalRatio, "#.##") + " ATR."
+                    label.new(bar_index, low - atr * 0.12, signalText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up,
+                         color=signalColor, textcolor=color.white, size=getLabelSize(labelSizeInput), tooltip=signalTooltip)
+
+            // Mulai leg naik dari candle konfirmasi saat ini.
+            legDirection := 1
+            extremePrice := high
+            extremeBar := bar_index
+            extremeRsi := rsi
+            extremeAtr := atr
+
+plot(showEma ? emaFast : na, "EMA Cepat", color=color.new(color.aqua, 10), linewidth=1)
+plot(showEma ? emaSlow : na, "EMA Lambat", color=trendUp ? color.new(color.lime, 5) : trendDown ? color.new(color.red, 5) : color.new(color.gray, 20), linewidth=2)
+
+color regimeColor = trendingRegime ? trendUp ? color.new(color.green, 92) : trendDown ? color.new(color.red, 92) : color.new(color.orange, 94) : color.new(color.blue, 95)
+bgcolor(showRegimeBackground ? regimeColor : na, title="Adaptive Regime")
+
+// Alert hanya bernilai true pada penutupan candle ketika sinyal dikunci.
+alertcondition(sellSignal, title="Amy Swing Flow SELL", message="Amy Swing Flow: SELL terkonfirmasi di {{ticker}} {{interval}} @ {{close}}")
+alertcondition(buySignal, title="Amy Swing Flow BUY", message="Amy Swing Flow: BUY terkonfirmasi di {{ticker}} {{interval}} @ {{close}}")
