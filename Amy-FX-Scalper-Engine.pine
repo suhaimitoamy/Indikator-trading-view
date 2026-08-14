@@ -1,0 +1,846 @@
+//@version=6
+indicator("Amy FX Scalper Engine [BT6/BT6.1 + AMD]", shorttitle = "Amy FX Scalper", overlay = true, max_bars_back = 1000, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 200)
+
+// Amy FX Preview Scalper Engine -> TradingView indicator port.
+// Source repository : suhaimitoamy/Amy-fx
+// Source branch     : personal/amyfx-private
+// Source commit     : 1e167ff1486572085a81b0b6ad8bca1d96ebdc53
+// Engine            : amyfx-preview-scalper-pattern-v3.0 (schema v3)
+// Configs           : BT6-2025-V1 / BT6.1-2026-H1-V1 / AMD-2025-V1
+// Port contract     : closed candles, causal confirmed swings, no lookahead,
+//                     structural stop + ATR buffer, +10/+20 points, no BE,
+//                     24-hour maximum hold, and SL_FIRST same-candle handling.
+//
+// Run on XAUUSD at M15, M30, H1, or H4. The app evaluates an accepted setup's
+// lifecycle on closed M1 candles. This indicator evaluates lifecycle on the
+// active chart candles, so M1-precise lifecycle replay requires replaying the
+// emitted setup levels against M1 data. Detection and BT6 gates remain tied to
+// the chart timeframe exactly as listed in the Preview driver registry.
+
+// ============================================================================
+// Inputs
+// ============================================================================
+
+string GROUP_ENGINE = "Engine"
+string GROUP_DRIVERS = "Drivers"
+string GROUP_VISUAL = "Visual"
+
+bool engineEnabled = input.bool(true, "Enable pattern engine", group = GROUP_ENGINE)
+bool repairEnabled = input.bool(true, "Enable BT6.1 repair overlays", group = GROUP_ENGINE)
+bool lifecycleEnabled = input.bool(true, "Simulate setup lifecycle", group = GROUP_ENGINE)
+bool enableAlerts = input.bool(true, "Dynamic close-confirmed alerts", group = GROUP_ENGINE)
+
+bool enableFvg = input.bool(true, "FVG · H4", group = GROUP_DRIVERS)
+bool enableCrt = input.bool(true, "CRT · H4", group = GROUP_DRIVERS)
+bool enableOrderBlock = input.bool(true, "Order Block · M15/M30/H1/H4", group = GROUP_DRIVERS)
+bool enableBreaker = input.bool(true, "Breaker Block · M30/H1/H4", group = GROUP_DRIVERS)
+bool enableRetestBos = input.bool(true, "Retest BOS · H1/H4", group = GROUP_DRIVERS)
+bool enableTrendline = input.bool(true, "Trendline Break & Retest · M30/H1/H4", group = GROUP_DRIVERS)
+bool enableEma = input.bool(true, "EMA Pullback · H1/H4", group = GROUP_DRIVERS)
+bool enableFalseBreakout = input.bool(true, "False Breakout / Judas · M15/H1/H4", group = GROUP_DRIVERS)
+bool enableRangeExpansion = input.bool(true, "Range Expansion · M15/M30/H1/H4", group = GROUP_DRIVERS)
+bool enableAmd = input.bool(true, "AMD · M30/H1", group = GROUP_DRIVERS)
+
+bool showSignalLabels = input.bool(true, "Signal labels", group = GROUP_VISUAL)
+bool showZones = input.bool(true, "Candidate zones", group = GROUP_VISUAL)
+bool showLifecycleLabels = input.bool(true, "Entry/TP/SL lifecycle labels", group = GROUP_VISUAL)
+bool showDashboard = input.bool(true, "Dashboard", group = GROUP_VISUAL)
+
+// ============================================================================
+// Constants and timeframe registry
+// ============================================================================
+
+float EPSILON = 1e-9
+int DAY_MS = 24 * 60 * 60 * 1000
+int THREE_DAYS_MS = 3 * DAY_MS
+int SEVEN_DAYS_MS = 7 * DAY_MS
+int STATUS_WAITING_NEXT_OPEN = 0
+int STATUS_WAITING_TRIGGER = 1
+int STATUS_ACTIVE = 2
+
+float chartSeconds = timeframe.in_seconds()
+bool tfM15 = chartSeconds == 900
+bool tfM30 = chartSeconds == 1800
+bool tfH1 = chartSeconds == 3600
+bool tfH4 = chartSeconds == 14400
+bool supportedTimeframe = tfM15 or tfM30 or tfH1 or tfH4
+string timeframeId = tfM15 ? "M15" : tfM30 ? "M30" : tfH1 ? "H1" : tfH4 ? "H4" : timeframe.period
+
+// ============================================================================
+// Data structures
+// ============================================================================
+
+type RawCandidate
+    string driver
+    int direction
+    float zoneBottom
+    float zoneTop
+    float stopReference
+    float candidateAtr
+    float plannedEntry
+    int featureOffset
+    bool limitEntry
+    int waitMilliseconds
+    string reason
+
+type TimedZone
+    int direction
+    float bottom
+    float top
+    int createdTime
+    int anchorBar
+    int phase
+    int brokenTime
+    float aux1
+    float aux2
+    int auxIndex1
+    int auxIndex2
+
+type Setup
+    string driver
+    string gate
+    int direction
+    int status
+    int signalBar
+    int signalCloseTime
+    float stopReference
+    float atrAtSignal
+    float bufferAtr
+    float plannedEntry
+    int deadline
+    float entry
+    float stop
+    float tp1
+    float tp2
+    int entryTime
+    bool tp1Hit
+    line entryLine
+    line stopLine
+    line tp1Line
+    line tp2Line
+
+var array<RawCandidate> rawCandidates = array.new<RawCandidate>(0)
+var array<TimedZone> fvgZones = array.new<TimedZone>(0)
+var array<TimedZone> orderBlockZones = array.new<TimedZone>(0)
+var array<TimedZone> breakerZones = array.new<TimedZone>(0)
+var array<TimedZone> bosRetests = array.new<TimedZone>(0)
+var array<TimedZone> trendlineRetests = array.new<TimedZone>(0)
+var array<int> resolvedAmdManipulations = array.new_int(0)
+var array<Setup> activeSetups = array.new<Setup>(0)
+
+// ============================================================================
+// Closed-candle feature series (matches the JavaScript engine formulas)
+// ============================================================================
+
+float candleRange = math.max(EPSILON, high - low)
+float candleBody = math.abs(close - open)
+float trueRange = bar_index == 0 ? candleRange : math.max(candleRange, math.abs(high - close[1]), math.abs(low - close[1]))
+float atrSeed14 = ta.sma(trueRange, 14)
+float priorHigh5 = ta.highest(high[1], 5)
+float priorLow5 = ta.lowest(low[1], 5)
+float compressionHigh6 = ta.highest(high[1], 6)
+float compressionLow6 = ta.lowest(low[1], 6)
+float averageRangeCompression6 = ta.sma(candleRange, 6)[1]
+float averageRangeBaseline20 = ta.sma(candleRange, 20)[7]
+float averageBodyCompression6 = ta.sma(candleBody, 6)[1]
+
+var float atr14 = na
+if bar_index == 14
+    atr14 := atrSeed14
+else if bar_index > 14
+    atr14 := ((atr14[1] * 13.0) + trueRange) / 14.0
+
+var float ema20 = na
+var float ema50 = na
+ema20 := na(ema20[1]) ? close : close * (2.0 / 21.0) + ema20[1] * (19.0 / 21.0)
+ema50 := na(ema50[1]) ? close : close * (2.0 / 51.0) + ema50[1] * (49.0 / 51.0)
+
+f_median_previous(float source, int offset) =>
+    array<float> samples = array.new_float(0)
+    for history = 1 to 50
+        float value = source[offset + history]
+        if not na(value)
+            array.push(samples, value)
+    array.sort(samples, order.ascending)
+    int count = array.size(samples)
+    float result = na
+    if count > 0
+        int middle = int(math.floor(count / 2.0))
+        result := count % 2 == 1 ? array.get(samples, middle) : (array.get(samples, middle - 1) + array.get(samples, middle)) / 2.0
+    [result, count]
+
+f_inclusive(float value, float minimum, float maximum) =>
+    not na(value) and value >= minimum and value <= maximum
+
+f_driver_enabled(string driver) =>
+    switch driver
+        "FVG" => enableFvg
+        "CRT" => enableCrt
+        "ORDER_BLOCK" => enableOrderBlock
+        "BREAKER_BLOCK" => enableBreaker
+        "RETEST_BOS" => enableRetestBos
+        "TRENDLINE_BREAK_RETEST" => enableTrendline
+        "EMA_PULLBACK" => enableEma
+        "FALSE_BREAKOUT" => enableFalseBreakout
+        "RANGE_EXPANSION" => enableRangeExpansion
+        "AMD" => enableAmd
+        => false
+
+f_pattern_gate(string driver, int direction, float stopReference, float suppliedEntry, int featureOffset) =>
+    float localAtr = atr14[featureOffset]
+    float signalOpen = open[featureOffset]
+    float signalHigh = high[featureOffset]
+    float signalLow = low[featureOffset]
+    float signalClose = close[featureOffset]
+    float entry = na(suppliedEntry) ? signalClose : suppliedEntry
+    [atrMedian50, atrSamples] = f_median_previous(atr14, featureOffset)
+    float atrRatio50 = not na(atrMedian50) and atrMedian50 > EPSILON ? localAtr / atrMedian50 : na
+    bool highVolatility = atrSamples >= 20 and not na(atrRatio50) and atrRatio50 >= 1.20
+    float bufferAtr = highVolatility ? 0.20 : 0.18
+    float plannedStop = direction == 1 ? stopReference - localAtr * bufferAtr : stopReference + localAtr * bufferAtr
+    float riskPoints = math.abs(entry - plannedStop)
+    float signalRange = math.max(EPSILON, signalHigh - signalLow)
+    float signalBody = math.abs(signalClose - signalOpen)
+    float lowerWick = math.max(0.0, math.min(signalOpen, signalClose) - signalLow)
+    float upperWick = math.max(0.0, signalHigh - math.max(signalOpen, signalClose))
+    float closeStrength = direction == 1 ? (signalClose - signalLow) / signalRange : (signalHigh - signalClose) / signalRange
+    float rejectionWick = direction == 1 ? lowerWick : upperWick
+    bool trendAligned = direction == 1 ? ema20[featureOffset] > ema50[featureOffset] : ema20[featureOffset] < ema50[featureOffset]
+    float trendStrengthAtr = math.abs(ema20[featureOffset] - ema50[featureOffset]) / localAtr
+    float signalBodyAtr = signalBody / localAtr
+    float signalBodyRatio = signalBody / signalRange
+    float rejectionWickRatio = rejectionWick / signalRange
+    float riskAtr = riskPoints / localAtr
+    bool normalVolatility = f_inclusive(atrRatio50, 0.75, 1.20)
+    bool activeVolatility = f_inclusive(atrRatio50, 0.95, 1.50)
+    bool notExtreme = not na(atrRatio50) and atrRatio50 <= 1.50
+
+    bool accepted = false
+    string gateId = ""
+
+    if engineEnabled and f_driver_enabled(driver) and not na(localAtr) and localAtr > EPSILON and not na(stopReference)
+        if driver == "AMD"
+            accepted := (tfM30 or tfH1) and f_inclusive(riskPoints, 10.0, 30.0) and riskPoints <= 50.0
+            gateId := accepted ? "AMD_DISTRIBUTION" : "AMD_DISTRIBUTION_REJECTED"
+        else
+            bool patternA = false
+            bool patternB = false
+            if driver == "FVG"
+                patternA := trendStrengthAtr >= 0.60 and signalBodyAtr >= 0.20 and f_inclusive(riskAtr, 1.20, 3.50) and normalVolatility
+                patternB := rejectionWickRatio >= 0.15 and closeStrength >= 0.70 and f_inclusive(riskAtr, 1.00, 3.00) and normalVolatility
+                gateId := patternA ? "FVG_A" : patternB ? "FVG_B" : ""
+            else if driver == "EMA_PULLBACK"
+                patternA := tfH4 and signalBodyRatio >= 0.70 and closeStrength >= 0.55 and f_inclusive(riskPoints, 8.0, 25.0)
+                patternB := rejectionWickRatio >= 0.45 and closeStrength >= 0.82 and f_inclusive(riskAtr, 1.20, 3.50) and notExtreme
+                gateId := patternA ? "EMA_A" : patternB ? "EMA_B" : ""
+            else if driver == "CRT"
+                patternA := rejectionWickRatio >= 0.30 and closeStrength >= 0.70 and f_inclusive(riskAtr, 1.20, 3.50) and notExtreme
+                patternB := trendAligned and signalBodyAtr >= 0.35 and closeStrength >= 0.55 and f_inclusive(riskPoints, 8.0, 25.0)
+                gateId := patternA ? "CRT_A" : patternB ? "CRT_B" : ""
+            else if driver == "FALSE_BREAKOUT"
+                patternA := rejectionWickRatio >= 0.15 and closeStrength >= 0.70 and f_inclusive(riskPoints, 15.0, 35.0)
+                patternB := (tfH1 or tfH4) and signalBodyRatio >= 0.70 and closeStrength >= 0.82 and f_inclusive(riskPoints, 15.0, 35.0)
+                gateId := patternA ? "FALSE_BREAKOUT_A" : patternB ? "FALSE_BREAKOUT_B" : ""
+            else if driver == "TRENDLINE_BREAK_RETEST"
+                patternA := signalBodyRatio >= 0.70 and closeStrength >= 0.82 and f_inclusive(riskPoints, 12.0, 30.0) and normalVolatility
+                gateId := patternA ? "TRENDLINE" : ""
+            else if driver == "BREAKER_BLOCK"
+                patternA := trendStrengthAtr >= 0.25 and signalBodyAtr >= 0.20 and f_inclusive(riskPoints, 12.0, 30.0) and activeVolatility
+                patternB := trendAligned and signalBodyAtr >= 0.20 and f_inclusive(riskPoints, 15.0, 35.0) and notExtreme
+                gateId := patternA ? "BREAKER_A" : patternB ? "BREAKER_B" : ""
+            else if driver == "ORDER_BLOCK"
+                patternA := trendStrengthAtr >= 0.60 and signalBodyAtr >= 0.20 and closeStrength >= 0.55 and f_inclusive(riskPoints, 8.0, 25.0)
+                patternB := rejectionWickRatio >= 0.15 and closeStrength >= 0.70 and f_inclusive(riskAtr, 0.80, 2.50) and activeVolatility
+                gateId := patternA ? "ORDER_BLOCK_A" : patternB ? "ORDER_BLOCK_B" : ""
+            else if driver == "RETEST_BOS"
+                patternA := trendStrengthAtr >= 0.60 and signalBodyRatio >= 0.70 and closeStrength >= 0.55 and f_inclusive(riskPoints, 10.0, 25.0)
+                patternB := trendStrengthAtr >= 0.60 and signalBodyRatio >= 0.70 and f_inclusive(riskPoints, 10.0, 25.0) and normalVolatility
+                gateId := patternA ? "RETEST_BOS_A" : patternB ? "RETEST_BOS_B" : ""
+            else if driver == "RANGE_EXPANSION"
+                patternA := signalBodyRatio >= 0.70 and closeStrength >= 0.82 and f_inclusive(riskPoints, 15.0, 35.0) and activeVolatility
+                gateId := patternA ? "RANGE_EXPANSION" : ""
+
+            accepted := patternA or patternB
+            if accepted and repairEnabled
+                bool repairPassed = true
+                string repairId = ""
+                if driver == "ORDER_BLOCK"
+                    repairPassed := (signalBodyAtr >= 0.35 and closeStrength <= 0.82) or (not tfM15 and riskPoints <= 25.0)
+                    repairId := "BT6.1_ORDER_BLOCK"
+                else if driver == "RETEST_BOS"
+                    repairPassed := riskPoints <= 18.0 or (f_inclusive(trendStrengthAtr, 0.60, 1.50) and riskPoints <= 20.0)
+                    repairId := "BT6.1_RETEST_BOS"
+                else if driver == "EMA_PULLBACK"
+                    repairPassed := direction == -1 or (direction == 1 and signalBodyAtr >= 0.35 and f_inclusive(trendStrengthAtr, 0.0, 1.0))
+                    repairId := "BT6.1_EMA"
+                else if driver == "BREAKER_BLOCK"
+                    repairPassed := direction == -1 or (direction == 1 and atrRatio50 >= 1.10 and rejectionWickRatio >= 0.15)
+                    repairId := "BT6.1_BREAKER"
+                accepted := accepted and repairPassed
+                if accepted and str.length(repairId) > 0
+                    gateId += "+" + repairId
+
+    [accepted, gateId, bufferAtr, riskPoints]
+
+f_push_raw(array<RawCandidate> output, string driver, int direction, float bottom, float top, float stopReference, float candidateAtr, float plannedEntry, int featureOffset, bool limitEntry, int waitMilliseconds, string reason) =>
+    if top > bottom and not na(candidateAtr) and candidateAtr > EPSILON and not na(stopReference)
+        array.push(output, RawCandidate.new(driver, direction, bottom, top, stopReference, candidateAtr, plannedEntry, featureOffset, limitEntry, waitMilliseconds, reason))
+    true
+
+// ============================================================================
+// Stateful driver detectors
+// ============================================================================
+
+f_process_fvg(array<TimedZone> zones, array<RawCandidate> output) =>
+    int index = array.size(zones) - 1
+    while index >= 0
+        TimedZone zone = array.get(zones, index)
+        bool expired = time - zone.createdTime > SEVEN_DAYS_MS
+        bool overlap = high >= zone.bottom and low <= zone.top
+        if expired
+            array.remove(zones, index)
+        else if overlap
+            bool invalid = zone.direction == 1 ? low < zone.bottom : high > zone.top
+            if not invalid
+                float reference = zone.direction == 1 ? math.min(low, zone.bottom) : math.max(high, zone.top)
+                f_push_raw(output, "FVG", zone.direction, zone.bottom, zone.top, reference, na(atr14) ? zone.aux1 : atr14, na, 0, false, 0, "First H4 FVG retest within seven days")
+            array.remove(zones, index)
+        index -= 1
+    true
+
+f_form_fvg(array<TimedZone> zones) =>
+    if bar_index >= 2
+        bool bullish = low > high[2]
+        bool bearish = high < low[2]
+        if bullish or bearish
+            int direction = bullish ? 1 : -1
+            float bottom = bullish ? high[2] : high
+            float top = bullish ? low : low[2]
+            array.push(zones, TimedZone.new(direction, bottom, top, time_close, bar_index, 0, 0, atr14, na, 0, 0))
+    true
+
+f_process_order_blocks(array<TimedZone> zones, array<RawCandidate> output) =>
+    int index = array.size(zones) - 1
+    while index >= 0
+        TimedZone zone = array.get(zones, index)
+        bool expired = time - zone.createdTime > THREE_DAYS_MS
+        bool invalid = zone.direction == 1 ? low < zone.bottom : high > zone.top
+        bool overlap = high >= zone.bottom and low <= zone.top
+        if expired or invalid
+            array.remove(zones, index)
+        else if overlap
+            float reference = zone.direction == 1 ? zone.bottom : zone.top
+            f_push_raw(output, "ORDER_BLOCK", zone.direction, zone.bottom, zone.top, reference, na(atr14) ? zone.aux1 : atr14, na, 0, false, 0, "First retest of last opposite candle before displacement and BOS")
+            array.remove(zones, index)
+        index -= 1
+    true
+
+f_process_breakers(array<TimedZone> zones, array<RawCandidate> output) =>
+    int index = array.size(zones) - 1
+    while index >= 0
+        TimedZone zone = array.get(zones, index)
+        if zone.phase == 0
+            if time - zone.createdTime > THREE_DAYS_MS
+                array.remove(zones, index)
+            else
+                bool broken = zone.direction == 1 ? close < zone.bottom : close > zone.top
+                if broken
+                    zone.phase := 1
+                    zone.brokenTime := time_close
+                    array.set(zones, index, zone)
+        else
+            int breakerDirection = zone.direction == 1 ? -1 : 1
+            bool expired = time - zone.brokenTime > THREE_DAYS_MS
+            bool invalid = breakerDirection == 1 ? low < zone.bottom : high > zone.top
+            bool overlap = high >= zone.bottom and low <= zone.top
+            if expired or invalid
+                array.remove(zones, index)
+            else if overlap
+                float reference = breakerDirection == 1 ? zone.bottom : zone.top
+                f_push_raw(output, "BREAKER_BLOCK", breakerDirection, zone.bottom, zone.top, reference, na(atr14) ? zone.aux1 : atr14, na, 0, false, 0, "Failed Order Block closed through and retested from the opposite side")
+                array.remove(zones, index)
+        index -= 1
+    true
+
+f_form_order_block(array<TimedZone> obZones, array<TimedZone> bbZones) =>
+    if bar_index >= 6 and not na(atr14) and candleBody >= atr14 and candleBody / candleRange >= 0.60
+        int direction = close > priorHigh5 ? 1 : close < priorLow5 ? -1 : 0
+        bool aligned = direction == 1 ? close > open : direction == -1 ? close < open : false
+        if direction != 0 and aligned
+            int oppositeOffset = 0
+            for offset = 1 to 5
+                bool opposite = direction == 1 ? close[offset] < open[offset] : close[offset] > open[offset]
+                if oppositeOffset == 0 and opposite
+                    oppositeOffset := offset
+            if oppositeOffset > 0
+                TimedZone zone = TimedZone.new(direction, low[oppositeOffset], high[oppositeOffset], time_close, bar_index, 0, 0, atr14, na, 0, 0)
+                if enableOrderBlock
+                    array.push(obZones, zone)
+                if enableBreaker and (tfM30 or tfH1 or tfH4)
+                    array.push(bbZones, TimedZone.new(direction, zone.bottom, zone.top, zone.createdTime, zone.anchorBar, 0, 0, zone.aux1, na, 0, 0))
+    true
+
+f_process_bos_retests(array<TimedZone> zones, array<RawCandidate> output) =>
+    int index = array.size(zones) - 1
+    while index >= 0
+        TimedZone zone = array.get(zones, index)
+        float level = zone.bottom
+        bool expired = time - zone.createdTime > THREE_DAYS_MS
+        bool touched = zone.direction == 1 ? low <= level and close > level : high >= level and close < level
+        if expired
+            array.remove(zones, index)
+        else if touched
+            float localAtr = na(atr14) ? zone.aux1 : atr14
+            float width = math.max(localAtr * 0.08, EPSILON)
+            float bottom = level - width
+            float top = level + width
+            float reference = zone.direction == 1 ? math.min(low, bottom) : math.max(high, top)
+            f_push_raw(output, "RETEST_BOS", zone.direction, bottom, top, reference, localAtr, na, 0, false, 0, "Structure break followed by first valid retest and close on breakout side")
+            array.remove(zones, index)
+        index -= 1
+    true
+
+f_form_bos_retest(array<TimedZone> zones) =>
+    if bar_index >= 6
+        int direction = close > priorHigh5 ? 1 : close < priorLow5 ? -1 : 0
+        if direction != 0
+            float level = direction == 1 ? priorHigh5 : priorLow5
+            array.push(zones, TimedZone.new(direction, level, level, time_close, bar_index, 0, 0, atr14, na, 0, 0))
+    true
+
+f_process_trendline_retests(array<TimedZone> zones, array<RawCandidate> output) =>
+    int index = array.size(zones) - 1
+    while index >= 0
+        TimedZone zone = array.get(zones, index)
+        bool expired = time - zone.createdTime > THREE_DAYS_MS
+        float denominator = zone.auxIndex2 - zone.auxIndex1
+        float slope = denominator != 0 ? (zone.aux2 - zone.aux1) / denominator : na
+        float linePrice = zone.aux1 + slope * (bar_index - zone.auxIndex1)
+        float tolerance = atr14 * 0.12
+        bool touched = zone.direction == 1 ? low <= linePrice + tolerance and close > linePrice : high >= linePrice - tolerance and close < linePrice
+        if expired or na(linePrice) or na(tolerance)
+            array.remove(zones, index)
+        else if touched
+            float reference = zone.direction == 1 ? low : high
+            f_push_raw(output, "TRENDLINE_BREAK_RETEST", zone.direction, linePrice - tolerance, linePrice + tolerance, reference, atr14, na, 0, false, 0, "Two-point trendline break followed by first retest close")
+            array.remove(zones, index)
+        index -= 1
+    true
+
+var array<float> pivotHighPrices = array.new_float(0)
+var array<int> pivotHighIndices = array.new_int(0)
+var array<float> pivotLowPrices = array.new_float(0)
+var array<int> pivotLowIndices = array.new_int(0)
+
+f_update_and_form_trendlines(array<TimedZone> zones, array<float> highPrices, array<int> highIndices, array<float> lowPrices, array<int> lowIndices) =>
+    // JavaScript swing parity: left-side equality rejects a pivot, while
+    // right-side equality is allowed until a strictly higher/lower value.
+    bool isConfirmedHigh = bar_index >= 4 and high[2] > high[3] and high[2] > high[4] and high[2] >= high[1] and high[2] >= high
+    bool isConfirmedLow = bar_index >= 4 and low[2] < low[3] and low[2] < low[4] and low[2] <= low[1] and low[2] <= low
+    float confirmedHigh = isConfirmedHigh ? high[2] : na
+    float confirmedLow = isConfirmedLow ? low[2] : na
+    if not na(confirmedHigh)
+        array.push(highPrices, confirmedHigh)
+        array.push(highIndices, bar_index - 2)
+        if array.size(highPrices) > 2
+            array.shift(highPrices)
+            array.shift(highIndices)
+    if not na(confirmedLow)
+        array.push(lowPrices, confirmedLow)
+        array.push(lowIndices, bar_index - 2)
+        if array.size(lowPrices) > 2
+            array.shift(lowPrices)
+            array.shift(lowIndices)
+
+    if bar_index >= 8 and array.size(highPrices) == 2
+        float priorPivotHigh = array.get(highPrices, 0)
+        float latestPivotHigh = array.get(highPrices, 1)
+        int priorPivotHighIndex = array.get(highIndices, 0)
+        int latestPivotHighIndex = array.get(highIndices, 1)
+        float slope = (latestPivotHigh - priorPivotHigh) / (latestPivotHighIndex - priorPivotHighIndex)
+        float currentLine = priorPivotHigh + slope * (bar_index - priorPivotHighIndex)
+        float previousLine = priorPivotHigh + slope * (bar_index - 1 - priorPivotHighIndex)
+        if latestPivotHigh < priorPivotHigh and close[1] <= previousLine and close > currentLine
+            array.push(zones, TimedZone.new(1, currentLine, currentLine, time_close, bar_index, 0, 0, priorPivotHigh, latestPivotHigh, priorPivotHighIndex, latestPivotHighIndex))
+
+    if bar_index >= 8 and array.size(lowPrices) == 2
+        float priorPivotLow = array.get(lowPrices, 0)
+        float latestPivotLow = array.get(lowPrices, 1)
+        int priorPivotLowIndex = array.get(lowIndices, 0)
+        int latestPivotLowIndex = array.get(lowIndices, 1)
+        float slope = (latestPivotLow - priorPivotLow) / (latestPivotLowIndex - priorPivotLowIndex)
+        float currentLine = priorPivotLow + slope * (bar_index - priorPivotLowIndex)
+        float previousLine = priorPivotLow + slope * (bar_index - 1 - priorPivotLowIndex)
+        if latestPivotLow > priorPivotLow and close[1] >= previousLine and close < currentLine
+            array.push(zones, TimedZone.new(-1, currentLine, currentLine, time_close, bar_index, 0, 0, priorPivotLow, latestPivotLow, priorPivotLowIndex, latestPivotLowIndex))
+    true
+
+f_detect_crt(array<RawCandidate> output) =>
+    if bar_index >= 1
+        bool sweepLow = low < low[1] and high <= high[1]
+        bool sweepHigh = high > high[1] and low >= low[1]
+        bool closeInside = close > low[1] and close < high[1]
+        if sweepLow != sweepHigh and closeInside
+            int direction = sweepLow ? 1 : -1
+            float reference = direction == 1 ? low : high
+            f_push_raw(output, "CRT", direction, low[1], high[1], reference, atr14, na, 0, false, 0, "H4 one-sided sweep and close back inside reference range")
+    true
+
+f_detect_ema_pullback(array<RawCandidate> output) =>
+    if bar_index >= 51 and not na(atr14)
+        int direction = 0
+        if ema20 > ema50 and low[1] <= ema20[1] and close > ema20 and close > open
+            direction := 1
+        if ema20 < ema50 and high[1] >= ema20[1] and close < ema20 and close < open
+            direction := -1
+        if direction != 0
+            float bottom = math.min(ema20, ema20[1]) - atr14 * 0.05
+            float top = math.max(ema20, ema20[1]) + atr14 * 0.05
+            float reference = direction == 1 ? math.min(low[1], low) : math.max(high[1], high)
+            f_push_raw(output, "EMA_PULLBACK", direction, bottom, top, reference, atr14, na, 0, false, 0, "EMA20/EMA50 trend alignment, pullback touch, and confirmation close")
+    true
+
+f_asia_levels() =>
+    int currentDay = year(time, "Asia/Makassar") * 10000 + month(time, "Asia/Makassar") * 100 + dayofmonth(time, "Asia/Makassar")
+    int currentHour = hour(time, "Asia/Makassar")
+    var int storedDay = na
+    var float asiaHigh = na
+    var float asiaLow = na
+    if na(storedDay) or currentDay != storedDay
+        storedDay := currentDay
+        asiaHigh := na
+        asiaLow := na
+    if currentHour < 6
+        asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
+        asiaLow := na(asiaLow) ? low : math.min(asiaLow, low)
+    [asiaHigh, asiaLow, currentDay]
+
+[asiaHighM15, asiaLowM15, asiaDayM15] = request.security(syminfo.tickerid, "15", f_asia_levels(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+var array<int> falseBreakoutUsedDays = array.new_int(0)
+
+f_detect_false_breakout(array<int> usedDays, array<RawCandidate> output) =>
+    int chartDay = year(time, "Asia/Makassar") * 10000 + month(time, "Asia/Makassar") * 100 + dayofmonth(time, "Asia/Makassar")
+    int chartHour = hour(time, "Asia/Makassar")
+    bool eligibleDay = chartDay == asiaDayM15 and not array.includes(usedDays, chartDay)
+    if chartHour >= 6 and eligibleDay and not na(asiaHighM15) and not na(asiaLowM15)
+        bool sweepLow = low < asiaLowM15 and high <= asiaHighM15
+        bool sweepHigh = high > asiaHighM15 and low >= asiaLowM15
+        bool closeInside = close > asiaLowM15 and close < asiaHighM15
+        if sweepLow != sweepHigh and closeInside
+            array.push(usedDays, chartDay)
+            if array.size(usedDays) > 20
+                array.shift(usedDays)
+            int direction = sweepLow ? 1 : -1
+            float reference = direction == 1 ? low : high
+            f_push_raw(output, "FALSE_BREAKOUT", direction, asiaLowM15, asiaHighM15, reference, atr14, na, 0, false, 0, "First post-Asia one-sided sweep with close back inside")
+    true
+
+f_six_bar_span(int oldestOffset) =>
+    float spanHigh = na
+    float spanLow = na
+    for step = 0 to 5
+        int offset = oldestOffset - step
+        spanHigh := na(spanHigh) ? high[offset] : math.max(spanHigh, high[offset])
+        spanLow := na(spanLow) ? low[offset] : math.min(spanLow, low[offset])
+    spanHigh - spanLow
+
+f_detect_range_expansion(array<RawCandidate> output) =>
+    if bar_index >= 27 and not na(atr14)
+        float compressionSpan = compressionHigh6 - compressionLow6
+        array<float> spans = array.new_float(0)
+        for oldestOffset = 12 to 26
+            array.push(spans, f_six_bar_span(oldestOffset))
+        array.sort(spans, order.ascending)
+        int spanCount = array.size(spans)
+        int spanMiddle = int(math.floor(spanCount / 2.0))
+        float baselineSpan = spanCount % 2 == 1 ? array.get(spans, spanMiddle) : (array.get(spans, spanMiddle - 1) + array.get(spans, spanMiddle)) / 2.0
+        bool compressed = compressionSpan <= baselineSpan * 0.65 and averageRangeCompression6 <= averageRangeBaseline20 * 0.70
+        int direction = close > compressionHigh6 ? 1 : close < compressionLow6 ? -1 : 0
+        bool displacement = candleBody >= math.max(averageBodyCompression6 * 1.50, atr14 * 0.60)
+        if compressed and direction != 0 and displacement
+            float reference = direction == 1 ? compressionLow6 : compressionHigh6
+            f_push_raw(output, "RANGE_EXPANSION", direction, compressionLow6, compressionHigh6, reference, atr14, na, 0, false, 0, "Six-candle compression followed by large-body close outside the range")
+    true
+
+f_accumulation_bounds(int manipulationOffset, int length) =>
+    float accumulationHigh = na
+    float accumulationLow = na
+    for step = 1 to 12
+        if step <= length
+            float barHigh = high[manipulationOffset + step]
+            float barLow = low[manipulationOffset + step]
+            accumulationHigh := na(accumulationHigh) ? barHigh : math.max(accumulationHigh, barHigh)
+            accumulationLow := na(accumulationLow) ? barLow : math.min(accumulationLow, barLow)
+    [accumulationHigh, accumulationLow]
+
+f_mark_amd_resolved(array<int> resolved, int manipulationTime) =>
+    if not array.includes(resolved, manipulationTime)
+        array.push(resolved, manipulationTime)
+        if array.size(resolved) > 500
+            array.shift(resolved)
+    true
+
+f_detect_amd(array<int> resolved, array<RawCandidate> output) =>
+    if bar_index >= 20 and not na(atr14[1])
+        int shortest = tfM30 ? 6 : 4
+        int middle = tfM30 ? 8 : 6
+        int longest = tfM30 ? 12 : 8
+        for manipulationOffset = 2 to 7
+            int manipulationTime = time[manipulationOffset]
+            if not array.includes(resolved, manipulationTime)
+                float localAtr = atr14[manipulationOffset]
+                if not na(localAtr) and localAtr > EPSILON
+                    int selectedLength = 0
+                    float accumulationHigh = na
+                    float accumulationLow = na
+                    for windowIndex = 0 to 2
+                        int windowLength = windowIndex == 0 ? shortest : windowIndex == 1 ? middle : longest
+                        [candidateHigh, candidateLow] = f_accumulation_bounds(manipulationOffset, windowLength)
+                        float spanAtr = (candidateHigh - candidateLow) / localAtr
+                        if selectedLength == 0 and f_inclusive(spanAtr, 2.0, 3.0)
+                            selectedLength := windowLength
+                            accumulationHigh := candidateHigh
+                            accumulationLow := candidateLow
+                    if selectedLength > 0
+                        float manipulationLow = low[manipulationOffset]
+                        float manipulationHigh = high[manipulationOffset]
+                        float manipulationOpen = open[manipulationOffset]
+                        float manipulationClose = close[manipulationOffset]
+                        float sweepDistance = 0.03 * localAtr
+                        bool sweepLow = manipulationLow <= accumulationLow - sweepDistance and manipulationClose > accumulationLow and manipulationClose < accumulationHigh
+                        bool sweepHigh = manipulationHigh >= accumulationHigh + sweepDistance and manipulationClose < accumulationHigh and manipulationClose > accumulationLow
+                        if sweepLow != sweepHigh
+                            int direction = sweepLow ? 1 : -1
+                            float manipulationRange = math.max(EPSILON, manipulationHigh - manipulationLow)
+                            float wick = direction == 1 ? math.min(manipulationOpen, manipulationClose) - manipulationLow : manipulationHigh - math.max(manipulationOpen, manipulationClose)
+                            float wickRatio = math.max(0.0, wick) / manipulationRange
+                            if f_inclusive(wickRatio, 0.30, 0.75)
+                                bool fvgAligned = direction == 1 ? low > high[2] : high < low[2]
+                                if fvgAligned
+                                    float fvgBottom = direction == 1 ? high[2] : high
+                                    float fvgTop = direction == 1 ? low : low[2]
+                                    float distributionAtr = na(atr14[1]) ? localAtr : atr14[1]
+                                    float accumulationMid = (accumulationHigh + accumulationLow) / 2.0
+                                    bool distributionAligned = direction == 1 ? close[1] > open[1] : close[1] < open[1]
+                                    bool midpointCross = direction == 1 ? close[1] > accumulationMid : close[1] < accumulationMid
+                                    float distributionBodyAtr = math.abs(close[1] - open[1]) / distributionAtr
+                                    float distributionRange = math.max(EPSILON, high[1] - low[1])
+                                    float distributionStrength = direction == 1 ? (close[1] - low[1]) / distributionRange : (high[1] - close[1]) / distributionRange
+                                    float distributionDistanceAtr = math.abs(close[1] - manipulationClose) / distributionAtr
+                                    float fvgWidthAtr = (fvgTop - fvgBottom) / distributionAtr
+                                    bool distributionPassed = distributionAligned and midpointCross and distributionBodyAtr >= 0.50 and distributionStrength >= 0.65 and distributionDistanceAtr >= 0.80 and f_inclusive(fvgWidthAtr, 0.05, 0.50)
+                                    if distributionPassed
+                                        bool invalidBeforeConfirmation = false
+                                        for pathOffset = 0 to 6
+                                            if pathOffset < manipulationOffset
+                                                bool invalid = direction == 1 ? low[pathOffset] < manipulationLow : high[pathOffset] > manipulationHigh
+                                                invalidBeforeConfirmation := invalidBeforeConfirmation or invalid
+                                        if invalidBeforeConfirmation
+                                            f_mark_amd_resolved(resolved, manipulationTime)
+                                        else
+                                            float plannedEntry = (fvgBottom + fvgTop) / 2.0
+                                            float stopReference = direction == 1 ? manipulationLow : manipulationHigh
+                                            int waitMilliseconds = tfM30 ? 16 * 60 * 60 * 1000 : DAY_MS
+                                            f_push_raw(output, "AMD", direction, fvgBottom, fvgTop, stopReference, na(atr14) ? distributionAtr : atr14, plannedEntry, 1, true, waitMilliseconds, "AMD accumulation, one-sided manipulation, and aligned distribution FVG")
+                                            f_mark_amd_resolved(resolved, manipulationTime)
+    true
+
+// ============================================================================
+// Setup creation, lifecycle, and drawings
+// ============================================================================
+
+f_direction_text(int direction) => direction == 1 ? "BUY" : "SELL"
+f_direction_color(int direction) => direction == 1 ? color.rgb(22, 197, 94) : color.rgb(239, 68, 68)
+
+f_activate_setup(Setup setup, float entryPrice) =>
+    string failure = ""
+    bool structuralSide = setup.direction == 1 ? setup.stopReference < entryPrice - EPSILON : setup.stopReference > entryPrice + EPSILON
+    if na(entryPrice) or na(setup.stopReference) or not structuralSide
+        failure := "STRUCTURAL_REFERENCE_WRONG_SIDE"
+    float structuralBuffer = setup.atrAtSignal * setup.bufferAtr
+    float stopPrice = setup.direction == 1 ? setup.stopReference - structuralBuffer : setup.stopReference + structuralBuffer
+    float risk = setup.direction == 1 ? entryPrice - stopPrice : stopPrice - entryPrice
+    if str.length(failure) == 0 and (na(risk) or risk <= EPSILON)
+        failure := "NON_POSITIVE_STRUCTURAL_RISK"
+    if str.length(failure) == 0 and risk > 50.0
+        failure := "STRUCTURAL_RISK_EXCEEDS_50_POINT_CAP"
+    if str.length(failure) == 0
+        float sign = setup.direction == 1 ? 1.0 : -1.0
+        setup.status := STATUS_ACTIVE
+        setup.entry := entryPrice
+        setup.stop := stopPrice
+        setup.tp1 := entryPrice + sign * 10.0
+        setup.tp2 := entryPrice + sign * 20.0
+        setup.entryTime := time
+        color directionColor = f_direction_color(setup.direction)
+        setup.entryLine := line.new(bar_index, setup.entry, bar_index + 1, setup.entry, xloc = xloc.bar_index, color = color.new(directionColor, 0), width = 2)
+        setup.stopLine := line.new(bar_index, setup.stop, bar_index + 1, setup.stop, xloc = xloc.bar_index, color = color.new(color.red, 0), style = line.style_dashed)
+        setup.tp1Line := line.new(bar_index, setup.tp1, bar_index + 1, setup.tp1, xloc = xloc.bar_index, color = color.new(color.yellow, 0), style = line.style_dotted)
+        setup.tp2Line := line.new(bar_index, setup.tp2, bar_index + 1, setup.tp2, xloc = xloc.bar_index, color = color.new(color.lime, 0), style = line.style_dashed)
+        if showLifecycleLabels
+            label.new(bar_index, entryPrice, setup.driver + " " + f_direction_text(setup.direction) + " ACTIVE\nEntry " + str.tostring(entryPrice, format.mintick) + " · SL " + str.tostring(stopPrice, format.mintick) + "\nTP1 " + str.tostring(setup.tp1, format.mintick) + " · TP2 " + str.tostring(setup.tp2, format.mintick), style = setup.direction == 1 ? label.style_label_up : label.style_label_down, color = color.new(directionColor, 5), textcolor = color.white, size = size.tiny)
+    failure
+
+f_extend_setup_lines(Setup setup) =>
+    if not na(setup.entryLine)
+        line.set_x2(setup.entryLine, bar_index)
+        line.set_x2(setup.stopLine, bar_index)
+        line.set_x2(setup.tp1Line, bar_index)
+        line.set_x2(setup.tp2Line, bar_index)
+    true
+
+var string lastAcceptedSignal = "Belum ada"
+bool acceptedBuyThisBar = false
+bool acceptedSellThisBar = false
+
+array.clear(rawCandidates)
+
+if barstate.isconfirmed and engineEnabled and supportedTimeframe
+    // Existing states are evaluated before current-bar formations, preserving j > i.
+    if tfH4 and enableFvg
+        f_process_fvg(fvgZones, rawCandidates)
+
+    if enableOrderBlock and (tfM15 or tfM30 or tfH1 or tfH4)
+        f_process_order_blocks(orderBlockZones, rawCandidates)
+    if enableBreaker and (tfM30 or tfH1 or tfH4)
+        f_process_breakers(breakerZones, rawCandidates)
+    if enableRetestBos and (tfH1 or tfH4)
+        f_process_bos_retests(bosRetests, rawCandidates)
+    if enableTrendline and (tfM30 or tfH1 or tfH4)
+        f_process_trendline_retests(trendlineRetests, rawCandidates)
+
+    if tfH4 and enableCrt
+        f_detect_crt(rawCandidates)
+    if enableEma and (tfH1 or tfH4)
+        f_detect_ema_pullback(rawCandidates)
+    if enableFalseBreakout and (tfM15 or tfH1 or tfH4)
+        f_detect_false_breakout(falseBreakoutUsedDays, rawCandidates)
+    if enableRangeExpansion and (tfM15 or tfM30 or tfH1 or tfH4)
+        f_detect_range_expansion(rawCandidates)
+    if enableAmd and (tfM30 or tfH1)
+        f_detect_amd(resolvedAmdManipulations, rawCandidates)
+
+    if tfH4 and enableFvg
+        f_form_fvg(fvgZones)
+    if enableOrderBlock or (enableBreaker and (tfM30 or tfH1 or tfH4))
+        f_form_order_block(orderBlockZones, breakerZones)
+    if enableRetestBos and (tfH1 or tfH4)
+        f_form_bos_retest(bosRetests)
+    if enableTrendline and (tfM30 or tfH1 or tfH4)
+        f_update_and_form_trendlines(trendlineRetests, pivotHighPrices, pivotHighIndices, pivotLowPrices, pivotLowIndices)
+
+    int rawIndex = 0
+    while rawIndex < array.size(rawCandidates)
+        RawCandidate candidate = array.get(rawCandidates, rawIndex)
+        [accepted, gateId, bufferAtr, riskPoints] = f_pattern_gate(candidate.driver, candidate.direction, candidate.stopReference, candidate.plannedEntry, candidate.featureOffset)
+        if accepted
+            acceptedBuyThisBar := acceptedBuyThisBar or candidate.direction == 1
+            acceptedSellThisBar := acceptedSellThisBar or candidate.direction == -1
+            string side = f_direction_text(candidate.direction)
+            lastAcceptedSignal := candidate.driver + " " + side + " · " + timeframeId + " · " + gateId
+            color signalColor = f_direction_color(candidate.direction)
+            if showSignalLabels
+                label.new(bar_index, candidate.direction == 1 ? low : high, candidate.driver + " " + side + "\n" + timeframeId + " · " + gateId + "\nRisk " + str.tostring(riskPoints, "#.##") + " pt", style = candidate.direction == 1 ? label.style_label_up : label.style_label_down, color = color.new(signalColor, 0), textcolor = color.white, size = size.small)
+            if showZones
+                box.new(left = bar_index, top = candidate.zoneTop, right = bar_index + 20, bottom = candidate.zoneBottom, xloc = xloc.bar_index, border_color = color.new(signalColor, 25), bgcolor = color.new(signalColor, 88))
+            if lifecycleEnabled
+                int status = candidate.limitEntry ? STATUS_WAITING_TRIGGER : STATUS_WAITING_NEXT_OPEN
+                int deadline = candidate.limitEntry ? time_close + candidate.waitMilliseconds : 0
+                Setup setup = Setup.new(candidate.driver, gateId, candidate.direction, status, bar_index, time_close, candidate.stopReference, candidate.candidateAtr, bufferAtr, candidate.plannedEntry, deadline, na, na, na, na, 0, false, na, na, na, na)
+                array.push(activeSetups, setup)
+            if enableAlerts
+                string entryText = candidate.limitEntry ? str.tostring(candidate.plannedEntry, format.mintick) : "next open"
+                alert("Amy FX Scalper | " + candidate.driver + " " + side + " | " + timeframeId + " | " + gateId + " | entry " + entryText, alert.freq_all)
+        rawIndex += 1
+
+    // The engine keeps every independent setup. Only exact duplicate detector
+    // states are consumed by their first-touch/first-confirmation state machines.
+    int setupIndex = array.size(activeSetups) - 1
+    while setupIndex >= 0
+        Setup setup = array.get(activeSetups, setupIndex)
+        bool removeSetup = false
+
+        if setup.status == STATUS_WAITING_NEXT_OPEN and bar_index > setup.signalBar
+            string failure = f_activate_setup(setup, open)
+            if str.length(failure) > 0
+                removeSetup := true
+                if showLifecycleLabels
+                    label.new(bar_index, close, setup.driver + " INVALID\n" + failure, style = label.style_label_left, color = color.new(color.gray, 10), textcolor = color.white, size = size.tiny)
+
+        if setup.status == STATUS_WAITING_TRIGGER and not removeSetup and bar_index > setup.signalBar
+            bool withinDeadline = time <= setup.deadline
+            bool extremeBroken = setup.direction == 1 ? low < setup.stopReference : high > setup.stopReference
+            bool midpointFilled = low <= setup.plannedEntry and high >= setup.plannedEntry
+            if withinDeadline and extremeBroken
+                removeSetup := true
+                if showLifecycleLabels
+                    label.new(bar_index, setup.stopReference, setup.driver + " CANCELLED\nManipulation extreme broken", style = label.style_label_left, color = color.new(color.gray, 10), textcolor = color.white, size = size.tiny)
+            else if withinDeadline and midpointFilled
+                string failure = f_activate_setup(setup, setup.plannedEntry)
+                if str.length(failure) > 0
+                    removeSetup := true
+                    if showLifecycleLabels
+                        label.new(bar_index, close, setup.driver + " INVALID\n" + failure, style = label.style_label_left, color = color.new(color.gray, 10), textcolor = color.white, size = size.tiny)
+            else if time_close >= setup.deadline
+                removeSetup := true
+                if showLifecycleLabels
+                    label.new(bar_index, close, setup.driver + " CANCELLED\nEntry wait expired", style = label.style_label_left, color = color.new(color.gray, 10), textcolor = color.white, size = size.tiny)
+
+        if setup.status == STATUS_ACTIVE and not removeSetup
+            f_extend_setup_lines(setup)
+            bool stopHit = setup.direction == 1 ? low <= setup.stop : high >= setup.stop
+            bool tp2Hit = setup.direction == 1 ? high >= setup.tp2 : low <= setup.tp2
+            bool tp1Hit = setup.direction == 1 ? high >= setup.tp1 : low <= setup.tp1
+            if stopHit
+                removeSetup := true
+                if showLifecycleLabels
+                    label.new(bar_index, setup.stop, setup.driver + " SL HIT", style = setup.direction == 1 ? label.style_label_down : label.style_label_up, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+            else if tp2Hit
+                removeSetup := true
+                if showLifecycleLabels
+                    label.new(bar_index, setup.tp2, setup.driver + " TP2 HIT", style = setup.direction == 1 ? label.style_label_down : label.style_label_up, color = color.new(color.lime, 0), textcolor = color.black, size = size.tiny)
+            else
+                if not setup.tp1Hit and tp1Hit
+                    setup.tp1Hit := true
+                    if showLifecycleLabels
+                        label.new(bar_index, setup.tp1, setup.driver + " TP1 +10\nSL unchanged", style = label.style_label_left, color = color.new(color.yellow, 0), textcolor = color.black, size = size.tiny)
+                if time_close >= setup.entryTime + DAY_MS
+                    removeSetup := true
+                    if showLifecycleLabels
+                        label.new(bar_index, close, setup.driver + " TIME EXIT", style = label.style_label_left, color = color.new(color.orange, 0), textcolor = color.black, size = size.tiny)
+
+        if removeSetup
+            f_extend_setup_lines(setup)
+            array.remove(activeSetups, setupIndex)
+        else
+            array.set(activeSetups, setupIndex, setup)
+        setupIndex -= 1
+
+plotshape(acceptedBuyThisBar, title = "Amy FX accepted BUY", style = shape.triangleup, location = location.belowbar, color = color.rgb(22, 197, 94), size = size.tiny, text = "BUY")
+plotshape(acceptedSellThisBar, title = "Amy FX accepted SELL", style = shape.triangledown, location = location.abovebar, color = color.rgb(239, 68, 68), size = size.tiny, text = "SELL")
+alertcondition(acceptedBuyThisBar, title = "Amy FX Scalper BUY", message = "Amy FX Scalper accepted a closed-candle BUY setup.")
+alertcondition(acceptedSellThisBar, title = "Amy FX Scalper SELL", message = "Amy FX Scalper accepted a closed-candle SELL setup.")
+
+// ============================================================================
+// Dashboard
+// ============================================================================
+
+var table dashboard = table.new(position.top_right, 2, 7, bgcolor = color.new(color.rgb(15, 23, 42), 8), border_color = color.new(color.silver, 65), border_width = 1)
+if barstate.islast and showDashboard
+    bool likelyGold = str.contains(str.upper(syminfo.ticker), "XAU") or str.contains(str.upper(syminfo.description), "GOLD")
+    table.cell(dashboard, 0, 0, "Amy FX Scalper", text_color = color.white, bgcolor = color.rgb(30, 41, 59))
+    table.cell(dashboard, 1, 0, "v3.0", text_color = color.aqua, bgcolor = color.rgb(30, 41, 59))
+    table.cell(dashboard, 0, 1, "Config", text_color = color.silver)
+    table.cell(dashboard, 1, 1, repairEnabled ? "BT6 + BT6.1 + AMD" : "BT6 + AMD", text_color = color.white)
+    table.cell(dashboard, 0, 2, "Timeframe", text_color = color.silver)
+    table.cell(dashboard, 1, 2, timeframeId + (supportedTimeframe ? " · READY" : " · UNSUPPORTED"), text_color = supportedTimeframe ? color.lime : color.red)
+    table.cell(dashboard, 0, 3, "Symbol", text_color = color.silver)
+    table.cell(dashboard, 1, 3, syminfo.ticker + (likelyGold ? "" : " · use XAUUSD"), text_color = likelyGold ? color.white : color.orange)
+    table.cell(dashboard, 0, 4, "Open setups", text_color = color.silver)
+    table.cell(dashboard, 1, 4, str.tostring(array.size(activeSetups)), text_color = color.white)
+    table.cell(dashboard, 0, 5, "Last accepted", text_color = color.silver)
+    table.cell(dashboard, 1, 5, lastAcceptedSignal, text_color = color.white)
+    table.cell(dashboard, 0, 6, "Lifecycle", text_color = color.silver)
+    table.cell(dashboard, 1, 6, lifecycleEnabled ? "Chart candles · SL first" : "Off", text_color = lifecycleEnabled ? color.yellow : color.gray)
+else if barstate.islast and not showDashboard
+    table.clear(dashboard, 0, 0, 1, 6)
