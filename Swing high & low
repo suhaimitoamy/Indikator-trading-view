@@ -1,0 +1,100 @@
+//@version=5
+indicator("Amy Swing BUY/SELL Labels v2 (ZigZag Filtered)", overlay=true, max_labels_count=500)
+
+// ============================================================
+// INPUT
+// ============================================================
+leftBars   = input.int(5, "Swing Strength (Left Bars)", minval=1, tooltip="Makin besar = swing yang dianggap valid makin sedikit tapi makin kuat. Kalau masih terlalu ramai, naikkan angka ini (coba 7-10 untuk GOLD 15m).")
+rightBars  = input.int(1, "Confirmation Bars (Right Bars)", minval=1, tooltip="1 = swing baru valid setelah 1 candle close mengonfirmasi.")
+showBuy    = input.bool(true, "Tampilkan BUY")
+showSell   = input.bool(true, "Tampilkan SELL")
+buyColor   = input.color(color.rgb(0, 100, 200), "Warna BUY")
+sellColor  = input.color(color.rgb(180, 0, 0), "Warna SELL")
+labelSize  = input.string("small", "Ukuran Label", options=["tiny", "small", "normal", "large"])
+showZigZag = input.bool(true, "Tampilkan Garis ZigZag")
+
+getSize(s) =>
+    s == "tiny" ? size.tiny : s == "small" ? size.small : s == "normal" ? size.normal : size.large
+
+// ============================================================
+// RAW PIVOT DETECTION
+// ============================================================
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+
+// ============================================================
+// ZIGZAG FILTER STATE
+// lastType: 0 = belum ada, 1 = terakhir high, -1 = terakhir low
+// hanya swing paling EKSTREM di dalam satu leg yang dipertahankan,
+// swing lain di leg yang sama akan menggantikan (bukan menumpuk)
+// ============================================================
+var int   lastType     = 0
+var float lastHighVal  = na
+var float lastLowVal   = na
+var int   lastHighBar  = na
+var int   lastLowBar   = na
+var label lastHighLbl  = na
+var label lastLowLbl   = na
+var line  zzLine1      = na
+var line  zzLine2      = na
+
+if not na(ph)
+    phBar   = bar_index[rightBars]
+    phPrice = ph
+    isNewExtreme = lastType != 1 or na(lastHighVal) or phPrice > lastHighVal
+
+    if lastType == 1 and not na(lastHighLbl)
+        // masih di leg naik yang sama -> hanya update kalau lebih ekstrem
+        if isNewExtreme
+            label.delete(lastHighLbl)
+            if showSell
+                lastHighLbl := label.new(phBar, phPrice, "SELL", style=label.style_label_down, color=sellColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.abovebar)
+            lastHighVal := phPrice
+            lastHighBar := phBar
+    else
+        // leg baru (sebelumnya low atau belum ada apa-apa) -> selalu valid
+        if showSell
+            lastHighLbl := label.new(phBar, phPrice, "SELL", style=label.style_label_down, color=sellColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.abovebar)
+        lastHighVal := phPrice
+        lastHighBar := phBar
+        lastType := 1
+
+if not na(pl)
+    plBar   = bar_index[rightBars]
+    plPrice = pl
+    isNewExtreme = lastType != -1 or na(lastLowVal) or plPrice < lastLowVal
+
+    if lastType == -1 and not na(lastLowLbl)
+        if isNewExtreme
+            label.delete(lastLowLbl)
+            if showBuy
+                lastLowLbl := label.new(plBar, plPrice, "BUY", style=label.style_label_up, color=buyColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.belowbar)
+            lastLowVal := plPrice
+            lastLowBar := plBar
+    else
+        if showBuy
+            lastLowLbl := label.new(plBar, plPrice, "BUY", style=label.style_label_up, color=buyColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.belowbar)
+        lastLowVal := plPrice
+        lastLowBar := plBar
+        lastType := -1
+
+// ============================================================
+// GARIS ZIGZAG PENGHUBUNG SWING (opsional, biar kayak contoh)
+// ============================================================
+var float prevZZVal = na
+var int   prevZZBar = na
+
+zzTriggered = not na(ph) or not na(pl)
+if zzTriggered and showZigZag
+    curVal = not na(ph) ? lastHighVal : lastLowVal
+    curBar = not na(ph) ? lastHighBar : lastLowBar
+    if not na(prevZZVal) and curBar != prevZZBar
+        line.new(prevZZBar, prevZZVal, curBar, curVal, color=color.gray, width=1)
+    prevZZVal := curVal
+    prevZZBar := curBar
+
+// ============================================================
+// ALERT
+// ============================================================
+alertcondition(not na(ph), title="Swing SELL Confirmed", message="Swing high terkonfirmasi (SELL) di {{ticker}}")
+alertcondition(not na(pl), title="Swing BUY Confirmed",  message="Swing low terkonfirmasi (BUY) di {{ticker}}")
