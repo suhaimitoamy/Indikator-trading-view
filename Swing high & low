@@ -1,100 +1,155 @@
 //@version=5
-indicator("Amy Swing BUY/SELL Labels v2 (ZigZag Filtered)", overlay=true, max_labels_count=500)
+indicator("Amy Swing BUY/SELL Labels v3 — Confirmed Non-Repaint", overlay=true, max_labels_count=500, max_lines_count=500)
 
-// ============================================================
-// INPUT
-// ============================================================
-leftBars   = input.int(5, "Swing Strength (Left Bars)", minval=1, tooltip="Makin besar = swing yang dianggap valid makin sedikit tapi makin kuat. Kalau masih terlalu ramai, naikkan angka ini (coba 7-10 untuk GOLD 15m).")
-rightBars  = input.int(1, "Confirmation Bars (Right Bars)", minval=1, tooltip="1 = swing baru valid setelah 1 candle close mengonfirmasi.")
-showBuy    = input.bool(true, "Tampilkan BUY")
-showSell   = input.bool(true, "Tampilkan SELL")
-buyColor   = input.color(color.rgb(0, 100, 200), "Warna BUY")
-sellColor  = input.color(color.rgb(180, 0, 0), "Warna SELL")
-labelSize  = input.string("small", "Ukuran Label", options=["tiny", "small", "normal", "large"])
-showZigZag = input.bool(true, "Tampilkan Garis ZigZag")
+// ============================================================================
+// PRINSIP MESIN
+// 1. Pivot baru diproses setelah candle konfirmasi benar-benar tutup.
+// 2. Sinyal yang sudah dibuat tidak pernah dipindah atau dihapus.
+// 3. Swing wajib bergantian dan melewati filter jarak agar noise berkurang.
+// 4. Filter EMA opsional menjaga BUY searah uptrend dan SELL searah downtrend.
+// ============================================================================
 
-getSize(s) =>
-    s == "tiny" ? size.tiny : s == "small" ? size.small : s == "normal" ? size.normal : size.large
+string GROUP_SWING  = "1. Deteksi Swing"
+string GROUP_FILTER = "2. Filter Sinyal"
+string GROUP_VIEW   = "3. Tampilan"
 
-// ============================================================
-// RAW PIVOT DETECTION
-// ============================================================
-ph = ta.pivothigh(high, leftBars, rightBars)
-pl = ta.pivotlow(low, leftBars, rightBars)
+leftBars = input.int(5, "Swing Strength (Left Bars)", minval=1, group=GROUP_SWING,
+     tooltip="Jumlah candle di kiri titik swing. Nilai lebih besar menghasilkan swing yang lebih kuat dan lebih jarang.")
+rightBars = input.int(1, "Confirmation Bars (Right Bars)", minval=1, group=GROUP_SWING,
+     tooltip="Sinyal baru boleh dikunci setelah jumlah candle di kanan ini selesai. Naikkan ke 2-3 bila pasar terlalu berisik.")
+minBarsBetween = input.int(2, "Jarak Minimum Antar Swing", minval=1, group=GROUP_SWING,
+     tooltip="Mencegah dua swing berlawanan yang terlalu berdekatan.")
+atrLength = input.int(14, "ATR Length", minval=1, group=GROUP_SWING)
+minSwingAtr = input.float(0.35, "Gerak Minimum (ATR)", minval=0.0, step=0.05, group=GROUP_SWING,
+     tooltip="Jarak dari swing terakhir harus minimal sebesar ATR × nilai ini. Gunakan 0 untuk mematikan filter jarak harga.")
 
-// ============================================================
-// ZIGZAG FILTER STATE
-// lastType: 0 = belum ada, 1 = terakhir high, -1 = terakhir low
-// hanya swing paling EKSTREM di dalam satu leg yang dipertahankan,
-// swing lain di leg yang sama akan menggantikan (bukan menumpuk)
-// ============================================================
-var int   lastType     = 0
-var float lastHighVal  = na
-var float lastLowVal   = na
-var int   lastHighBar  = na
-var int   lastLowBar   = na
-var label lastHighLbl  = na
-var label lastLowLbl   = na
-var line  zzLine1      = na
-var line  zzLine2      = na
+useTrendFilter = input.bool(true, "Aktifkan Filter Tren EMA", group=GROUP_FILTER,
+     tooltip="BUY hanya di uptrend dan SELL hanya di downtrend. Matikan bila ingin melihat semua swing dua arah.")
+trendLength = input.int(50, "EMA Trend Length", minval=2, group=GROUP_FILTER)
+trendSlopeBars = input.int(3, "EMA Slope Lookback", minval=1, group=GROUP_FILTER)
 
-if not na(ph)
-    phBar   = bar_index[rightBars]
-    phPrice = ph
-    isNewExtreme = lastType != 1 or na(lastHighVal) or phPrice > lastHighVal
+showBuy = input.bool(true, "Tampilkan BUY", group=GROUP_VIEW)
+showSell = input.bool(true, "Tampilkan SELL", group=GROUP_VIEW)
+showStructure = input.bool(true, "Tampilkan Struktur HH/HL/LH/LL", group=GROUP_VIEW)
+showZigZag = input.bool(true, "Tampilkan Garis ZigZag Terkunci", group=GROUP_VIEW)
+showTrendEma = input.bool(true, "Tampilkan EMA Trend", group=GROUP_VIEW)
+labelPosition = input.string("Bar konfirmasi", "Posisi Label", options=["Bar konfirmasi", "Titik swing"], group=GROUP_VIEW,
+     tooltip="Bar konfirmasi adalah pilihan paling jujur untuk evaluasi sinyal. Titik swing menaruh label pada pivot asli, tetapi label tetap baru diketahui setelah Confirmation Bars selesai.")
+buyColor = input.color(color.rgb(0, 120, 210), "Warna BUY", group=GROUP_VIEW)
+sellColor = input.color(color.rgb(190, 25, 25), "Warna SELL", group=GROUP_VIEW)
+zigZagColor = input.color(color.new(color.gray, 20), "Warna ZigZag", group=GROUP_VIEW)
+labelSize = input.string("small", "Ukuran Label", options=["tiny", "small", "normal", "large"], group=GROUP_VIEW)
 
-    if lastType == 1 and not na(lastHighLbl)
-        // masih di leg naik yang sama -> hanya update kalau lebih ekstrem
-        if isNewExtreme
-            label.delete(lastHighLbl)
+getSize(string value) =>
+    value == "tiny" ? size.tiny : value == "small" ? size.small : value == "normal" ? size.normal : size.large
+
+// ============================================================================
+// DATA KAUSAL: tidak ada request.security lookahead dan tidak ada data masa depan.
+// ta.pivot* baru menghasilkan nilai setelah rightBars tersedia. Event tetap
+// dikunci lagi dengan barstate.isconfirmed agar candle realtime tidak berkedip.
+// ============================================================================
+float pivotHigh = ta.pivothigh(high, leftBars, rightBars)
+float pivotLow = ta.pivotlow(low, leftBars, rightBars)
+float atr = ta.atr(atrLength)
+float trendEma = ta.ema(close, trendLength)
+
+bool trendUp = close > trendEma and trendEma > trendEma[trendSlopeBars]
+bool trendDown = close < trendEma and trendEma < trendEma[trendSlopeBars]
+bool buyDirectionOk = not useTrendFilter or trendUp
+bool sellDirectionOk = not useTrendFilter or trendDown
+
+bool highReady = barstate.isconfirmed and not na(pivotHigh)
+bool lowReady = barstate.isconfirmed and not na(pivotLow)
+int highBar = bar_index - rightBars
+int lowBar = bar_index - rightBars
+float atrAtPivot = nz(atr[rightBars], 0.0)
+
+// lastPivotType: 0 = belum ada, 1 = high, -1 = low.
+// Hanya swing berlawanan yang boleh dikunci. Tidak ada label.delete().
+var int lastPivotType = 0
+var int lastPivotBar = na
+var float lastPivotPrice = na
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastZigZagBar = na
+var float lastZigZagPrice = na
+
+bool sellSignal = false
+bool buySignal = false
+string highStructure = ""
+string lowStructure = ""
+
+// Pada kasus langka satu candle terdeteksi sebagai high dan low sekaligus,
+// pilih sisi yang menjaga urutan swing. Untuk swing pertama gunakan arah candle.
+bool processHigh = false
+bool processLow = false
+
+if highReady and lowReady
+    if lastPivotType == -1
+        processHigh := true
+    else if lastPivotType == 1
+        processLow := true
+    else
+        processHigh := close[rightBars] >= open[rightBars]
+        processLow := not processHigh
+else
+    processHigh := highReady
+    processLow := lowReady
+
+if processHigh and lastPivotType != 1
+    bool spacingOk = na(lastPivotBar) or highBar - lastPivotBar >= minBarsBetween
+    bool movementOk = na(lastPivotPrice) or minSwingAtr == 0.0 or math.abs(pivotHigh - lastPivotPrice) >= atrAtPivot * minSwingAtr
+    if spacingOk and movementOk
+        highStructure := na(lastSwingHigh) ? "SH" : pivotHigh > lastSwingHigh ? "HH" : pivotHigh < lastSwingHigh ? "LH" : "EQH"
+
+        if showZigZag and not na(lastZigZagBar) and highBar > lastZigZagBar
+            line.new(lastZigZagBar, lastZigZagPrice, highBar, pivotHigh, xloc=xloc.bar_index, color=zigZagColor, width=1)
+
+        lastPivotType := 1
+        lastPivotBar := highBar
+        lastPivotPrice := pivotHigh
+        lastSwingHigh := pivotHigh
+        lastZigZagBar := highBar
+        lastZigZagPrice := pivotHigh
+
+        if sellDirectionOk
+            sellSignal := true
             if showSell
-                lastHighLbl := label.new(phBar, phPrice, "SELL", style=label.style_label_down, color=sellColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.abovebar)
-            lastHighVal := phPrice
-            lastHighBar := phBar
-    else
-        // leg baru (sebelumnya low atau belum ada apa-apa) -> selalu valid
-        if showSell
-            lastHighLbl := label.new(phBar, phPrice, "SELL", style=label.style_label_down, color=sellColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.abovebar)
-        lastHighVal := phPrice
-        lastHighBar := phBar
-        lastType := 1
+                int signalBar = labelPosition == "Titik swing" ? highBar : bar_index
+                float signalPrice = labelPosition == "Titik swing" ? pivotHigh : high
+                string signalText = "SELL" + (showStructure ? "\n" + highStructure : "")
+                string signalTooltip = "SELL dikunci saat candle konfirmasi tutup. Harga pivot: " + str.tostring(pivotHigh, format.mintick) + ". Delay: " + str.tostring(rightBars) + " bar."
+                label.new(signalBar, signalPrice, signalText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down,
+                     color=sellColor, textcolor=color.white, size=getSize(labelSize), tooltip=signalTooltip)
 
-if not na(pl)
-    plBar   = bar_index[rightBars]
-    plPrice = pl
-    isNewExtreme = lastType != -1 or na(lastLowVal) or plPrice < lastLowVal
+if processLow and lastPivotType != -1
+    bool spacingOk = na(lastPivotBar) or lowBar - lastPivotBar >= minBarsBetween
+    bool movementOk = na(lastPivotPrice) or minSwingAtr == 0.0 or math.abs(pivotLow - lastPivotPrice) >= atrAtPivot * minSwingAtr
+    if spacingOk and movementOk
+        lowStructure := na(lastSwingLow) ? "SL" : pivotLow > lastSwingLow ? "HL" : pivotLow < lastSwingLow ? "LL" : "EQL"
 
-    if lastType == -1 and not na(lastLowLbl)
-        if isNewExtreme
-            label.delete(lastLowLbl)
+        if showZigZag and not na(lastZigZagBar) and lowBar > lastZigZagBar
+            line.new(lastZigZagBar, lastZigZagPrice, lowBar, pivotLow, xloc=xloc.bar_index, color=zigZagColor, width=1)
+
+        lastPivotType := -1
+        lastPivotBar := lowBar
+        lastPivotPrice := pivotLow
+        lastSwingLow := pivotLow
+        lastZigZagBar := lowBar
+        lastZigZagPrice := pivotLow
+
+        if buyDirectionOk
+            buySignal := true
             if showBuy
-                lastLowLbl := label.new(plBar, plPrice, "BUY", style=label.style_label_up, color=buyColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.belowbar)
-            lastLowVal := plPrice
-            lastLowBar := plBar
-    else
-        if showBuy
-            lastLowLbl := label.new(plBar, plPrice, "BUY", style=label.style_label_up, color=buyColor, textcolor=color.white, size=getSize(labelSize), yloc=yloc.belowbar)
-        lastLowVal := plPrice
-        lastLowBar := plBar
-        lastType := -1
+                int signalBar = labelPosition == "Titik swing" ? lowBar : bar_index
+                float signalPrice = labelPosition == "Titik swing" ? pivotLow : low
+                string signalText = "BUY" + (showStructure ? "\n" + lowStructure : "")
+                string signalTooltip = "BUY dikunci saat candle konfirmasi tutup. Harga pivot: " + str.tostring(pivotLow, format.mintick) + ". Delay: " + str.tostring(rightBars) + " bar."
+                label.new(signalBar, signalPrice, signalText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up,
+                     color=buyColor, textcolor=color.white, size=getSize(labelSize), tooltip=signalTooltip)
 
-// ============================================================
-// GARIS ZIGZAG PENGHUBUNG SWING (opsional, biar kayak contoh)
-// ============================================================
-var float prevZZVal = na
-var int   prevZZBar = na
+plot(showTrendEma ? trendEma : na, title="EMA Trend", color=trendUp ? color.lime : trendDown ? color.red : color.gray, linewidth=2)
 
-zzTriggered = not na(ph) or not na(pl)
-if zzTriggered and showZigZag
-    curVal = not na(ph) ? lastHighVal : lastLowVal
-    curBar = not na(ph) ? lastHighBar : lastLowBar
-    if not na(prevZZVal) and curBar != prevZZBar
-        line.new(prevZZBar, prevZZVal, curBar, curVal, color=color.gray, width=1)
-    prevZZVal := curVal
-    prevZZBar := curBar
-
-// ============================================================
-// ALERT
-// ============================================================
-alertcondition(not na(ph), title="Swing SELL Confirmed", message="Swing high terkonfirmasi (SELL) di {{ticker}}")
-alertcondition(not na(pl), title="Swing BUY Confirmed",  message="Swing low terkonfirmasi (BUY) di {{ticker}}")
+// Alert hanya aktif pada bar penutupan ketika label benar-benar dikunci.
+alertcondition(sellSignal, title="Swing SELL Confirmed — Non-Repaint", message="SELL swing terkonfirmasi saat candle tutup di {{ticker}} {{interval}} @ {{close}}")
+alertcondition(buySignal, title="Swing BUY Confirmed — Non-Repaint", message="BUY swing terkonfirmasi saat candle tutup di {{ticker}} {{interval}} @ {{close}}")
