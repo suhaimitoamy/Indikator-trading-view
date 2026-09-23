@@ -1,76 +1,518 @@
 //@version=5
-indicator("ICT Market Context Engine Professional v1.0", overlay=true, max_boxes_count=50, max_lines_count=100)
+indicator("ICT Market Context Engine Professional v1.0", "ICT Context Pro 1.0", overlay=true, max_boxes_count=12, max_lines_count=12, max_labels_count=12, max_bars_back=500, dynamic_requests=true)
 
-mode = input.string("Clean Mode", "Display Mode", options=["Clean Mode", "Analyst Mode", "Full Mode"])
-pos = input.string("Top Right", "Dashboard Position", options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"])
+mode = input.string("Clean Mode", "Display Mode", options=["Clean Mode", "Analyst Mode", "Full Mode"], group="Display")
+dashboardPosition = input.string("Top Right", "Dashboard Position", options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group="Display")
+visibleZones = input.int(4, "Visible M15 zones", minval=1, maxval=6, group="Display")
+h1Length = input.int(3, "H1 swing confirmation bars", minval=2, maxval=10, group="Structure", tooltip="A swing becomes known only after this many H1 candles close to its right.")
+m15Length = input.int(3, "M15 structure bars", minval=2, maxval=8, group="Structure")
+m1Length = input.int(2, "M1 micro swing bars", minval=1, maxval=5, group="Structure")
+equalTicks = input.int(3, "Equal high/low tolerance (ticks)", minval=1, maxval=100, group="Liquidity")
+equalLifetime = input.int(120, "Internal liquidity lifetime (M1 bars)", minval=10, maxval=500, group="Liquidity")
+zoneLifetime = input.int(96, "Zone lifetime (M15 bars)", minval=4, maxval=480, group="POI", tooltip="After this many completed M15 bars a zone becomes INVALID. A close through its distal edge also invalidates it.")
+confirmationBars = input.int(20, "Confirmation window (M1 bars)", minval=3, maxval=60, group="Confirmation")
+displacementFactor = input.float(1.5, "Displacement body multiplier", minval=1.0, maxval=5.0, step=0.1, group="Confirmation", tooltip="Body versus the preceding 20 M1 bodies; the body must also occupy at least 65% of the candle range.")
 
-// H1 Bias Engine
-[h1h,h1l,h1c] = request.security(syminfo.tickerid,"60",[high,low,close])
-var float h1High = na
-var float h1Low = na
-h1High := ta.highest(h1h,20)
-h1Low := ta.lowest(h1l,20)
-bullBias = h1c > h1High[1]
-bearBias = h1c < h1Low[1]
-h1Bias = bullBias ? "BULLISH" : bearBias ? "BEARISH" : "NEUTRAL"
+type Zone
+    int id
+    int side
+    float top
+    float bottom
+    int born
+    int state = 0
+    int touch = na
+    int sweep = na
+    int shift = na
+    int displacement = na
+    float shiftLevel = na
+    bool shiftEligible = false
+    float microTop = na
+    float microBottom = na
+    int microTime = na
 
-// M15 FVG Engine
-[m15h,m15l] = request.security(syminfo.tickerid,"15",[high,low])
-bullFvg = m15h[2] < m15l
-bearFvg = m15l[2] > m15h
-var float poiHigh = na
-var float poiLow = na
-var string poiType = "NONE"
-if bullFvg
-    poiHigh := m15l
-    poiLow := m15h[2]
-    poiType := "Bullish FVG"
-if bearFvg
-    poiHigh := m15l[2]
-    poiLow := m15h
-    poiType := "Bearish FVG"
+type Context
+    int stamp = na
+    float price = na
+    int bias = 0
+    float swingHigh = na
+    float swingLow = na
+    string highClass = "--"
+    string lowClass = "--"
+    string structure = "WAITING"
+    int structureTime = na
+    int poiId = na
+    int poiSide = 0
+    float poiTop = na
+    float poiBottom = na
+    int poiState = 3
+    bool touched = false
+    bool liquidity = false
+    bool mss = false
+    bool displacement = false
+    float microTop = na
+    float microBottom = na
+    int microTime = na
+    float eqh = na
+    float eql = na
+    float pdh = na
+    float pdl = na
+    float pwh = na
+    float pwl = na
+    string target = "NONE"
+    float targetPrice = na
+    float obTop = na
+    float obBottom = na
+    int obSide = 0
+    int obState = 3
+    int obTime = na
+    string zones = ""
 
-insidePOI = not na(poiHigh) and close <= poiHigh and close >= poiLow
-zoneStatus = insidePOI ? "TESTED" : "FRESH"
+f_zoneState(int state, int side, float top, float bottom, float barHigh, float barLow, float barClose, bool expired) =>
+    int result = state
+    bool broken = side == 1 ? barClose < bottom : barClose > top
+    bool overlap = barHigh >= bottom and barLow <= top
+    bool filled = side == 1 ? barLow <= bottom : barHigh >= top
+    if state != 3
+        if broken or expired
+            result := 3
+        else if state < 2 and overlap
+            result := filled ? 2 : 1
+    result
 
-if mode != "Clean Mode" and not na(poiHigh)
-    box.new(bar_index-2, poiHigh, bar_index+20, poiLow, bgcolor=color.new(color.blue,85), border_color=color.new(color.blue,60))
+f_h1() =>
+    float ph = ta.pivothigh(high, h1Length, h1Length)
+    float pl = ta.pivotlow(low, h1Length, h1Length)
+    var float sh = na
+    var float sl = na
+    var bool highArmed = false
+    var bool lowArmed = false
+    var string hc = "--"
+    var string lc = "--"
+    var int bias = 0
+    var string event = "WAITING"
+    var int eventTime = na
+    if not na(ph)
+        hc := na(sh) ? "H" : ph > sh ? "HH" : ph < sh ? "LH" : "EQH"
+        sh := ph
+        highArmed := true
+    if not na(pl)
+        lc := na(sl) ? "L" : pl > sl ? "HL" : pl < sl ? "LL" : "EQL"
+        sl := pl
+        lowArmed := true
+    bool upBreak = highArmed and not na(sh) and close > sh
+    bool downBreak = lowArmed and not na(sl) and close < sl
+    if upBreak
+        event := bias == -1 ? "MSS UP" : "BOS UP"
+        eventTime := time_close
+        bias := 1
+        highArmed := false
+    else if downBreak
+        event := bias == 1 ? "MSS DOWN" : "BOS DOWN"
+        eventTime := time_close
+        bias := -1
+        lowArmed := false
+    else if bias == 0 or not na(ph) or not na(pl)
+        bias := hc == "HH" and lc == "HL" ? 1 : hc == "LH" and lc == "LL" ? -1 : 0
+    [bias[1], sh[1], sl[1], hc[1], lc[1], event[1], eventTime[1]]
 
-// Liquidity Engine
-pdh = request.security(syminfo.tickerid,"D",high[1])
-pdl = request.security(syminfo.tickerid,"D",low[1])
-pwh = request.security(syminfo.tickerid,"W",high[1])
-pwl = request.security(syminfo.tickerid,"W",low[1])
+f_m15() =>
+    int gapSide = high[2] < low ? 1 : low[2] > high ? -1 : 0
+    float gapTop = gapSide == 1 ? low : gapSide == -1 ? low[2] : na
+    float gapBottom = gapSide == 1 ? high[2] : gapSide == -1 ? high : na
+    float ph = ta.pivothigh(high, m15Length, m15Length)
+    float pl = ta.pivotlow(low, m15Length, m15Length)
+    float bodyAverage = ta.sma(math.abs(close - open), 20)[1]
+    bool displaced = math.abs(close - open) >= bodyAverage * displacementFactor and math.abs(close - open) >= (high - low) * 0.65 and high > low
+    var float sh = na
+    var float sl = na
+    var bool highArmed = false
+    var bool lowArmed = false
+    if not na(ph)
+        sh := ph
+        highArmed := true
+    if not na(pl)
+        sl := pl
+        lowArmed := true
+    bool upBreak = highArmed and not na(sh) and close > sh
+    bool downBreak = lowArmed and not na(sl) and close < sl
+    int obSide = 0
+    float obTop = na
+    float obBottom = na
+    if upBreak or downBreak
+        int direction = upBreak ? 1 : -1
+        if displaced
+            for j = 1 to 12
+                bool opposite = direction == 1 ? close[j] < open[j] : close[j] > open[j]
+                if opposite and na(obTop)
+                    obTop := high[j]
+                    obBottom := low[j]
+                    obSide := direction
+        if upBreak
+            highArmed := false
+        if downBreak
+            lowArmed := false
+    [time_close[1], gapSide[1], gapTop[1], gapBottom[1], obSide[1], obTop[1], obBottom[1]]
 
-// M1 Confirmation Engine
-[m1o,m1h,m1l,m1c] = request.security(syminfo.tickerid,"1",[open,high,low,close])
-displacement = math.abs(m1c-m1o) > ta.atr(14)
-liqSweep = m1h > ta.highest(m1h,10)[1] or m1l < ta.lowest(m1l,10)[1]
-mss = (m1c > m1h[1]) or (m1c < m1l[1])
+f_engine() =>
+    [bias, sh, sl, hc, lc, structure, structureTime] = request.security(syminfo.tickerid, "60", f_h1(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on, calc_bars_count=2000)
+    [m15Time, gapSide, gapTop, gapBottom, blockSide, blockTop, blockBottom] = request.security(syminfo.tickerid, "15", f_m15(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on, calc_bars_count=4000)
+    [pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on, calc_bars_count=100)
+    [pwh, pwl] = request.security(syminfo.tickerid, "W", [high[1], low[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on, calc_bars_count=100)
+    float ph = ta.pivothigh(high, m1Length, m1Length)
+    float pl = ta.pivotlow(low, m1Length, m1Length)
+    float body = math.abs(close - open)
+    float averageBody = ta.sma(body, 20)[1]
+    bool displacement = not na(averageBody) and body >= averageBody * displacementFactor and high > low and body / (high - low) >= 0.65
+    bool bullMicro = high[2] < low
+    bool bearMicro = low[2] > high
+    var array<Zone> zones = array.new<Zone>()
+    var int lastM15 = na
+    var int m15Count = 0
+    var int activeId = na
+    var float microHigh = na
+    var float microLow = na
+    var int microTrend = 0
+    var bool highArmed = false
+    var bool lowArmed = false
+    var bool highSwept = false
+    var bool lowSwept = false
+    var float eqh = na
+    var float eql = na
+    var int eqhBar = na
+    var int eqlBar = na
+    var bool pdhTaken = false
+    var bool pdlTaken = false
+    var bool pwhTaken = false
+    var bool pwlTaken = false
+    var float obTop = na
+    var float obBottom = na
+    var int obSide = 0
+    var int obState = 3
+    var int obTime = na
+    var int obBorn = 0
+    if timeframe.change("D")
+        pdhTaken := false
+        pdlTaken := false
+    if timeframe.change("W")
+        pwhTaken := false
+        pwlTaken := false
+    if not na(eqh) and bar_index - eqhBar > equalLifetime
+        eqh := na
+    if not na(eql) and bar_index - eqlBar > equalLifetime
+        eql := na
+    bool sweepLow = (not lowSwept and not na(microLow) and low < microLow and close > microLow) or (not na(eql) and low < eql and close > eql) or (not pdlTaken and low < pdl and close > pdl) or (not pwlTaken and low < pwl and close > pwl)
+    bool sweepHigh = (not highSwept and not na(microHigh) and high > microHigh and close < microHigh) or (not na(eqh) and high > eqh and close < eqh) or (not pdhTaken and high > pdh and close < pdh) or (not pwhTaken and high > pwh and close < pwh)
+    highSwept := highSwept or (not na(microHigh) and high > microHigh)
+    lowSwept := lowSwept or (not na(microLow) and low < microLow)
+    bool upBreak = highArmed and not na(microHigh) and close > microHigh
+    bool downBreak = lowArmed and not na(microLow) and close < microLow
+    int priorTrend = microTrend
+    if upBreak
+        microTrend := 1
+        highArmed := false
+    else if downBreak
+        microTrend := -1
+        lowArmed := false
+    if not na(eqh) and (high > eqh or bar_index - eqhBar > equalLifetime)
+        eqh := na
+    if not na(eql) and (low < eql or bar_index - eqlBar > equalLifetime)
+        eql := na
+    if not na(ph)
+        if not na(microHigh) and math.abs(ph - microHigh) <= syminfo.mintick * equalTicks
+            eqh := math.max(ph, microHigh)
+            eqhBar := bar_index
+        microHigh := ph
+        highArmed := true
+        highSwept := false
+    if not na(pl)
+        if not na(microLow) and math.abs(pl - microLow) <= syminfo.mintick * equalTicks
+            eql := math.min(pl, microLow)
+            eqlBar := bar_index
+        microLow := pl
+        lowArmed := true
+        lowSwept := false
+    pdhTaken := pdhTaken or (not na(pdh) and high >= pdh)
+    pdlTaken := pdlTaken or (not na(pdl) and low <= pdl)
+    pwhTaken := pwhTaken or (not na(pwh) and high >= pwh)
+    pwlTaken := pwlTaken or (not na(pwl) and low <= pwl)
+    if not na(m15Time) and (na(lastM15) or m15Time != lastM15)
+        bool fullyObserved = not na(lastM15) or time == m15Time
+        lastM15 := m15Time
+        m15Count += 1
+        if fullyObserved and gapSide != 0 and not na(gapTop) and gapTop > gapBottom
+            array.push(zones, Zone.new(m15Time, gapSide, gapTop, gapBottom, m15Count))
+            if array.size(zones) > 32
+                array.shift(zones)
+        if fullyObserved and blockSide != 0
+            obTop := blockTop
+            obBottom := blockBottom
+            obSide := blockSide
+            obState := 0
+            obTime := m15Time
+            obBorn := m15Count
+    if obSide != 0 and time >= obTime
+        obState := f_zoneState(obState, obSide, obTop, obBottom, high, low, close, m15Count - obBorn >= zoneLifetime)
+    int selected = -1
+    int fallback = -1
+    float nearest = na
+    bool locked = false
+    int count = array.size(zones)
+    if count > 0
+        for i = 0 to count - 1
+            Zone z = array.get(zones, i)
+            if time >= z.id
+                z.state := f_zoneState(z.state, z.side, z.top, z.bottom, high, low, close, m15Count - z.born >= zoneLifetime)
+                bool expired = not na(z.touch) and bar_index - z.touch > confirmationBars
+                bool biasChanged = not na(bias[1]) and bias != bias[1]
+                if z.state >= 2 or expired or biasChanged
+                    z.touch := na
+                    z.sweep := na
+                    z.shift := na
+                    z.displacement := na
+                    z.shiftLevel := na
+                    z.shiftEligible := false
+                    z.microTop := na
+                    z.microBottom := na
+                    z.microTime := na
+                bool overlap = high >= z.bottom and low <= z.top
+                bool aligned = bias == 0 or z.side == bias
+                if z.state < 2 and aligned
+                    if overlap and na(z.touch)
+                        z.touch := bar_index
+                    bool sweep = z.side == 1 ? sweepLow and not sweepHigh : sweepHigh and not sweepLow
+                    if overlap and sweep and na(z.sweep)
+                        z.sweep := bar_index
+                        z.shiftLevel := z.side == 1 ? microHigh : microLow
+                        z.shiftEligible := z.side == 1 ? priorTrend <= 0 : priorTrend >= 0
+                    bool windowOpen = not na(z.touch) and bar_index - z.touch <= confirmationBars
+                    if windowOpen and not na(z.sweep)
+                        bool directional = z.side == 1 ? close > open : close < open
+                        if displacement and directional
+                            z.displacement := bar_index
+                        bool shift = z.side == 1 ? close > z.shiftLevel and close[1] <= z.shiftLevel : close < z.shiftLevel and close[1] >= z.shiftLevel
+                        if z.shiftEligible and not na(z.shiftLevel) and shift and not na(z.displacement)
+                            z.shift := bar_index
+                        if (z.side == 1 ? bullMicro : bearMicro) and bar_index - z.sweep >= 2
+                            z.microTop := z.side == 1 ? low : low[2]
+                            z.microBottom := z.side == 1 ? high[2] : high
+                            z.microTime := time_close
+                    if not na(z.microTime) and time >= z.microTime
+                        bool microFilled = z.side == 1 ? low <= z.microBottom : high >= z.microTop
+                        if microFilled
+                            z.microTop := na
+                            z.microBottom := na
+                            z.microTime := na
+                    float distance = close > z.top ? close - z.top : close < z.bottom ? z.bottom - close : 0.0
+                    bool keep = not na(activeId) and z.id == activeId and not na(z.touch)
+                    if keep
+                        selected := i
+                        nearest := distance
+                        locked := true
+                    else if not locked and (na(nearest) or distance <= nearest)
+                        selected := i
+                        nearest := distance
+                if aligned
+                    fallback := i
+    Context result = Context.new()
+    result.stamp := time_close
+    result.price := close
+    result.bias := nz(bias, 0)
+    result.swingHigh := sh
+    result.swingLow := sl
+    result.highClass := na(hc) ? "--" : hc
+    result.lowClass := na(lc) ? "--" : lc
+    result.structure := na(structure) ? "WAITING" : structure
+    result.structureTime := structureTime
+    result.eqh := eqh
+    result.eql := eql
+    result.pdh := pdh
+    result.pdl := pdl
+    result.pwh := pwh
+    result.pwl := pwl
+    result.obTop := obTop
+    result.obBottom := obBottom
+    result.obSide := obSide
+    result.obState := obState
+    result.obTime := obTime
+    int displayIndex = selected >= 0 ? selected : fallback
+    activeId := selected >= 0 ? array.get(zones, selected).id : na
+    if displayIndex >= 0
+        Zone z = array.get(zones, displayIndex)
+        result.poiId := z.id
+        result.poiSide := z.side
+        result.poiTop := z.top
+        result.poiBottom := z.bottom
+        result.poiState := z.state
+        result.touched := not na(z.touch)
+        result.liquidity := not na(z.sweep)
+        result.mss := not na(z.shift)
+        result.displacement := not na(z.displacement)
+        result.microTop := z.microTop
+        result.microBottom := z.microBottom
+        result.microTime := z.microTime
+    array<float> levels = array.from(pdhTaken ? na : pdh, pdlTaken ? na : pdl, pwhTaken ? na : pwh, pwlTaken ? na : pwl, eqh, eql)
+    array<string> names = array.from("PDH", "PDL", "PWH", "PWL", "EQH", "EQL")
+    float targetDistance = na
+    for i = 0 to 5
+        float level = array.get(levels, i)
+        bool above = i == 0 or i == 2 or i == 4
+        bool directional = bias == 1 ? above and level > close : bias == -1 ? not above and level < close : false
+        float distance = math.abs(level - close)
+        if not na(level) and directional and (na(targetDistance) or distance < targetDistance)
+            result.target := array.get(names, i)
+            result.targetPrice := level
+            targetDistance := distance
+    if mode != "Clean Mode" and count > 0
+        int included = 0
+        for i = count - 1 to 0
+            Zone z = array.get(zones, i)
+            bool eligible = mode == "Full Mode" or z.state < 2
+            if eligible and (na(result.poiId) or z.id != result.poiId) and included < visibleZones - 1
+                result.zones += str.tostring(z.id) + "," + str.tostring(z.top, format.mintick) + "," + str.tostring(z.bottom, format.mintick) + "," + str.tostring(z.side) + "," + str.tostring(z.state) + ";"
+                included += 1
+    result
 
-var table dash = table.new(position.top_right,2,8,border_width=1)
+f_status(int state) =>
+    state == 0 ? "FRESH" : state == 1 ? "TESTED" : state == 2 ? "MITIGATED" : "INVALID"
+
+f_price(float price) =>
+    na(price) ? "--" : str.tostring(price, format.mintick)
+
+f_yes(bool value) =>
+    value ? "YES" : "NO"
+
+color bullColor = color.rgb(108, 182, 161)
+color bearColor = color.rgb(208, 137, 146)
+color neutralColor = color.rgb(162, 173, 191)
+color textColor = color.rgb(222, 228, 237)
+color panelColor = color.rgb(23, 29, 40)
+color accentColor = color.rgb(161, 175, 204)
+
+f_box(array<box> drawings, int leftTime, int rightTime, float top, float bottom, int side, int state, string title) =>
+    if not na(leftTime) and not na(top) and not na(bottom) and top > bottom
+        color tone = state >= 2 ? neutralColor : side == 1 ? bullColor : bearColor
+        box drawing = box.new(left=leftTime, top=top, right=rightTime, bottom=bottom, xloc=xloc.bar_time, border_color=color.new(tone, state >= 2 ? 75 : 40), border_width=1, bgcolor=color.new(tone, state >= 2 ? 97 : 91), text=title, text_size=size.tiny, text_color=color.new(tone, 10), text_halign=text.align_right)
+        array.push(drawings, drawing)
+
+f_level(array<line> lines, array<label> labels, int leftTime, int rightTime, float price, string title, color tone) =>
+    if not na(price)
+        line drawing = line.new(leftTime, price, rightTime, price, xloc=xloc.bar_time, color=color.new(tone, 50), style=line.style_dotted, width=1)
+        label caption = label.new(rightTime, price, title + " " + f_price(price), xloc=xloc.bar_time, style=label.style_label_left, color=color.new(panelColor, 100), textcolor=tone, size=size.tiny)
+        array.push(lines, drawing)
+        array.push(labels, caption)
+
+f_row(table dashboard, int row, string title, string value, color tone) =>
+    color background = row % 2 == 0 ? panelColor : color.rgb(28, 35, 47)
+    table.cell(dashboard, 0, row, title, text_color=neutralColor, text_size=size.small, text_halign=text.align_left, bgcolor=background)
+    table.cell(dashboard, 1, row, value, text_color=tone, text_size=size.small, text_halign=text.align_right, bgcolor=background)
+
+var Context current = na
+float chartSeconds = timeframe.in_seconds()
+bool supported = chart.is_standard and not na(chartSeconds) and chartSeconds >= 60 and chartSeconds <= 3600
+if supported
+    if chartSeconds == 60
+        Context minuteContext = f_engine()
+        if barstate.isconfirmed
+            current := minuteContext
+        else
+            current := minuteContext[1]
+    else
+        array<Context> intrabars = request.security_lower_tf(syminfo.tickerid, "1", f_engine(), calc_bars_count=20000)
+        int available = array.size(intrabars)
+        if available > 0
+            Context latest = array.get(intrabars, available - 1)
+            if latest.stamp <= timenow
+                current := latest
+
+string positionValue = dashboardPosition == "Top Left" ? position.top_left : dashboardPosition == "Bottom Left" ? position.bottom_left : dashboardPosition == "Bottom Right" ? position.bottom_right : position.top_right
+var table dashboard = table.new(positionValue, 2, 24, bgcolor=panelColor, frame_color=color.new(accentColor, 70), frame_width=1, border_width=0)
+var array<box> drawnBoxes = array.new<box>()
+var array<line> drawnLines = array.new<line>()
+var array<label> drawnLabels = array.new<label>()
+if barstate.isfirst
+    table.merge_cells(dashboard, 0, 0, 1, 0)
 if barstate.islast
-    table.clear(dash)
-    table.cell(dash,0,0,"ICT MARKET CONTEXT")
-    table.cell(dash,0,1,"H1 BIAS")
-    table.cell(dash,1,1,h1Bias)
-    table.cell(dash,0,2,"Liquidity Target")
-    table.cell(dash,1,2,close >= pdh ? "PDH" : close <= pdl ? "PDL" : "WAIT")
-    table.cell(dash,0,3,"M15 POI")
-    table.cell(dash,1,3,poiType)
-    table.cell(dash,0,4,"Range")
-    table.cell(dash,1,4,str.tostring(poiLow,"#.##")+" - "+str.tostring(poiHigh,"#.##"))
-    table.cell(dash,0,5,"Zone")
-    table.cell(dash,1,5,zoneStatus)
-    table.cell(dash,0,6,"M1 Liquidity")
-    table.cell(dash,1,6,liqSweep ? "YES" : "NO")
-    table.cell(dash,0,7,"M1 MSS / Displacement")
-    table.cell(dash,1,7,(mss ? "YES" : "NO")+" / "+(displacement ? "YES" : "NO"))
-
-if mode == "Full Mode"
-    line.new(bar_index-20,pdh,bar_index+10,pdh,color=color.new(color.red,50))
-    line.new(bar_index-20,pdl,bar_index+10,pdl,color=color.new(color.green,50))
-    line.new(bar_index-20,pwh,bar_index+10,pwh,color=color.new(color.orange,60))
-    line.new(bar_index-20,pwl,bar_index+10,pwl,color=color.new(color.orange,60))
-
-// Manual execution only. No buy/sell signals.
+    table.clear(dashboard, 0, 0, 1, 23)
+    table.cell(dashboard, 0, 0, "ICT MARKET CONTEXT", text_color=textColor, text_size=size.small, bgcolor=color.rgb(36, 45, 61))
+    while array.size(drawnBoxes) > 0
+        box.delete(array.pop(drawnBoxes))
+    while array.size(drawnLines) > 0
+        line.delete(array.pop(drawnLines))
+    while array.size(drawnLabels) > 0
+        label.delete(array.pop(drawnLabels))
+    if not supported
+        f_row(dashboard, 1, "CHART", "STANDARD M1 - H1", neutralColor)
+        f_row(dashboard, 2, "M1", "SELECT A TIME CHART", neutralColor)
+    else if na(current)
+        f_row(dashboard, 1, "DATA", "WAITING FOR M1 DATA", neutralColor)
+    else
+        Context c = current
+        bool liveZone = not na(c.poiId) and c.poiState < 2
+        bool ready = liveZone and c.bias != 0 and c.poiSide == c.bias and c.liquidity and c.mss and c.displacement
+        bool stale = timenow - c.stamp > 180000 and barstate.isrealtime
+        string biasText = c.bias == 1 ? "BULLISH" : c.bias == -1 ? "BEARISH" : "NEUTRAL"
+        color biasColor = c.bias == 1 ? bullColor : c.bias == -1 ? bearColor : neutralColor
+        string poiText = na(c.poiId) ? "NONE" : c.poiSide == 1 ? "Bullish FVG" : "Bearish FVG"
+        string confirmation = stale ? "WAITING FOR M1 DATA" : not liveZone ? "WAITING FOR POI" : c.bias == 0 ? "WAITING H1 BIAS" : ready ? "CONTEXT CONFIRMED" : c.touched ? "WAITING CONFIRMATION" : "WAITING POI TOUCH"
+        string zoneText = na(c.poiId) ? "--" : f_status(c.poiState)
+        string rangeText = na(c.poiId) ? "--" : f_price(c.poiTop) + " - " + f_price(c.poiBottom)
+        f_row(dashboard, 1, "H1 BIAS", biasText, biasColor)
+        f_row(dashboard, 2, "Liquidity Target", c.target + (na(c.targetPrice) ? "" : " " + f_price(c.targetPrice)), accentColor)
+        f_row(dashboard, 3, "M15 POI", poiText, c.poiSide == 1 ? bullColor : bearColor)
+        f_row(dashboard, 4, "Range", rangeText, textColor)
+        f_row(dashboard, 5, "Zone / Size", zoneText + " / " + f_price(c.poiTop - c.poiBottom), textColor)
+        f_row(dashboard, 6, "M1", confirmation, ready and not stale ? bullColor : neutralColor)
+        f_row(dashboard, 7, "Liquidity", f_yes(c.liquidity and liveZone and not stale), textColor)
+        f_row(dashboard, 8, "MSS", f_yes(c.mss and liveZone and not stale), textColor)
+        f_row(dashboard, 9, "Displacement", f_yes(c.displacement and liveZone and not stale), textColor)
+        f_row(dashboard, 10, "M1 closed (UTC)", str.format_time(c.stamp, "MM-dd HH:mm", "Etc/UTC"), neutralColor)
+        if mode != "Clean Mode"
+            f_row(dashboard, 11, "H1 structure", c.highClass + " / " + c.lowClass + " | " + c.structure, textColor)
+            f_row(dashboard, 12, "PDH / PDL", f_price(c.pdh) + " / " + f_price(c.pdl), accentColor)
+            f_row(dashboard, 13, "PWH / PWL", f_price(c.pwh) + " / " + f_price(c.pwl), accentColor)
+            f_row(dashboard, 14, "M1 EQH / EQL", f_price(c.eqh) + " / " + f_price(c.eql), accentColor)
+        if mode == "Full Mode"
+            float equilibrium = (c.swingHigh + c.swingLow) * 0.5
+            bool validRange = not na(equilibrium) and c.swingHigh > c.swingLow
+            string location = not validRange ? "WAITING" : c.price > c.swingHigh ? "ABOVE H1 RANGE" : c.price < c.swingLow ? "BELOW H1 RANGE" : c.price > equilibrium ? "PREMIUM" : c.price < equilibrium ? "DISCOUNT" : "EQUILIBRIUM"
+            f_row(dashboard, 15, "Premium / Discount", location, accentColor)
+            f_row(dashboard, 16, "H1 equilibrium", validRange ? f_price(equilibrium) : "--", textColor)
+            f_row(dashboard, 17, "M15 Order Block", c.obSide == 0 ? "NONE" : (c.obSide == 1 ? "BULLISH " : "BEARISH ") + f_status(c.obState), textColor)
+            f_row(dashboard, 18, "Order Block range", f_price(c.obTop) + " - " + f_price(c.obBottom), textColor)
+            f_row(dashboard, 19, "M1 Micro FVG", na(c.microTop) ? "NONE" : f_price(c.microTop) + " - " + f_price(c.microBottom), textColor)
+            f_row(dashboard, 20, "Stop hunt / reclaim", f_yes(c.liquidity and liveZone and not stale), textColor)
+            f_row(dashboard, 21, "H1 event (UTC)", na(c.structureTime) ? "--" : str.format_time(c.structureTime, "MM-dd HH:mm", "Etc/UTC"), neutralColor)
+        int rightTime = math.max(time_close, c.stamp) + int(chartSeconds * 3000)
+        int leftTime = c.stamp - 3600000
+        if liveZone or (mode == "Full Mode" and not na(c.poiId))
+            f_box(drawnBoxes, c.poiId, rightTime, c.poiTop, c.poiBottom, c.poiSide, c.poiState, "M15 " + poiText + " | " + zoneText)
+        if mode != "Clean Mode"
+            if str.length(c.zones) > 0
+                array<string> rows = str.split(c.zones, ";")
+                for i = 0 to array.size(rows) - 1
+                    string row = array.get(rows, i)
+                    if str.length(row) > 0
+                        array<string> fields = str.split(row, ",")
+                        int zoneTime = int(str.tonumber(array.get(fields, 0)))
+                        float zoneTop = str.tonumber(array.get(fields, 1))
+                        float zoneBottom = str.tonumber(array.get(fields, 2))
+                        int zoneSide = int(str.tonumber(array.get(fields, 3)))
+                        int zoneState = int(str.tonumber(array.get(fields, 4)))
+                        f_box(drawnBoxes, zoneTime, rightTime, zoneTop, zoneBottom, zoneSide, zoneState, "M15 FVG | " + f_status(zoneState))
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.pdh, "PDH", accentColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.pdl, "PDL", accentColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.pwh, "PWH", neutralColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.pwl, "PWL", neutralColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.eqh, "M1 EQH", bearColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.eql, "M1 EQL", bullColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.swingHigh, "H1 " + c.highClass, bearColor)
+            f_level(drawnLines, drawnLabels, leftTime, rightTime, c.swingLow, "H1 " + c.lowClass, bullColor)
+        if mode == "Full Mode"
+            if c.obSide != 0
+                f_box(drawnBoxes, c.obTime, rightTime, c.obTop, c.obBottom, c.obSide, c.obState, "M15 OB | " + f_status(c.obState))
+            if liveZone and not na(c.microTime)
+                f_box(drawnBoxes, c.microTime, rightTime, c.microTop, c.microBottom, c.poiSide, 0, "M1 MICRO FVG")
+            if not na(c.swingHigh) and not na(c.swingLow) and c.swingHigh > c.swingLow
+                float midpoint = (c.swingHigh + c.swingLow) * 0.5
+                f_box(drawnBoxes, leftTime, rightTime, c.swingHigh, midpoint, -1, 2, "H1 PREMIUM")
+                f_box(drawnBoxes, leftTime, rightTime, midpoint, c.swingLow, 1, 2, "H1 DISCOUNT")
