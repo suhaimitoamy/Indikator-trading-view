@@ -1,0 +1,76 @@
+//@version=5
+indicator("ICT Market Context Engine Professional v1.0", overlay=true, max_boxes_count=50, max_lines_count=100)
+
+mode = input.string("Clean Mode", "Display Mode", options=["Clean Mode", "Analyst Mode", "Full Mode"])
+pos = input.string("Top Right", "Dashboard Position", options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"])
+
+// H1 Bias Engine
+[h1h,h1l,h1c] = request.security(syminfo.tickerid,"60",[high,low,close])
+var float h1High = na
+var float h1Low = na
+h1High := ta.highest(h1h,20)
+h1Low := ta.lowest(h1l,20)
+bullBias = h1c > h1High[1]
+bearBias = h1c < h1Low[1]
+h1Bias = bullBias ? "BULLISH" : bearBias ? "BEARISH" : "NEUTRAL"
+
+// M15 FVG Engine
+[m15h,m15l] = request.security(syminfo.tickerid,"15",[high,low])
+bullFvg = m15h[2] < m15l
+bearFvg = m15l[2] > m15h
+var float poiHigh = na
+var float poiLow = na
+var string poiType = "NONE"
+if bullFvg
+    poiHigh := m15l
+    poiLow := m15h[2]
+    poiType := "Bullish FVG"
+if bearFvg
+    poiHigh := m15l[2]
+    poiLow := m15h
+    poiType := "Bearish FVG"
+
+insidePOI = not na(poiHigh) and close <= poiHigh and close >= poiLow
+zoneStatus = insidePOI ? "TESTED" : "FRESH"
+
+if mode != "Clean Mode" and not na(poiHigh)
+    box.new(bar_index-2, poiHigh, bar_index+20, poiLow, bgcolor=color.new(color.blue,85), border_color=color.new(color.blue,60))
+
+// Liquidity Engine
+pdh = request.security(syminfo.tickerid,"D",high[1])
+pdl = request.security(syminfo.tickerid,"D",low[1])
+pwh = request.security(syminfo.tickerid,"W",high[1])
+pwl = request.security(syminfo.tickerid,"W",low[1])
+
+// M1 Confirmation Engine
+[m1o,m1h,m1l,m1c] = request.security(syminfo.tickerid,"1",[open,high,low,close])
+displacement = math.abs(m1c-m1o) > ta.atr(14)
+liqSweep = m1h > ta.highest(m1h,10)[1] or m1l < ta.lowest(m1l,10)[1]
+mss = (m1c > m1h[1]) or (m1c < m1l[1])
+
+var table dash = table.new(position.top_right,2,8,border_width=1)
+if barstate.islast
+    table.clear(dash)
+    table.cell(dash,0,0,"ICT MARKET CONTEXT")
+    table.cell(dash,0,1,"H1 BIAS")
+    table.cell(dash,1,1,h1Bias)
+    table.cell(dash,0,2,"Liquidity Target")
+    table.cell(dash,1,2,close >= pdh ? "PDH" : close <= pdl ? "PDL" : "WAIT")
+    table.cell(dash,0,3,"M15 POI")
+    table.cell(dash,1,3,poiType)
+    table.cell(dash,0,4,"Range")
+    table.cell(dash,1,4,str.tostring(poiLow,"#.##")+" - "+str.tostring(poiHigh,"#.##"))
+    table.cell(dash,0,5,"Zone")
+    table.cell(dash,1,5,zoneStatus)
+    table.cell(dash,0,6,"M1 Liquidity")
+    table.cell(dash,1,6,liqSweep ? "YES" : "NO")
+    table.cell(dash,0,7,"M1 MSS / Displacement")
+    table.cell(dash,1,7,(mss ? "YES" : "NO")+" / "+(displacement ? "YES" : "NO"))
+
+if mode == "Full Mode"
+    line.new(bar_index-20,pdh,bar_index+10,pdh,color=color.new(color.red,50))
+    line.new(bar_index-20,pdl,bar_index+10,pdl,color=color.new(color.green,50))
+    line.new(bar_index-20,pwh,bar_index+10,pwh,color=color.new(color.orange,60))
+    line.new(bar_index-20,pwl,bar_index+10,pwl,color=color.new(color.orange,60))
+
+// Manual execution only. No buy/sell signals.
