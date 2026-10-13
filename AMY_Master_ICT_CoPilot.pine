@@ -402,32 +402,32 @@ else if inBullOb
     if htfBias == -1
         coPilotText  := "📍 Di Bull OB tapi H4 Bearish!\nHati-hati jebakan, jangan buru-buru buy"
         coPilotColor := color.yellow
-        coPilotBg    := color.new(color.darkgray, 20)
+        coPilotBg    := color.new(#2a2e39, 20)
     else
         coPilotText  := "📍 Harga masuk Bull OB\nTunggu reaksi rejection candle"
         coPilotColor := color.lime
-        coPilotBg    := color.new(color.darkgray, 20)
+        coPilotBg    := color.new(#2a2e39, 20)
 
 else if inBearOb
     if htfBias == 1
         coPilotText  := "📍 Di Bear OB tapi H4 Bullish!\nHati-hati jebakan, jangan buru-buru sell"
         coPilotColor := color.yellow
-        coPilotBg    := color.new(color.darkgray, 20)
+        coPilotBg    := color.new(#2a2e39, 20)
     else
         coPilotText  := "📍 Harga masuk Bear OB\nTunggu reaksi rejection candle"
         coPilotColor := color.red
-        coPilotBg    := color.new(color.darkgray, 20)
+        coPilotBg    := color.new(#2a2e39, 20)
 
 // Kasus 5: Harga Mendekati POI
 else if nearBullOb and htfBias >= 0
     coPilotText  := "👀 Harga mendekati Bull OB\nBersiap pantau reaksi di zona pantul"
     coPilotColor := color.yellow
-    coPilotBg    := color.new(color.darkgray, 30)
+    coPilotBg    := color.new(#2a2e39, 30)
 
 else if nearBearOb and htfBias <= 0
     coPilotText  := "👀 Harga mendekati Bear OB\nBersiap pantau reaksi di zona pantul"
     coPilotColor := color.yellow
-    coPilotBg    := color.new(color.darkgray, 30)
+    coPilotBg    := color.new(#2a2e39, 30)
 
 // Kasus 6: Valid Break (Dengan Proteksi Konflik HTF)
 else if bullValidBreak
@@ -465,12 +465,12 @@ else if bslSweep
 else if isPremium and marketBias == 1
     coPilotText  := "📊 Posisi di Premium (Atas 50%)\nBukan zona ideal Buy, tunggu pullback"
     coPilotColor := color.orange
-    coPilotBg    := color.new(color.darkgray, 40)
+    coPilotBg    := color.new(#2a2e39, 40)
 
 else if isDiscount and marketBias == -1
     coPilotText  := "📊 Posisi di Discount (Bawah 50%)\nBukan zona ideal Sell, tunggu retracement"
     coPilotColor := color.orange
-    coPilotBg    := color.new(color.darkgray, 40)
+    coPilotBg    := color.new(#2a2e39, 40)
 
 // =============================================================================
 // 9. VISUALISASI CHART & HUD (MOBILE-CLEAN LAYOUT)
