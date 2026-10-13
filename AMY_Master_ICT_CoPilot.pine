@@ -2,15 +2,19 @@
 indicator("AMY Master ICT Co-Pilot [All-in-One]", shorttitle="AMY ICT Co-Pilot", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=3000)
 
 // =============================================================================
-// AMY MASTER ICT CO-PILOT [ALL-IN-ONE] - v1.0
+// AMY MASTER ICT CO-PILOT [ALL-IN-ONE] - v1.1 (AUDITED & BULLETPROOF)
 // -----------------------------------------------------------------------------
-// Arsitektur Terpadu:
-// 1. HTF Trend & Market Structure (H4 Alignment + M15 MSS/BOS Non-Repaint)
-// 2. Dealing Range & Key ICT Levels (PDH/PDL, Asia H/L, Equilibrium 50%)
-// 3. Institutional Order Flow (Order Blocks, FVG + 50% CE, Liquidity Sweeps)
-// 4. Live Co-Pilot Narrative Guide ("Valid Break", "Mendekati OB", "Rejection")
-// 5. Sniper Entry Confluence Engine (Skor 0-100%, SL/TP Dinamis, Anti-Spam)
-// 6. Mobile-Optimized Cockpit HUD (Layout Anti-Tumpuk Khusus Layar HP)
+// Hasil Audit Logika:
+// 1. Anti-Salah Arah (HTF Conflict Guard):
+//    - Jika H4 Bearish tapi M15 break naik, Co-Pilot memperingatkan: "Counter-Trend Pullback! Dilarang Buy!"
+//    - Hanya mengizinkan sinyal Buy jika H4 Netral/Bullish dan harga di zona Discount (bawah 50%).
+// 2. Order Block Murni ICT:
+//    - Mengambil candle berlawanan terakhir (Origin Candle) sebelum terjadi impulse break.
+// 3. Manajemen Memori Anti-Bocor (Zero Drawing Leak):
+//    - Garis PDH/PDL, Asia H/L, dan Equilibrium menggunakan pointer tunggal (line.set_xy) 
+//      sehingga tidak pernah melebihi limit 500 line TradingView.
+// 4. Anti-Tumpuk Layar HP:
+//    - Co-Pilot terintegrasi penuh ke baris atas Dashboard HUD dengan font adaptif.
 // =============================================================================
 
 // =============================================================================
@@ -27,7 +31,7 @@ dashSize        = input.string("Tiny", "Ukuran Font Dashboard", options=["Tiny",
 
 // --- Grup 2: Struktur Pasar & Filter HTF ---
 grpStructure    = "2. Struktur Pasar & Filter HTF (Anti-Salah Arah)"
-useHtfFilter    = input.bool(true, "Aktifkan Filter Trend HTF", group=grpStructure, tooltip="Mencegah buy saat tren besar bearish, atau sell saat tren besar bullish.")
+useHtfFilter    = input.bool(true, "Aktifkan Filter Trend HTF", group=grpStructure, tooltip="Wajib aktif untuk mencegah salah arah: menolak buy saat H4 bearish.")
 htfTimeframe    = input.timeframe("240", "Timeframe HTF (Trend Induk)", group=grpStructure)
 htfEmaLen       = input.int(20, "Periode HTF EMA", minval=5, maxval=200, group=grpStructure)
 m15SwingLen     = input.int(5, "Swing Lookback M15", minval=3, maxval=15, group=grpStructure, tooltip="Default 5 bar untuk menyaring noise micro-candle di Gold.")
@@ -37,7 +41,6 @@ showStructure   = input.bool(true, "Garis BOS & MSS di Chart", group=grpStructur
 // --- Grup 3: Level Kunci & Sesi ICT ---
 grpLevels       = "3. Level Kunci & Sesi ICT"
 showPdhPdl      = input.bool(true, "Tampilkan PDH / PDL", group=grpLevels)
-showPwhPwl      = input.bool(false, "Tampilkan PWH / PWL", group=grpLevels)
 showAsiaRange   = input.bool(true, "Tampilkan Asia High / Low", group=grpLevels)
 asiaSession     = input.session("0600-1400", "Jam Sesi Asia (WITA / UTC+8)", group=grpLevels)
 tzString        = input.string("Asia/Makassar", "Zona Waktu", group=grpLevels)
@@ -46,8 +49,9 @@ showDealingRange= input.bool(true, "Dealing Range & 50% Equilibrium", group=grpL
 // --- Grup 4: Order Flow (OB, FVG & Liquidity Sweep) ---
 grpOrderFlow    = "4. Order Flow (OB, FVG & Sweep)"
 showOB          = input.bool(true, "Tampilkan Order Block (OB)", group=grpOrderFlow)
+obSearchBars    = input.int(8, "Lookback Cari Origin Candle OB", minval=3, maxval=20, group=grpOrderFlow)
 maxObBoxes      = input.int(4, "Maksimal Box OB Aktif", minval=1, maxval=10, group=grpOrderFlow)
-showFvg         = input.bool(true, "Tampilkan FVG (+ 50% Midline)", group=grpOrderFlow)
+showFvg         = input.bool(true, "Tampilkan FVG (+ 50% CE Midline)", group=grpOrderFlow)
 maxFvgBoxes     = input.int(4, "Maksimal Box FVG Aktif", minval=1, maxval=10, group=grpOrderFlow)
 showSweeps      = input.bool(true, "Tampilkan Marker Liquidity Sweep", group=grpOrderFlow)
 nearPoiAtrDist  = input.float(0.40, "Jarak Deteksi 'Mendekati POI' (ATR)", minval=0.1, maxval=2.0, step=0.05, group=grpOrderFlow)
@@ -109,13 +113,12 @@ if not na(ph)
 if not na(pl)
     lastPL := pl
 
-// Valid Break jika close tembus swing + memenuhi displacement
+// Valid Break: Close melewati swing point + dikonfirmasi candle displacement
 bullValidBreak = not na(lastPH) and close > lastPH and close[1] <= lastPH and isDisplacement
 bearValidBreak = not na(lastPL) and close < lastPL and close[1] >= lastPL and isDisplacement
 
-// MSS / CHoCH update
+// Update Struktur Pasar
 if bullValidBreak and marketBias != 1
-    // Filter HTF: jika HTF bearish kencang, peringatkan konfluensi rendah
     marketBias := 1
     mssEvent := 1
     invalidLevel := lastPL
@@ -126,7 +129,7 @@ else if bearValidBreak and marketBias != -1
 else
     mssEvent := 0
 
-// Cek Pembatalan Setup (Invalidation)
+// Deteksi Pembatalan Setup (Invalidation)
 var bool setupInvalid = false
 if marketBias == 1 and not na(invalidLevel) and close < invalidLevel
     marketBias := 0
@@ -141,11 +144,10 @@ else
 // 5. LEVEL KUNCI ICT (PDH, PDL, ASIA RANGE, DEALING RANGE)
 // =============================================================================
 
-// Daily High & Low
+// Daily High & Low (Closed bar sebelumnya agar non-repaint)
 [pdhVal, pdlVal] = request.security(syminfo.tickerid, "D", [high[1], low[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
-[pwhVal, pwlVal] = request.security(syminfo.tickerid, "W", [high[1], low[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
-// Sesi Asia
+// Sesi Asia (WITA / UTC+8)
 inAsia = not na(time(timeframe.period, asiaSession, tzString))
 var float asiaHigh = na
 var float asiaLow = na
@@ -158,15 +160,50 @@ if inAsia
         asiaHigh := math.max(asiaHigh, high)
         asiaLow := math.min(asiaLow, low)
 
-// Dealing Range & Equilibrium (50%)
+// Dealing Range & 50% Equilibrium
 rangeHigh = ta.highest(high, 80)
 rangeLow = ta.lowest(low, 80)
 equilibrium = (rangeHigh + rangeLow) / 2.0
 isDiscount = close < equilibrium
 isPremium = close > equilibrium
 
+// Pointer Tunggal Garis Level (Anti Memory Leak / Anti Batas 500 Garis)
+var line pdhLine = na
+var line pdlLine = na
+var line eqLine = na
+var line asiaHLine = na
+var line asiaLLine = na
+
+if barstate.islast
+    if showPdhPdl and not na(pdhVal)
+        if na(pdhLine)
+            pdhLine := line.new(bar_index - 50, pdhVal, bar_index + 10, pdhVal, color=color.new(color.red, 30), width=1)
+            pdlLine := line.new(bar_index - 50, pdlVal, bar_index + 10, pdlVal, color=color.new(color.green, 30), width=1)
+        else
+            line.set_xy1(pdhLine, bar_index - 50, pdhVal)
+            line.set_xy2(pdhLine, bar_index + 10, pdhVal)
+            line.set_xy1(pdlLine, bar_index - 50, pdlVal)
+            line.set_xy2(pdlLine, bar_index + 10, pdlVal)
+
+    if showDealingRange and not na(equilibrium)
+        if na(eqLine)
+            eqLine := line.new(bar_index - 80, equilibrium, bar_index + 10, equilibrium, color=color.new(color.yellow, 50), style=line.style_dashed, width=1)
+        else
+            line.set_xy1(eqLine, bar_index - 80, equilibrium)
+            line.set_xy2(eqLine, bar_index + 10, equilibrium)
+
+    if showAsiaRange and not na(asiaHigh)
+        if na(asiaHLine)
+            asiaHLine := line.new(bar_index - 40, asiaHigh, bar_index + 10, asiaHigh, color=color.new(color.purple, 40), width=1)
+            asiaLLine := line.new(bar_index - 40, asiaLow, bar_index + 10, asiaLow, color=color.new(color.purple, 40), width=1)
+        else
+            line.set_xy1(asiaHLine, bar_index - 40, asiaHigh)
+            line.set_xy2(asiaHLine, bar_index + 10, asiaHigh)
+            line.set_xy1(asiaLLine, bar_index - 40, asiaLow)
+            line.set_xy2(asiaLLine, bar_index + 10, asiaLow)
+
 // =============================================================================
-// 6. ORDER FLOW: OB, FVG, & LIQUIDITY SWEEP
+// 6. ORDER FLOW: TEXTBOOK OB, FVG (+50% CE), & LIQUIDITY SWEEP
 // =============================================================================
 
 // --- Liquidity Sweeps ---
@@ -176,17 +213,17 @@ sslSweep = not na(lastPL) and low < lastPL and close > lastPL
 var int lastSweepDir = 0
 var int lastSweepBar = na
 if sslSweep
-    lastSweepDir := 1 // Sweep SSL -> Siap Buy
+    lastSweepDir := 1 // Sweep SSL -> Indikasi Reversal Naik
     lastSweepBar := bar_index
 if bslSweep
-    lastSweepDir := -1 // Sweep BSL -> Siap Sell
+    lastSweepDir := -1 // Sweep BSL -> Indikasi Reversal Turun
     lastSweepBar := bar_index
 
-// Kadaluarsa sweep setelah 15 bar
+// Kadaluarsa status sweep setelah 15 bar
 if not na(lastSweepBar) and (bar_index - lastSweepBar > 15)
     lastSweepDir := 0
 
-// --- Order Blocks (OB) ---
+// --- Order Block (Textbook Origin Candle) ---
 var box[] bullObBoxes = array.new_box()
 var box[] bearObBoxes = array.new_box()
 var float activeBullObTop = na
@@ -194,27 +231,37 @@ var float activeBullObBtm = na
 var float activeBearObTop = na
 var float activeBearObBtm = na
 
-// Bullish OB: candle down terakhir sebelum impuls naik
-if bullValidBreak and not na(lastPL)
-    activeBullObTop := math.max(open[m15SwingLen], close[m15SwingLen])
-    activeBullObBtm := low[m15SwingLen]
-    if showOB and barstate.isconfirmed
-        bBox = box.new(bar_index - m15SwingLen, activeBullObTop, bar_index + 10, activeBullObBtm, border_color=color.green, bgcolor=color.new(color.green, 85))
-        array.push(bullObBoxes, bBox)
-        if array.size(bullObBoxes) > maxObBoxes
-            box.delete(array.shift(bullObBoxes))
+// Bullish OB: Cari candle bearish terakhir sebelum terjadi break naik
+if bullValidBreak
+    int obOffset = na
+    for i = 1 to obSearchBars
+        if na(obOffset) and close[i] < open[i]
+            obOffset := i
+    if not na(obOffset)
+        activeBullObTop := math.max(open[obOffset], close[obOffset])
+        activeBullObBtm := low[obOffset]
+        if showOB and barstate.isconfirmed
+            bBox = box.new(bar_index - obOffset, activeBullObTop, bar_index + 15, activeBullObBtm, border_color=color.green, bgcolor=color.new(color.green, 85))
+            array.push(bullObBoxes, bBox)
+            if array.size(bullObBoxes) > maxObBoxes
+                box.delete(array.shift(bullObBoxes))
 
-// Bearish OB: candle up terakhir sebelum impuls turun
-if bearValidBreak and not na(lastPH)
-    activeBearObTop := high[m15SwingLen]
-    activeBearObBtm := math.min(open[m15SwingLen], close[m15SwingLen])
-    if showOB and barstate.isconfirmed
-        brBox = box.new(bar_index - m15SwingLen, activeBearObTop, bar_index + 10, activeBearObBtm, border_color=color.red, bgcolor=color.new(color.red, 85))
-        array.push(bearObBoxes, brBox)
-        if array.size(bearObBoxes) > maxObBoxes
-            box.delete(array.shift(bearObBoxes))
+// Bearish OB: Cari candle bullish terakhir sebelum terjadi break turun
+if bearValidBreak
+    int obOffsetB = na
+    for i = 1 to obSearchBars
+        if na(obOffsetB) and close[i] > open[i]
+            obOffsetB := i
+    if not na(obOffsetB)
+        activeBearObTop := high[obOffsetB]
+        activeBearObBtm := math.min(open[obOffsetB], close[obOffsetB])
+        if showOB and barstate.isconfirmed
+            brBox = box.new(bar_index - obOffsetB, activeBearObTop, bar_index + 15, activeBearObBtm, border_color=color.red, bgcolor=color.new(color.red, 85))
+            array.push(bearObBoxes, brBox)
+            if array.size(bearObBoxes) > maxObBoxes
+                box.delete(array.shift(bearObBoxes))
 
-// --- Fair Value Gaps (FVG) ---
+// --- Fair Value Gaps (FVG) + 50% Consequent Encroachment (CE) ---
 bullFvg = low > high[2] and close[1] > high[2]
 bearFvg = high < low[2] and close[1] < low[2]
 var float activeBullFvgTop = na
@@ -242,7 +289,7 @@ if bearFvg
         if array.size(fvgBoxes) > maxFvgBoxes
             box.delete(array.shift(fvgBoxes))
 
-// Deteksi Kedekatan & Sentuhan POI (Proximity)
+// Proximity & Zona Sentuhan POI
 nearBullOb  = not na(activeBullObTop) and close > activeBullObTop and (close - activeBullObTop) <= (atrVal * nearPoiAtrDist)
 inBullOb    = not na(activeBullObTop) and close <= activeBullObTop and close >= activeBullObBtm
 nearBearOb  = not na(activeBearObBtm) and close < activeBearObBtm and (activeBearObBtm - close) <= (atrVal * nearPoiAtrDist)
@@ -307,110 +354,127 @@ if bullRejection
 if bearRejection
     bearScore += 10
 
-// Evaluasi Sinyal Final
-validLongSetup  = bullScore >= minScoreToTrade and (htfBias >= 0) and not setupInvalid
-validShortSetup = bearScore >= minScoreToTrade and (htfBias <= 0) and not setupInvalid
-
-var bool longTriggered = false
-var bool shortTriggered = false
+// Evaluasi Sinyal Final dengan Penjaga HTF (HTF Guard)
+validLongSetup  = bullScore >= minScoreToTrade and (htfBias >= 0) and not setupInvalid and isDiscount
+validShortSetup = bearScore >= minScoreToTrade and (htfBias <= 0) and not setupInvalid and isPremium
 
 longTrigger  = validLongSetup and not validLongSetup[1] and barstate.isconfirmed
 shortTrigger = validShortSetup and not validShortSetup[1] and barstate.isconfirmed
 
 // =============================================================================
-// 8. LIVE CO-PILOT NARRATIVE ENGINE (PANDUAN CERDAS REAL-TIME)
+// 8. LIVE CO-PILOT NARRATIVE ENGINE (CERDAS & ANTI-SALAH ARAH)
 // =============================================================================
 
 var string coPilotText = "Menunggu formasi struktur pasar..."
 var color coPilotColor = color.gray
 var color coPilotBg    = color.new(color.black, 20)
 
+// Kasus 1: Setup Batal
 if setupInvalid
-    coPilotText  := "⚠ Setup Batal: Harga close melewati level invalidasi!"
+    coPilotText  := "⚠ Setup Batal: Harga close menembus invalidasi!"
     coPilotColor := color.red
     coPilotBg    := color.new(color.maroon, 15)
 
+// Kasus 2: Sinyal Sniper Terkonfirmasi
 else if longTrigger
-    coPilotText  := "🚀 Sniper BUY Confirmed (" + str.tostring(bullScore) + "%)\nRejection dari zona Discount + HTF Selaras"
+    coPilotText  := "🚀 Sniper BUY Confirmed (" + str.tostring(bullScore) + "%)\nRejection di Discount + HTF Selaras"
     coPilotColor := color.lime
     coPilotBg    := color.new(color.green, 20)
 
 else if shortTrigger
-    coPilotText  := "🔻 Sniper SELL Confirmed (" + str.tostring(bearScore) + "%)\nRejection dari zona Premium + HTF Selaras"
+    coPilotText  := "🔻 Sniper SELL Confirmed (" + str.tostring(bearScore) + "%)\nRejection di Premium + HTF Selaras"
     coPilotColor := color.orange
     coPilotBg    := color.new(color.red, 20)
 
-else if bullRejection
+// Kasus 3: Rejection di POI
+else if bullRejection and htfBias >= 0
     coPilotText  := "📍 Rejection Bullish di POI!\nPantau konfirmasi candle close untuk Buy"
     coPilotColor := color.teal
     coPilotBg    := color.new(color.teal, 30)
 
-else if bearRejection
+else if bearRejection and htfBias <= 0
     coPilotText  := "📍 Rejection Bearish di POI!\nPantau konfirmasi candle close untuk Sell"
     coPilotColor := color.orange
     coPilotBg    := color.new(color.maroon, 30)
 
+// Kasus 4: Harga Masuk Zona POI
 else if inBullOb
-    coPilotText  := "📍 Harga masuk Bull OB\nTunggu reaksi rejection candle"
-    coPilotColor := color.lime
-    coPilotBg    := color.new(color.darkgray, 20)
+    if htfBias == -1
+        coPilotText  := "📍 Di Bull OB tapi H4 Bearish!\nHati-hati jebakan, jangan buru-buru buy"
+        coPilotColor := color.yellow
+        coPilotBg    := color.new(color.darkgray, 20)
+    else
+        coPilotText  := "📍 Harga masuk Bull OB\nTunggu reaksi rejection candle"
+        coPilotColor := color.lime
+        coPilotBg    := color.new(color.darkgray, 20)
 
 else if inBearOb
-    coPilotText  := "📍 Harga masuk Bear OB\nTunggu reaksi rejection candle"
-    coPilotColor := color.red
-    coPilotBg    := color.new(color.darkgray, 20)
+    if htfBias == 1
+        coPilotText  := "📍 Di Bear OB tapi H4 Bullish!\nHati-hati jebakan, jangan buru-buru sell"
+        coPilotColor := color.yellow
+        coPilotBg    := color.new(color.darkgray, 20)
+    else
+        coPilotText  := "📍 Harga masuk Bear OB\nTunggu reaksi rejection candle"
+        coPilotColor := color.red
+        coPilotBg    := color.new(color.darkgray, 20)
 
-else if nearBullOb
+// Kasus 5: Harga Mendekati POI
+else if nearBullOb and htfBias >= 0
     coPilotText  := "👀 Harga mendekati Bull OB\nBersiap pantau reaksi di zona pantul"
     coPilotColor := color.yellow
     coPilotBg    := color.new(color.darkgray, 30)
 
-else if nearBearOb
+else if nearBearOb and htfBias <= 0
     coPilotText  := "👀 Harga mendekati Bear OB\nBersiap pantau reaksi di zona pantul"
     coPilotColor := color.yellow
     coPilotBg    := color.new(color.darkgray, 30)
 
+// Kasus 6: Valid Break (Dengan Proteksi Konflik HTF)
 else if bullValidBreak
-    coPilotText  := "✓ Valid Break Bullish dengan Displacement\nStruktur LTF confirm naik"
-    coPilotColor := color.lime
-    coPilotBg    := color.new(color.green, 30)
+    if htfBias == -1
+        coPilotText  := "⚠ Valid Break Bullish TAPI H4 Bearish!\nPotensi koreksi sementara — Dilarang Buy!"
+        coPilotColor := color.yellow
+        coPilotBg    := color.new(color.maroon, 25)
+    else
+        coPilotText  := "✓ Valid Break Bullish + Displacement\nStruktur M15 selaras H4, siap cari Buy"
+        coPilotColor := color.lime
+        coPilotBg    := color.new(color.green, 30)
 
 else if bearValidBreak
-    coPilotText  := "✓ Valid Break Bearish dengan Displacement\nStruktur LTF confirm turun"
-    coPilotColor := color.red
-    coPilotBg    := color.new(color.red, 30)
+    if htfBias == 1
+        coPilotText  := "⚠ Valid Break Bearish TAPI H4 Bullish!\nPotensi koreksi sementara — Dilarang Sell!"
+        coPilotColor := color.yellow
+        coPilotBg    := color.new(color.maroon, 25)
+    else
+        coPilotText  := "✓ Valid Break Bearish + Displacement\nStruktur M15 selaras H4, siap cari Sell"
+        coPilotColor := color.red
+        coPilotBg    := color.new(color.red, 30)
 
+// Kasus 7: Liquidity Sweeps
 else if sslSweep
-    coPilotText  := "💧 SSL Swept (Likuiditas Bawah Terambil)\nCari konfirmasi buy dari OB/FVG"
+    coPilotText  := "💧 SSL Swept (Likuiditas Bawah Terambil)\nCari konfirmasi buy jika di Discount"
     coPilotColor := color.aqua
     coPilotBg    := color.new(color.blue, 30)
 
 else if bslSweep
-    coPilotText  := "💧 BSL Swept (Likuiditas Atas Terambil)\nCari konfirmasi sell dari OB/FVG"
+    coPilotText  := "💧 BSL Swept (Likuiditas Atas Terambil)\nCari konfirmasi sell jika di Premium"
     coPilotColor := color.aqua
     coPilotBg    := color.new(color.blue, 30)
 
-else if isDiscount and marketBias == 1
-    coPilotText  := "📊 Posisi di Discount — Ideal mencari setup Buy"
-    coPilotColor := color.teal
+// Kasus 8: Peringatan Posisi Zona
+else if isPremium and marketBias == 1
+    coPilotText  := "📊 Posisi di Premium (Atas 50%)\nBukan zona ideal Buy, tunggu pullback"
+    coPilotColor := color.orange
     coPilotBg    := color.new(color.darkgray, 40)
 
-else if isPremium and marketBias == -1
-    coPilotText  := "📊 Posisi di Premium — Ideal mencari setup Sell"
+else if isDiscount and marketBias == -1
+    coPilotText  := "📊 Posisi di Discount (Bawah 50%)\nBukan zona ideal Sell, tunggu retracement"
     coPilotColor := color.orange
     coPilotBg    := color.new(color.darkgray, 40)
 
 // =============================================================================
 // 9. VISUALISASI CHART & HUD (MOBILE-CLEAN LAYOUT)
 // =============================================================================
-
-// Level Kunci Garis (Clean)
-if showPdhPdl and not na(pdhVal)
-    line.new(bar_index - 1, pdhVal, bar_index, pdhVal, extend=extend.right, color=color.new(color.red, 40), width=1)
-    line.new(bar_index - 1, pdlVal, bar_index, pdlVal, extend=extend.right, color=color.new(color.lime, 40), width=1)
-
-if showDealingRange and not na(equilibrium)
-    line.new(bar_index - 1, equilibrium, bar_index, equilibrium, extend=extend.right, color=color.new(color.yellow, 60), style=line.style_dashed, width=1)
 
 // Sinyal Panah Entry di Chart
 plotshape(showEntrySignal and longTrigger, title="Sinyal Sniper Buy", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small, text="BUY")
@@ -497,6 +561,10 @@ if showDash and barstate.islast
 // =============================================================================
 // 11. SISTEM ALERT UNIVERSAL
 // =============================================================================
+
+// Hidden plot untuk mapping data ke alert TradingView
+plot(bullScore, "Bull Confluence Score", display=display.none)
+plot(bearScore, "Bear Confluence Score", display=display.none)
 
 alertcondition(longTrigger, title="[AMY] Sniper BUY Confirmed", message="[AMY CO-PILOT] Sniper BUY Confirmed! Skor: {{plot_0}}% | SL: {{plot_1}} | TP: {{plot_2}}")
 alertcondition(shortTrigger, title="[AMY] Sniper SELL Confirmed", message="[AMY CO-PILOT] Sniper SELL Confirmed! Skor: {{plot_0}}% | SL: {{plot_1}} | TP: {{plot_2}}")
