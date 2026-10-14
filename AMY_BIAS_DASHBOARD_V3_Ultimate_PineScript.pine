@@ -1,0 +1,357 @@
+//@version=5
+indicator("AMY BIAS DASHBOARD V3 [Ultimate SMC]", shorttitle="AMY BIAS V3", overlay=true, max_boxes_count=50, max_lines_count=50, max_labels_count=50)
+
+// ============================================================================
+// 1. INPUT PENGATURAN
+// ============================================================================
+grp_mtf  = "1. Struktur & Multi-Timeframe"
+htf      = input.timeframe("15", "Timeframe Struktur Utama (HTF)", group=grp_mtf)
+swingLen = input.int(5, "Panjang Swing Pivot (Struktur)", minval=2, maxval=30, group=grp_mtf)
+
+grp_risk = "2. Manajemen Risiko & Validasi Anti-Ngawur"
+atrLen   = input.int(14, "Panjang ATR", minval=1, group=grp_risk)
+slBuffer = input.float(0.15, "Buffer Stop Loss di Luar Invalidasi (x ATR)", minval=0.0, step=0.05, group=grp_risk)
+volMult  = input.float(1.1, "Ambang Volume Konfirmasi Rejection (x MA Volume)", minval=0.5, step=0.1, group=grp_risk)
+minRR    = input.float(1.5, "Minimum Risk-to-Reward (RR) Valid", minval=1.0, step=0.1, group=grp_risk)
+
+grp_vis   = "3. Visualisasi & Posisi Dashboard"
+showOB    = input.bool(true, "Gambar Zona Order Block (POI) & Mean Threshold", group=grp_vis)
+showPlan  = input.bool(true, "Gambar Garis Entry, Invalidation (SL), & DOL (TP)", group=grp_vis)
+showBox   = input.bool(true, "Tampilkan Kotak Info Peringatan (Callout)", group=grp_vis)
+posInput  = input.string("Bottom Center", "Posisi Tabel Dashboard", options=["Bottom Center", "Bottom Right", "Top Right", "Bottom Left"], group=grp_vis)
+txtSizeIn = input.string("Small", "Ukuran Teks Dashboard", options=["Tiny", "Small", "Normal"], group=grp_vis)
+
+// ============================================================================
+// 2. FUNGSI & KALKULASI STRUKTUR PASAR (HTF & CTF)
+// ============================================================================
+f_calc_structure(_len) =>
+    ph = ta.pivothigh(high, _len, _len)
+    pl = ta.pivotlow(low, _len, _len)
+    var float lastPH = high
+    var float lastPL = low
+    var int trend = 0 // 1 = Bullish, -1 = Bearish
+    if not na(ph)
+        lastPH := ph
+    if not na(pl)
+        lastPL := pl
+    if ta.crossover(close, lastPH)
+        trend := 1
+    if ta.crossunder(close, lastPL)
+        trend := -1
+    [trend, lastPH, lastPL, close, high, low]
+
+[htfTrend, htfPH, htfPL, htfClose, htfHigh, htfLow] = request.security(syminfo.tickerid, htf, f_calc_structure(swingLen), barmerge.lookahead_off)
+
+atrVal    = ta.atr(atrLen)
+volMA     = ta.sma(volume, 20)
+isHighVol = volume >= (volMA * volMult)
+
+// Struktur Timeframe Saat Ini (LTF/CTF)
+phLTF = ta.pivothigh(high, swingLen, swingLen)
+plLTF = ta.pivotlow(low, swingLen, swingLen)
+
+var float protHigh = high
+var float protLow  = low
+var float bslLevel = high
+var float sslLevel = low
+
+if not na(phLTF)
+    bslLevel := phLTF
+    if htfTrend == -1 and phLTF > protHigh
+        protHigh := phLTF
+    else if htfTrend == -1
+        protHigh := math.max(phLTF, bslLevel)
+    else
+        protHigh := phLTF
+
+if not na(plLTF)
+    sslLevel := plLTF
+    if htfTrend == 1 and plLTF < protLow
+        protLow := plLTF
+    else
+        protLow := plLTF
+
+// Sinkronisasi Protected High/Low dengan HTF agar lebih presisi
+protHighFinal = math.max(protHigh, nz(htfPH, high))
+protLowFinal  = math.min(protLow, nz(htfPL, low))
+
+// ============================================================================
+// 3. DETEKSI LIQUIDITY SWEEP (BSL / SSL)
+// ============================================================================
+var bool bslSwept      = false
+var bool sslSwept      = false
+var float sweptPrice   = na
+var float extremePrice = na
+var int sweepBar       = 0
+
+if high > bslLevel and close < bslLevel
+    bslSwept     := true
+    sslSwept     := false
+    sweptPrice   := bslLevel
+    extremePrice := high
+    sweepBar     := bar_index
+
+if low < sslLevel and close > sslLevel
+    sslSwept     := true
+    bslSwept     := false
+    sweptPrice   := sslLevel
+    extremePrice := low
+    sweepBar     := bar_index
+
+isSweepFresh = (bar_index - sweepBar) <= 25
+
+// ============================================================================
+// 4. DEALING RANGE (PREMIUM / EQUILIBRIUM / DISCOUNT)
+// ============================================================================
+rangeHigh  = math.max(bslLevel, protHighFinal)
+rangeLow   = math.min(sslLevel, protLowFinal)
+rangeSize  = math.max(rangeHigh - rangeLow, syminfo.mintick)
+eqMid      = (rangeHigh + rangeLow) / 2.0
+eqTop      = eqMid + (rangeSize * 0.025)
+eqBot      = eqMid - (rangeSize * 0.025)
+
+isPremium  = close > eqTop
+isDiscount = close < eqBot
+isEquil    = not isPremium and not isDiscount
+
+posZoneStr = isPremium ? "Premium" : isDiscount ? "Discount" : "Equilibrium"
+
+// ============================================================================
+// 5. DETEKSI ORDER BLOCK (POI) & MEAN THRESHOLD (50%)
+// ============================================================================
+var float bearOB_Top     = na
+var float bearOB_Bot     = na
+var int bearOB_Bar       = na
+var bool bearOB_Invalid  = false
+
+var float bullOB_Top     = na
+var float bullOB_Bot     = na
+var int bullOB_Bar       = na
+var bool bullOB_Invalid  = false
+
+// Bearish Displacement: Candle turun kuat setelah candle naik
+isBearDisp = close < open and (open - close) > (atrVal * 0.8) and close < low[1]
+if isBearDisp and close[1] > open[1]
+    bearOB_Top     := high[1]
+    bearOB_Bot     := low[1]
+    bearOB_Bar     := bar_index[1]
+    bearOB_Invalid := false
+
+// Bullish Displacement: Candle naik kuat setelah candle turun
+isBullDisp = close > open and (close - open) > (atrVal * 0.8) and close > high[1]
+if isBullDisp and close[1] < open[1]
+    bullOB_Top     := high[1]
+    bullOB_Bot     := low[1]
+    bullOB_Bar     := bar_index[1]
+    bullOB_Invalid := false
+
+// Default fallback jika belum terbentuk OB baru
+if na(bearOB_Top)
+    bearOB_Top := rangeHigh
+    bearOB_Bot := rangeHigh - (atrVal * 0.6)
+if na(bullOB_Top)
+    bullOB_Top := rangeLow + (atrVal * 0.6)
+    bullOB_Bot := rangeLow
+
+bearOB_Mid = (bearOB_Top + bearOB_Bot) / 2.0
+bullOB_Mid = (bullOB_Top + bullOB_Bot) / 2.0
+
+// ============================================================================
+// 6. LOGIKA ANTI-ERROR: VALIDASI INVALIDATION vs ENTRY LEVEL
+// ============================================================================
+isBearBias         = htfTrend <= 0
+activeInvalidLevel = isBearBias ? math.max(bslLevel, bearOB_Top) : math.min(sslLevel, bullOB_Bot)
+activeProtLevel    = isBearBias ? protHighFinal : protLowFinal
+
+// Cek apakah harga sudah menembus (close melewati) level invalidasi
+if isBearBias and close > activeInvalidLevel
+    bearOB_Invalid := true
+if not isBearBias and close < activeInvalidLevel
+    bullOB_Invalid := true
+
+isSetupInvalid = isBearBias ? bearOB_Invalid : bullOB_Invalid
+
+// Sentuhan Zona POI
+inBearPOI   = not bearOB_Invalid and high >= bearOB_Bot and close <= activeInvalidLevel
+inBullPOI   = not bullOB_Invalid and low <= bullOB_Top and close >= activeInvalidLevel
+inActivePOI = isBearBias ? inBearPOI : inBullPOI
+
+// Konfirmasi Candle Rejection di LTF (Pin Bar / Engulfing di dalam POI)
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+bodySize  = math.abs(close - open)
+
+bearPinBar = upperWick > (bodySize * 1.5) and close < bearOB_Top
+bearEngulf = close < open and open >= close[1] and close < open[1] and close < low[1]
+bullPinBar = lowerWick > (bodySize * 1.5) and close > bullOB_Bot
+bullEngulf = close > open and open <= close[1] and close > open[1] and close > high[1]
+
+hasRejection = isBearBias ? (inBearPOI and (bearPinBar or bearEngulf)) : (inBullPOI and (bullPinBar or bullEngulf))
+
+// Kalkulasi Harga Entry Ideal, SL (di luar Invalidasi), dan TP (Draw on Liquidity)
+idealEntry = isBearBias ? bearOB_Mid : bullOB_Mid
+safeSL     = isBearBias ? (activeInvalidLevel + (atrVal * slBuffer)) : (activeInvalidLevel - (atrVal * slBuffer))
+dolTarget  = isBearBias ? sslLevel : bslLevel
+
+// Validasi Logika Entry vs SL (Memastikan Entry Sell TIDAK PERNAH di atas SL/Invalidasi)
+isEntryLogicValid = isBearBias ? (idealEntry < activeInvalidLevel and idealEntry > dolTarget) : (idealEntry > activeInvalidLevel and idealEntry < dolTarget)
+
+riskDist   = math.abs(safeSL - idealEntry)
+rewardDist = math.abs(idealEntry - dolTarget)
+calcRR     = riskDist > 0 ? (rewardDist / riskDist) : 0.0
+isRRValid  = calcRR >= minRR
+
+// ============================================================================
+// 7. SKOR CONFLUENCE OBJEKTIF (0 - 100%)
+// ============================================================================
+score = 0
+// 1. Struktur HTF searah (+25%)
+if (isBearBias and htfTrend == -1) or (not isBearBias and htfTrend == 1)
+    score += 25
+// 2. Posisi Harga di Zona Ideal (Premium untuk Sell / Discount untuk Buy) (+20%)
+if (isBearBias and isPremium) or (not isBearBias and isDiscount)
+    score += 20
+// 3. Liquidity Sweep Fresh (+20%)
+if (isBearBias and bslSwept and isSweepFresh) or (not isBearBias and sslSwept and isSweepFresh)
+    score += 20
+// 4. Zona POI Valid & Belum Tembus Invalidasi (+15%)
+if not isSetupInvalid and isEntryLogicValid
+    score += 15
+// 5. Konfirmasi Candle Rejection + RR Memadai (+20%)
+if hasRejection
+    score += 10
+if isRRValid
+    score += 10
+
+// ============================================================================
+// 8. VISUALISASI ZONA OB, GARIS ENTRY/SL/TP, & KOTAK CALLOUT
+// ============================================================================
+var box obBox        = box.new(na, na, na, na, bgcolor=color.new(color.red, 82), border_color=color.new(color.red, 30))
+var line obMidLine   = line.new(na, na, na, na, color=color.new(color.yellow, 20), style=line.style_dashed)
+var line invLine     = line.new(na, na, na, na, color=color.new(color.red, 0), width=2)
+var line dolLine     = line.new(na, na, na, na, color=color.new(color.teal, 0), width=2, style=line.style_dotted)
+var label calloutLbl = label.new(na, na, "", style=label.style_label_down, textcolor=color.white, size=size.small)
+
+if barstate.islast
+    activeTop = isBearBias ? bearOB_Top : bullOB_Top
+    activeBot = isBearBias ? bearOB_Bot : bullOB_Bot
+    activeMid = isBearBias ? bearOB_Mid : bullOB_Mid
+    activeBar = nz(isBearBias ? bearOB_Bar : bullOB_Bar, bar_index - 15)
+    obColor   = isSetupInvalid ? color.new(color.gray, 85) : isBearBias ? color.new(#b71c1c, 80) : color.new(#00695c, 80)
+    brdColor  = isSetupInvalid ? color.gray : isBearBias ? #ef5350 : #26a69a
+
+    if showOB
+        box.set_lefttop(obBox, activeBar, activeTop)
+        box.set_rightbottom(obBox, bar_index + 6, activeBot)
+        box.set_bgcolor(obBox, obColor)
+        box.set_border_color(obBox, brdColor)
+        line.set_xy1(obMidLine, activeBar, activeMid)
+        line.set_xy2(obMidLine, bar_index + 6, activeMid)
+
+    if showPlan
+        line.set_xy1(invLine, activeBar, activeInvalidLevel)
+        line.set_xy2(invLine, bar_index + 6, activeInvalidLevel)
+        line.set_xy1(dolLine, activeBar, dolTarget)
+        line.set_xy2(dolLine, bar_index + 6, dolTarget)
+
+    if showBox
+        statusHeader = isSetupInvalid ? "⛔ ZONA INVALID / TEMBUS STRUKTUR!" :
+                       hasRejection ? "✅ REJECTION KONFIRMASI — SIAP ENTRY" :
+                       inActivePOI ? (isBearBias ? "Bear OB tersentuh — Pantau Reaksi" : "Bull OB tersentuh — Pantau Reaksi") :
+                       (isBearBias ? "Menunggu Harga ke Bear OB" : "Menunggu Harga ke Bull OB")
+
+        warnLine = isSetupInvalid ? ("Jangan entry! Harga sudah menembus " + str.tostring(activeInvalidLevel, format.mintick)) :
+                   not isEntryLogicValid ? "⚠ Konflik Level: Entry melewati batas Invalidasi!" :
+                   ("Ideal Entry (50% OB): " + str.tostring(idealEntry, format.mintick) + " | SL: " + str.tostring(safeSL, format.mintick))
+
+        calloutTxt = statusHeader + "\n" +
+                     warnLine + "\n" +
+                     "⚠ Batas Invalidasi: " + str.tostring(activeInvalidLevel, format.mintick) + "\n" +
+                     "Posisi: " + posZoneStr + " | RR: 1 : " + str.tostring(calcRR, "#.##") + "\n" +
+                     "🎯 Confluence: " + str.tostring(score) + "%"
+
+        label.set_xy(calloutLbl, bar_index, activeTop + (atrVal * 0.4))
+        label.set_text(calloutLbl, calloutTxt)
+        label.set_color(calloutLbl, isSetupInvalid ? color.new(#424242, 10) : hasRejection ? color.new(#1b5e20, 10) : color.new(#b71c1c, 15))
+
+// ============================================================================
+// 9. TABEL AMY BIAS DASHBOARD V3 (18 BARIS LENGKAP & ANTI-NGAWUR)
+// ============================================================================
+tPos = posInput == "Bottom Center" ? position.bottom_center :
+       posInput == "Bottom Right"  ? position.bottom_right :
+       posInput == "Top Right"     ? position.top_right : position.bottom_left
+tSize = txtSizeIn == "Tiny" ? size.tiny : txtSizeIn == "Small" ? size.small : size.normal
+
+var table dash = table.new(tPos, 2, 18, bgcolor=color.new(#12151c, 5), border_color=color.new(#2a2e39, 0), border_width=1)
+
+f_row(_tbl, _r, _label, _val, _bgVal, _txtCol) =>
+    table.cell(_tbl, 0, _r, _label, bgcolor=color.new(#1e222d, 0), text_color=color.new(#b2b5be, 0), text_size=tSize, text_halign=text.align_center)
+    table.cell(_tbl, 1, _r, _val, bgcolor=_bgVal, text_color=_txtCol, text_size=tSize, text_halign=text.align_center)
+
+if barstate.islast
+    cRed   = color.new(#881d24, 0)
+    cGreen = color.new(#0f5a47, 0)
+    cBlue  = color.new(#1a3c5a, 0)
+    cAmber = color.new(#6e470b, 0)
+    cDark  = color.new(#1e222d, 0)
+    cWhite = color.white
+
+    biasBg  = isBearBias ? cRed : cGreen
+    biasTxt = isBearBias ? "SELL QTR | TURUN" : "BUY QTR | NAIK"
+    strTxt  = "TF " + htf + (isBearBias ? " Bearish" : " Bullish")
+
+    protTxt = "H " + str.tostring(protHighFinal, format.mintick) + " | L " + str.tostring(protLowFinal, format.mintick)
+    liqTxt  = "BSL " + str.tostring(bslLevel, format.mintick) + " | SSL " + str.tostring(sslLevel, format.mintick)
+
+    swpState = bslSwept ? (isSweepFresh ? "BSL Swept | Fresh" : "BSL Swept | Old") :
+               sslSwept ? (isSweepFresh ? "SSL Swept | Fresh" : "SSL Swept | Old") : "Belum Ada Sweep"
+    swpPriceTxt = not na(sweptPrice) ? ("Swept " + str.tostring(sweptPrice, format.mintick) + " | Extreme " + str.tostring(extremePrice, format.mintick)) : "-"
+
+    dolDist = math.abs(close - dolTarget)
+    dolTxt  = (isBearBias ? "Draw to SSL @ " : "Draw to BSL @ ") + str.tostring(dolTarget, format.mintick) + " | Active"
+    dolDet  = "Dist " + str.tostring(dolDist, format.mintick) + " | With Bias"
+
+    poiTop  = isBearBias ? bearOB_Top : bullOB_Top
+    poiBot  = isBearBias ? bearOB_Bot : bullOB_Bot
+    poiMid  = isBearBias ? bearOB_Mid : bullOB_Mid
+    poiDist = inActivePOI ? 0.0 : math.min(math.abs(close - poiTop), math.abs(close - poiBot))
+    poiName = (isBearBias ? "Bear OB | " : "Bull OB | ") + (isSetupInvalid ? "INVALIDATED" : inActivePOI ? "Active Hold" : "Unmitigated")
+    poiPrcTxt = str.tostring(poiBot, format.mintick) + " - " + str.tostring(poiTop, format.mintick) + " | M " + str.tostring(poiMid, format.mintick)
+    poiDetTxt = "Dist " + str.tostring(poiDist, format.mintick) + " | With Bias | " + posZoneStr
+
+    rngTxt  = "H " + str.tostring(rangeHigh, format.mintick) + " | L " + str.tostring(rangeLow, format.mintick) + " | EQ " + str.tostring(eqTop, format.mintick) + " - " + str.tostring(eqBot, format.mintick)
+    invDist = math.abs(activeInvalidLevel - close)
+    invTxt  = "Inv " + str.tostring(activeInvalidLevel, format.mintick) + " | Prot " + str.tostring(activeProtLevel, format.mintick) + " | Dist " + str.tostring(invDist, format.mintick)
+
+    // Baris Baru V3: Validasi Anti-Ngawur & Eksekusi Presisi
+    valTxt = isSetupInvalid ? "⛔ BATAL: Harga Tembus Invalidasi!" :
+             not isEntryLogicValid ? "⛔ ERROR LOGIKA: Entry Melewati Invalidasi!" :
+             hasRejection ? ("✅ KONFIRMASI REJECTION (" + (isHighVol ? "Vol Tinggi" : "Vol Normal") + ")") :
+             ("⏳ PANTAU: Tunggu Rejection di Bawah " + str.tostring(activeInvalidLevel, format.mintick))
+
+    planTxt = isSetupInvalid or not isEntryLogicValid ? "DILARANG ENTRY (Tunggu Struktur Baru)" :
+              ("Entry " + str.tostring(idealEntry, format.mintick) + " | SL " + str.tostring(safeSL, format.mintick) + " | TP " + str.tostring(dolTarget, format.mintick) + " (1:" + str.tostring(calcRR, "#.#") + ")")
+
+    alasanTxt = strTxt + " | " + swpState + " | " + (isBearBias ? "Draw SSL " : "Draw BSL ") + str.tostring(dolTarget, format.mintick) + " | Confluence " + str.tostring(score) + "%"
+
+    // Header
+    table.cell(dash, 0, 0, "AMY BIAS DASHBOARD V3", bgcolor=color.new(#181c27, 0), text_color=cWhite, text_size=tSize)
+    table.cell(dash, 1, 0, "TF " + htf + " CONFIRMED | SCORE " + str.tostring(score) + "%", bgcolor=cBlue, text_color=cWhite, text_size=tSize)
+
+    f_row(dash, 1, "BIAS", biasTxt, biasBg, cWhite)
+    f_row(dash, 2, "STRUKTUR", strTxt, biasBg, cWhite)
+    f_row(dash, 3, "PROTECTED", protTxt, cDark, cWhite)
+    f_row(dash, 4, "LIQUIDITY", liqTxt, cDark, cWhite)
+    f_row(dash, 5, "SWEEP", swpState, bslSwept or sslSwept ? cGreen : cDark, cWhite)
+    f_row(dash, 6, "SWEEP PRICE", swpPriceTxt, cDark, cWhite)
+    f_row(dash, 7, "DOL", dolTxt, biasBg, cWhite)
+    f_row(dash, 8, "DOL DETAIL", dolDet, cDark, cWhite)
+    f_row(dash, 9, "POI", poiName, isSetupInvalid ? cRed : cAmber, cWhite)
+    f_row(dash, 10, "POI PRICE", poiPrcTxt, cDark, cWhite)
+    f_row(dash, 11, "POI DETAIL", poiDetTxt, cDark, cWhite)
+    f_row(dash, 12, "POSISI", posZoneStr + " | " + (isSetupInvalid ? "Invalid" : "Healthy"), (isBearBias and isPremium) or (not isBearBias and isDiscount) ? cGreen : cAmber, cWhite)
+    f_row(dash, 13, "RANGE", rngTxt, cDark, cWhite)
+    f_row(dash, 14, "INVALID", invTxt, invDist < (atrVal * 0.5) ? cRed : cDark, cWhite)
+    f_row(dash, 15, "VALIDASI V3", valTxt, isSetupInvalid ? cRed : hasRejection ? cGreen : cAmber, cWhite)
+    f_row(dash, 16, "RENCANA V3", planTxt, isSetupInvalid ? cRed : cBlue, cWhite)
+    f_row(dash, 17, "ALASAN INTI", alasanTxt, cDark, cWhite)
