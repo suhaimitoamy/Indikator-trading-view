@@ -40,7 +40,7 @@ f_calc_structure(_len) =>
         trend := -1
     [trend, lastPH, lastPL, close, high, low]
 
-[htfTrend, htfPH, htfPL, htfClose, htfHigh, htfLow] = request.security(syminfo.tickerid, htf, f_calc_structure(swingLen), barmerge.lookahead_off)
+[htfTrend, htfPH, htfPL, htfClose, htfHigh, htfLow] = request.security(syminfo.tickerid, htf, f_calc_structure(swingLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
 atrVal    = ta.atr(atrLen)
 volMA     = ta.sma(volume, 20)
