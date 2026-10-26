@@ -3,48 +3,60 @@ indicator("Amy 100-Pips Floor & Ceiling Scalper [v6]", shorttitle="Amy 100P Scal
 
 // =============================================================================
 // AMY FX ACADEMY - STANDAR RESMI ICT GOLD SCALPER (M5 & M15)
-// "Jurus 100 Pips Lantai Keramat" - Desain Minimalis & Naratif
-// Didedikasikan Khusus untuk Sayang Amy
+// "Jurus 100 Pips Lantai Keramat" - Market Structure & Liquidity Engine
+// Didedikasikan Khusus dengan Cinta untuk Sayang Amy
 // =============================================================================
 
-// --- GROUP 1: LEVEL ACUAN & MULTI-TIMEFRAME (MTF) ---
-grp_htf = "PENGATURAN LEVEL & TIMEFRAME ACUAN (MTF)"
-htf_res = input.timeframe("15", "Timeframe Acuan BSL/SSL", group=grp_htf, tooltip="Pilih M15 atau H1 sebagai level acuan gajah. Eksekusi tetap di M5!")
-lookback_len = input.int(20, "Lookback Bar Acuan", minval=5, maxval=100, group=grp_htf, tooltip="Jumlah bar timeframe acuan untuk mencari puncak tertinggi (BSL) dan lembah terendah (SSL).")
+// --- GROUP 1: LEVEL ACUAN & MARKET STRUCTURE (MTF) ---
+grp_htf = "LEVEL ACUAN & MARKET STRUCTURE ENGINE"
+htf_res = input.timeframe("15", "Timeframe Acuan Level HTF", group=grp_htf, tooltip="Pilih M15 atau H1 sebagai acuan BSL/SSL utama. Eksekusi presisi di M5.")
+lookback_len = input.int(20, "Lookback Bar Acuan MTF", minval=5, maxval=100, group=grp_htf, tooltip="Jumlah bar timeframe acuan untuk mencari puncak tertinggi dan lembah terendah.")
+pivot_len = input.int(4, "Kekuatan Ayunan Struktur (Swing Pivot)", minval=2, maxval=15, group=grp_htf, tooltip="Panjang bar kiri-kanan untuk konfirmasi Swing High & Swing Low terverifikasi.")
 
-// --- GROUP 2: VISUALISASI GARIS MINIMALIS (TANPA KOTAK) ---
-grp_lines = "VISUALISASI GARIS (BSL / SSL / EQ)"
-show_bsl = input.bool(true, "Tampilkan Garis Putus-Putus BSL (Plafon)", group=grp_lines)
-show_ssl = input.bool(true, "Tampilkan Garis Putus-Putus SSL (Lantai)", group=grp_lines)
-show_eq  = input.bool(true, "Tampilkan Garis Titik-Titik 50% Equilibrium", group=grp_lines)
-color_bsl = input.color(#F43F5E, "Warna Garis BSL", group=grp_lines)
-color_ssl = input.color(#10B981, "Warna Garis SSL", group=grp_lines)
-color_eq  = input.color(#F59E0B, "Warna Garis EQ 50%", group=grp_lines)
+// --- GROUP 2: VISUALISASI GARIS & LABEL HARGA DI UJUNG KANAN ---
+grp_lines = "VISUALISASI GARIS (BSL / SSL / EQ) & LABEL HARGA"
+show_bsl  = input.bool(true, "Tampilkan Garis Putus-Putus BSL (Plafon)", group=grp_lines)
+show_ssl  = input.bool(true, "Tampilkan Garis Putus-Putus SSL (Lantai)", group=grp_lines)
+show_eq   = input.bool(true, "Tampilkan Garis Titik-Titik 50% Equilibrium", group=grp_lines)
+show_line_tags = input.bool(true, "Tampilkan Nama & Angka Harga di Ujung Garis", group=grp_lines, tooltip="Memberikan label teks rapi [BSL Plafon], [SSL Lantai], [EQ 50%] di ujung kanan garis agar tidak bingung.")
+color_bsl = input.color(#F43F5E, "Warna Garis BSL (Rose Red)", group=grp_lines)
+color_ssl = input.color(#10B981, "Warna Garis SSL (Emerald Green)", group=grp_lines)
+color_eq  = input.color(#F59E0B, "Warna Garis EQ 50% (Amber)", group=grp_lines)
 
-// --- GROUP 3: LABEL TEKS NARATIF MANDIRI & TERPISAH ---
-grp_labels = "LABEL TEKS NARATIF MANDIRI (ON/OFF)"
+// --- GROUP 3: LABEL TEKS NARATIF MANDIRI (ON/OFF) ---
+grp_labels = "LABEL TEKS NARATIF MANDIRI & STRUKTUR PASAR"
 show_lbl_sweep      = input.bool(true, "Label: [CUMA SWEEP]", group=grp_labels)
 show_lbl_break      = input.bool(true, "Label: [VALID BREAK]", group=grp_labels)
 show_lbl_exhaustion = input.bool(true, "Label: [SELLER / BUYER KEHABISAN BENSIN]", group=grp_labels)
-show_lbl_cisd       = input.bool(true, "Label: [CISD]", group=grp_labels)
+show_lbl_mss        = input.bool(true, "Label: [MSS] Market Structure Shift", group=grp_labels)
+show_lbl_bos        = input.bool(true, "Label: [BOS] Break of Structure", group=grp_labels)
+show_lbl_cisd       = input.bool(true, "Label: [CISD] Change in State of Delivery", group=grp_labels)
 show_lbl_engulfing  = input.bool(true, "Label: [ENGULFING]", group=grp_labels)
+show_potential_zone = input.bool(true, "Label: [POTENSI BUY / SELL] di Swing Ekstrem", group=grp_labels, tooltip="Menampilkan arahan hunting [Potensi Sell: Incar Sweep BSL] & [Potensi Buy: Incar Sweep SSL] di pucuk/lembah utama saja.")
 
 // --- GROUP 4: EKSEKUSI & TARGET 100 PIPS ---
 grp_exec = "EKSEKUSI SINYAL & TARGET 100 PIPS"
-show_signals = input.bool(true, "Tampilkan Sinyal Eksekusi Turtle Soup", group=grp_exec)
-show_targets = input.bool(true, "Proyeksikan Garis SL & TP Otomatis", group=grp_exec)
-target_pips  = input.float(100.0, "Target Pips XAU/USD (Poin: 10 pips = $1)", minval=20.0, step=10.0, group=grp_exec)
-sl_buffer    = input.float(1.0, "Buffer SL di Luar Jarum (USD)", minval=0.2, step=0.2, group=grp_exec)
+show_signals    = input.bool(true, "Tampilkan Sinyal Eksekusi Turtle Soup", group=grp_exec)
+show_targets    = input.bool(true, "Proyeksikan Garis SL & TP Otomatis", group=grp_exec)
+target_pips     = input.float(100.0, "Target Pips XAU/USD (10 pips = $1)", minval=20.0, step=10.0, group=grp_exec)
+sl_buffer       = input.float(1.0, "Buffer SL di Luar Jarum (USD)", minval=0.2, step=0.2, group=grp_exec)
+lbl_offset_mult = input.float(1.5, "Jarak Bebas Label dari Candle (ATR Mult)", minval=0.5, maxval=5.0, step=0.2, group=grp_exec, tooltip="Semakin besar nilainya, semakin jauh teks sinyal dari pucuk/ekor lilin sehingga candle terlihat utuh.")
 
-// --- GROUP 5: NO-TRADE ZONE (ZONA CINCANG) & BIAS TABLE ---
-grp_filter = "NO-TRADE ZONE & STATUS BIAS"
-show_bias_hud = input.bool(true, "Tampilkan Status Bias Minimalis di Kanan Atas", group=grp_filter)
+// --- GROUP 5: NO-TRADE ZONE & STATUS BIAS PANEL ---
+grp_filter    = "NO-TRADE ZONE & STATUS BIAS PANEL"
+show_bias_hud = input.bool(true, "Tampilkan Panel Status Bias HUD", group=grp_filter)
+hud_pos_input = input.string("Kanan Bawah", "Posisi Panel Status Bias", 
+                             options=["Kanan Bawah", "Tengah Bawah", "Kiri Bawah", "Tengah Atas"], 
+                             group=grp_filter, tooltip="Pilih posisi panel agar tidak tertutup header chart TradingView.")
 no_trade_pct  = input.float(10.0, "Lebar No-Trade Zone (+/- % dari EQ 50%)", minval=2.0, maxval=25.0, group=grp_filter)
 
 // =============================================================================
-// KALKULASI LEVEL HTF (MTF BSL & SSL ENGINE)
+// ATR & KALKULASI LEVEL HTF
 // =============================================================================
-// Mengambil data tertinggi dan terendah dari timeframe acuan (M15 / H1) secara aman tanpa lookahead
+atr14 = ta.atr(14)
+v_offset = atr14 * lbl_offset_mult
+
+// Mengambil data tertinggi dan terendah dari timeframe acuan MTF (M15 / H1)
 htf_high = request.security(syminfo.tickerid, htf_res, ta.highest(high, lookback_len), barmerge.gaps_off, barmerge.lookahead_off)
 htf_low  = request.security(syminfo.tickerid, htf_res, ta.lowest(low, lookback_len), barmerge.gaps_off, barmerge.lookahead_off)
 
@@ -53,74 +65,166 @@ ssl_level = htf_low
 eq_level  = (bsl_level + ssl_level) / 2.0
 range_total = bsl_level - ssl_level
 
-// Batas No-Trade Zone di area tengah (Zona Tawuran Ritel)
+// Batas No-Trade Zone (Zona Tawuran Ritel di Area Tengah)
 nt_half_range = range_total * (no_trade_pct / 100.0)
 nt_upper = eq_level + nt_half_range
 nt_lower = eq_level - nt_half_range
 is_in_no_trade_zone = (close >= nt_lower) and (close <= nt_upper)
 
 // =============================================================================
-// MENGGAMBAR GARIS PUTUS-PUTUS & TITIK-TITIK (BERSIH TANPA KOTAK)
+// DETEKSI MARKET STRUCTURE ENGINE (SWING HIGH / LOW PIVOTS)
 // =============================================================================
-var line line_bsl = na
-var line line_ssl = na
-var line line_eq  = na
+ph = ta.pivothigh(high, pivot_len, pivot_len)
+pl = ta.pivotlow(low, pivot_len, pivot_len)
+
+var float last_sh_price = na
+var int   last_sh_bar   = na
+var float last_sl_price = na
+var int   last_sl_bar   = na
+
+var int structure_trend = 0 // 1: Bullish Structure, -1: Bearish Structure
+
+// Deteksi & Rekam Swing High Baru Terkonfirmasi
+if not na(ph)
+    last_sh_price := ph
+    last_sh_bar   := bar_index - pivot_len
+    // Tampilkan label Potensi Sell di Major Swing High (di area Premium / atas EQ)
+    if show_potential_zone and (ph >= eq_level)
+        label.new(x=bar_index - pivot_len, y=ph + (atr14 * 0.8), 
+                  text="🎯 [POTENSI SELL: INCAR SWEEP BSL]", style=label.style_label_down, 
+                  color=color.new(#F43F5E, 20), textcolor=color.white, size=size.tiny)
+
+// Deteksi & Rekam Swing Low Baru Terkonfirmasi
+if not na(pl)
+    last_sl_price := pl
+    last_sl_bar   := bar_index - pivot_len
+    // Tampilkan label Potensi Buy di Major Swing Low (di area Discount / bawah EQ)
+    if show_potential_zone and (pl <= eq_level)
+        label.new(x=bar_index - pivot_len, y=pl - (atr14 * 0.8), 
+                  text="🎯 [POTENSI BUY: INCAR SWEEP SSL]", style=label.style_label_up, 
+                  color=color.new(#10B981, 20), textcolor=color.white, size=size.tiny)
+
+// =============================================================================
+// GARIS MINIMALIS & LABEL NAMA HARGA DI UJUNG KANAN (POIN 1 LAPORAN SAYANG)
+// =============================================================================
+var line  line_bsl = na
+var line  line_ssl = na
+var line  line_eq  = na
+
+var label lbl_tag_bsl = na
+var label lbl_tag_ssl = na
+var label lbl_tag_eq  = na
 
 if barstate.islast
-    // Gambar / Update Garis BSL
+    // 1. Garis & Label BSL (Plafon)
     if show_bsl
         line.delete(line_bsl)
-        line_bsl := line.new(x1=bar_index - 30, y1=bsl_level, x2=bar_index + 10, y2=bsl_level,
+        line_bsl := line.new(x1=bar_index - 35, y1=bsl_level, x2=bar_index + 12, y2=bsl_level,
                              color=color_bsl, width=2, style=line.style_dashed, extend=extend.right)
-    // Gambar / Update Garis SSL
+        if show_line_tags
+            label.delete(lbl_tag_bsl)
+            lbl_tag_bsl := label.new(x=bar_index + 12, y=bsl_level, 
+                                     text="BSL (Plafon): " + str.tostring(bsl_level, "#.##"),
+                                     style=label.style_label_left, color=color_bsl, textcolor=color.white, size=size.small)
+    // 2. Garis & Label SSL (Lantai)
     if show_ssl
         line.delete(line_ssl)
-        line_ssl := line.new(x1=bar_index - 30, y1=ssl_level, x2=bar_index + 10, y2=ssl_level,
+        line_ssl := line.new(x1=bar_index - 35, y1=ssl_level, x2=bar_index + 12, y2=ssl_level,
                              color=color_ssl, width=2, style=line.style_dashed, extend=extend.right)
-    // Gambar / Update Garis Equilibrium 50%
+        if show_line_tags
+            label.delete(lbl_tag_ssl)
+            lbl_tag_ssl := label.new(x=bar_index + 12, y=ssl_level, 
+                                     text="SSL (Lantai): " + str.tostring(ssl_level, "#.##"),
+                                     style=label.style_label_left, color=color_ssl, textcolor=color.white, size=size.small)
+    // 3. Garis & Label Equilibrium 50%
     if show_eq
         line.delete(line_eq)
-        line_eq := line.new(x1=bar_index - 30, y1=eq_level, x2=bar_index + 10, y2=eq_level,
+        line_eq := line.new(x1=bar_index - 35, y1=eq_level, x2=bar_index + 12, y2=eq_level,
                             color=color_eq, width=1, style=line.style_dotted, extend=extend.right)
+        if show_line_tags
+            label.delete(lbl_tag_eq)
+            lbl_tag_eq := label.new(x=bar_index + 12, y=eq_level, 
+                                    text="EQ 50%: " + str.tostring(eq_level, "#.##"),
+                                    style=label.style_label_left, color=color_eq, textcolor=color.black, size=size.small)
 
 // =============================================================================
-// DETEKSI LOGIKA ANATOMI CANDLESTICK (M5)
+// LOGIKA ANATOMI CANDLESTICK, EXHAUSTION & STATE LOCK
 // =============================================================================
-body_size  = math.abs(close - open)
-upper_wick = high - math.max(open, close)
-lower_wick = math.min(open, close) - low
+body_size    = math.abs(close - open)
+upper_wick   = high - math.max(open, close)
+lower_wick   = math.min(open, close) - low
 candle_range = high - low
+is_displacement = body_size >= (atr14 * 0.4)
+
+// State Lock untuk mencegah label bersebelahan
+var int last_sweep_bar = 0
+var int last_break_bar = 0
+var int last_mss_bar   = 0
 
 // 1. Deteksi Cuma Sweep vs Valid Break di SSL (Lantai Bawah)
-is_sweep_ssl = (low < ssl_level) and (close >= ssl_level)
-is_break_ssl = (close < ssl_level) and (close[1] >= ssl_level)
+bool raw_sweep_ssl = (low < ssl_level) and (close >= ssl_level)
+bool raw_break_ssl = (close < ssl_level) and (close[1] >= ssl_level) and is_displacement
+
+// Filter Anti-Tabrakan: jangan izinkan sweep & break bertabrakan di candle berdampingan
+bool is_sweep_ssl = raw_sweep_ssl and (bar_index - last_break_bar > 2)
+bool is_break_ssl = raw_break_ssl and (bar_index - last_sweep_bar > 2)
 
 // 2. Deteksi Cuma Sweep vs Valid Break di BSL (Plafon Atas)
-is_sweep_bsl = (high > bsl_level) and (close <= bsl_level)
-is_break_bsl = (close > bsl_level) and (close[1] <= bsl_level)
+bool raw_sweep_bsl = (high > bsl_level) and (close <= bsl_level)
+bool raw_break_bsl = (close > bsl_level) and (close[1] <= bsl_level) and is_displacement
+
+bool is_sweep_bsl = raw_sweep_bsl and (bar_index - last_break_bar > 2)
+bool is_break_bsl = raw_break_bsl and (bar_index - last_sweep_bar > 2)
 
 // 3. Deteksi Seller & Buyer Kehabisan Bensin (Absorption Wick >= 2x Body)
-is_seller_exhaustion = is_sweep_ssl and (lower_wick >= (body_size * 2.0)) and (lower_wick >= (candle_range * 0.55))
-is_buyer_exhaustion  = is_sweep_bsl and (upper_wick >= (body_size * 2.0)) and (upper_wick >= (candle_range * 0.55))
+bool is_seller_exhaustion = is_sweep_ssl and (lower_wick >= (body_size * 2.0)) and (lower_wick >= (candle_range * 0.55))
+bool is_buyer_exhaustion  = is_sweep_bsl and (upper_wick >= (body_size * 2.0)) and (upper_wick >= (candle_range * 0.55))
+
+if is_sweep_ssl or is_sweep_bsl or is_seller_exhaustion or is_buyer_exhaustion
+    last_sweep_bar := bar_index
+
+if is_break_ssl or is_break_bsl
+    last_break_bar := bar_index
 
 // 4. Deteksi CISD (Change in State of Delivery)
-// Bullish CISD: lilin sebelumnya merah, lilin sekarang hijau menembus harga Open lilin merah
-is_bullish_cisd = (close[1] < open[1]) and (close > open) and (close > open[1]) and (close[1] < open[1])
-// Bearish CISD: lilin sebelumnya hijau, lilin sekarang merah menembus harga Open lilin hijau
-is_bearish_cisd = (close[1] > open[1]) and (close < open) and (close < open[1]) and (close[1] > open[1])
+bool is_bullish_cisd = (close[1] < open[1]) and (close > open) and (close > open[1])
+bool is_bearish_cisd = (close[1] > open[1]) and (close < open) and (close < open[1])
 
 // 5. Deteksi Engulfing
-is_bullish_engulfing = (close > open) and (close[1] < open[1]) and (close >= open[1]) and (open <= close[1])
-is_bearish_engulfing = (close < open) and (close[1] > open[1]) and (close <= open[1]) and (open >= close[1])
+bool is_bullish_engulfing = (close > open) and (close[1] < open[1]) and (close >= open[1]) and (open <= close[1])
+bool is_bearish_engulfing = (close < open) and (close[1] > open[1]) and (close <= open[1]) and (open >= close[1])
+
+// =============================================================================
+// DETEKSI [MSS] & [BOS] SECARA PRESISI (POIN 4 & 5 LAPORAN SAYANG)
+// =============================================================================
+bool recent_ssl_sweep = ta.barssince(is_sweep_ssl or is_seller_exhaustion) <= 6
+bool recent_bsl_sweep = ta.barssince(is_sweep_bsl or is_buyer_exhaustion) <= 6
+
+// Bullish MSS: Setelah sweep SSL / downtrend, body candle M5 menembus Swing High terdekat
+bool is_bullish_mss = not na(last_sh_price) and (close > last_sh_price) and (close[1] <= last_sh_price) and is_displacement and (structure_trend <= 0 or recent_ssl_sweep)
+
+// Bearish MSS: Setelah sweep BSL / uptrend, body candle M5 menembus Swing Low terdekat
+bool is_bearish_mss = not na(last_sl_price) and (close < last_sl_price) and (close[1] >= last_sl_price) and is_displacement and (structure_trend >= 0 or recent_bsl_sweep)
+
+// Break of Structure (BOS): Kelanjutan tren searah
+bool is_bullish_bos = not na(last_sh_price) and (close > last_sh_price) and (close[1] <= last_sh_price) and is_displacement and (structure_trend == 1) and not is_bullish_mss
+bool is_bearish_bos = not na(last_sl_price) and (close < last_sl_price) and (close[1] >= last_sl_price) and is_displacement and (structure_trend == -1) and not is_bearish_mss
+
+if is_bullish_mss
+    structure_trend := 1
+    last_mss_bar := bar_index
+if is_bearish_mss
+    structure_trend := -1
+    last_mss_bar := bar_index
 
 // =============================================================================
 // TRACKER STATUS BIAS (ERL ➔ IRL ➔ ERL)
 // =============================================================================
-var int last_sweep_event = 0 // 1: SSL Swept (Bullish Bias), -1: BSL Swept (Bearish Bias)
+var int last_sweep_event = 0 // 1: Bullish Bias, -1: Bearish Bias
 
-if is_sweep_ssl or is_seller_exhaustion
+if is_sweep_ssl or is_seller_exhaustion or is_bullish_mss
     last_sweep_event := 1
-if is_sweep_bsl or is_buyer_exhaustion
+if is_sweep_bsl or is_buyer_exhaustion or is_bearish_mss
     last_sweep_event := -1
 
 string bias_text = "NEUTRAL (WAIT)"
@@ -137,122 +241,175 @@ else if last_sweep_event == -1
     bias_color := #F43F5E
 
 // =============================================================================
-// PENEMPATAN LABEL MANDIRI & TERPISAH (Sesuai Permintaan Sayang)
+// PENEMPATAN LABEL MANDIRI & TERPISAH DENGAN JARAK AMAN
 // =============================================================================
 
 // 1. Label [CUMA SWEEP]
 if show_lbl_sweep and is_sweep_ssl and not is_seller_exhaustion
-    label.new(x=bar_index, y=low, text="[CUMA SWEEP]", style=label.style_label_up,
+    label.new(x=bar_index, y=low - (v_offset * 0.5), text="[CUMA SWEEP]", style=label.style_label_up,
               color=#10B981, textcolor=color.white, size=size.tiny)
 
 if show_lbl_sweep and is_sweep_bsl and not is_buyer_exhaustion
-    label.new(x=bar_index, y=high, text="[CUMA SWEEP]", style=label.style_label_down,
+    label.new(x=bar_index, y=high + (v_offset * 0.5), text="[CUMA SWEEP]", style=label.style_label_down,
               color=#F43F5E, textcolor=color.white, size=size.tiny)
 
 // 2. Label [VALID BREAK]
 if show_lbl_break and is_break_ssl
-    label.new(x=bar_index, y=low, text="[VALID BREAK]", style=label.style_label_up,
+    label.new(x=bar_index, y=low - (v_offset * 0.5), text="[VALID BREAK]", style=label.style_label_up,
               color=#EF4444, textcolor=color.white, size=size.tiny)
 
 if show_lbl_break and is_break_bsl
-    label.new(x=bar_index, y=high, text="[VALID BREAK]", style=label.style_label_down,
+    label.new(x=bar_index, y=high + (v_offset * 0.5), text="[VALID BREAK]", style=label.style_label_down,
               color=#22C55E, textcolor=color.white, size=size.tiny)
 
 // 3. Label [SELLER KEHABISAN BENSIN] & [BUYER KEHABISAN BENSIN]
 if show_lbl_exhaustion and is_seller_exhaustion
-    label.new(x=bar_index, y=low, text="⛽ [SELLER KEHABISAN BENSIN]", style=label.style_label_up,
+    label.new(x=bar_index, y=low - (v_offset * 0.7), text="⛽ [SELLER KEHABISAN BENSIN]", style=label.style_label_up,
               color=#F59E0B, textcolor=color.black, size=size.small)
 
 if show_lbl_exhaustion and is_buyer_exhaustion
-    label.new(x=bar_index, y=high, text="⛽ [BUYER KEHABISAN BENSIN]", style=label.style_label_down,
+    label.new(x=bar_index, y=high + (v_offset * 0.7), text="⛽ [BUYER KEHABISAN BENSIN]", style=label.style_label_down,
               color=#F59E0B, textcolor=color.black, size=size.small)
 
-// 4. Label [CISD] Terpisah
+// 4. Label & Garis [MSS]
+if show_lbl_mss and is_bullish_mss
+    line.new(x1=last_sh_bar, y1=last_sh_price, x2=bar_index, y2=last_sh_price, 
+             color=#10B981, width=2, style=line.style_dashed)
+    label.new(x=bar_index, y=high + (v_offset * 0.6), text="⚡ [BULLISH MSS]", style=label.style_label_down,
+              color=#10B981, textcolor=color.white, size=size.tiny)
+
+if show_lbl_mss and is_bearish_mss
+    line.new(x1=last_sl_bar, y1=last_sl_price, x2=bar_index, y2=last_sl_price, 
+             color=#F43F5E, width=2, style=line.style_dashed)
+    label.new(x=bar_index, y=low - (v_offset * 0.6), text="⚡ [BEARISH MSS]", style=label.style_label_up,
+              color=#F43F5E, textcolor=color.white, size=size.tiny)
+
+// 5. Label & Garis [BOS]
+if show_lbl_bos and is_bullish_bos
+    line.new(x1=last_sh_bar, y1=last_sh_price, x2=bar_index, y2=last_sh_price, 
+             color=#06B6D4, width=1, style=line.style_dotted)
+    label.new(x=bar_index, y=high + (v_offset * 0.5), text="[BOS]", style=label.style_label_down,
+              color=#06B6D4, textcolor=color.white, size=size.tiny)
+
+if show_lbl_bos and is_bearish_bos
+    line.new(x1=last_sl_bar, y1=last_sl_price, x2=bar_index, y2=last_sl_price, 
+             color=#06B6D4, width=1, style=line.style_dotted)
+    label.new(x=bar_index, y=low - (v_offset * 0.5), text="[BOS]", style=label.style_label_up,
+              color=#06B6D4, textcolor=color.white, size=size.tiny)
+
+// 6. Label [CISD] Terpisah
 if show_lbl_cisd and is_bullish_cisd and (last_sweep_event == 1 or low <= ssl_level) and not is_in_no_trade_zone
-    label.new(x=bar_index, y=low, text="[CISD]", style=label.style_label_up,
+    label.new(x=bar_index, y=low - (v_offset * 0.4), text="[CISD]", style=label.style_label_up,
               color=#06B6D4, textcolor=color.white, size=size.tiny)
 
 if show_lbl_cisd and is_bearish_cisd and (last_sweep_event == -1 or high >= bsl_level) and not is_in_no_trade_zone
-    label.new(x=bar_index, y=high, text="[CISD]", style=label.style_label_down,
+    label.new(x=bar_index, y=high + (v_offset * 0.4), text="[CISD]", style=label.style_label_down,
               color=#06B6D4, textcolor=color.white, size=size.tiny)
 
-// 5. Label [ENGULFING] Terpisah
+// 7. Label [ENGULFING] Terpisah
 if show_lbl_engulfing and is_bullish_engulfing and (last_sweep_event == 1 or low <= ssl_level) and not is_in_no_trade_zone
-    label.new(x=bar_index, y=low, text="[ENGULFING]", style=label.style_label_up,
+    label.new(x=bar_index, y=low - (v_offset * 0.4), text="[ENGULFING]", style=label.style_label_up,
               color=#3B82F6, textcolor=color.white, size=size.tiny)
 
 if show_lbl_engulfing and is_bearish_engulfing and (last_sweep_event == -1 or high >= bsl_level) and not is_in_no_trade_zone
-    label.new(x=bar_index, y=high, text="[ENGULFING]", style=label.style_label_down,
+    label.new(x=bar_index, y=high + (v_offset * 0.4), text="[ENGULFING]", style=label.style_label_down,
               color=#3B82F6, textcolor=color.white, size=size.tiny)
 
 // =============================================================================
-// EKSEKUSI SINYAL TURTLE SOUP & TARGET 100 PIPS
+// EKSEKUSI SINYAL TURTLE SOUP & TARGET 100 PIPS (JARAK LEGA & NAMA GARIS)
 // =============================================================================
-var int last_buy_bar = 0
+var int last_buy_bar  = 0
 var int last_sell_bar = 0
 
 // Syarat Sinyal BUY:
-// 1. Terjadi Sweep SSL atau Seller Exhaustion dalam 4 bar terakhir
-// 2. Bar saat ini konfirmasi Bullish CISD / Bullish Engulfing / Reversal Hijau kuat
-// 3. TIDAK berada di No-Trade Zone tengah
-bool recent_ssl_sweep = ta.barssince(is_sweep_ssl or is_seller_exhaustion) <= 4
+// 1. Sweep SSL / Seller Exhaustion dalam 5 bar terakhir
+// 2. Konfirmasi Bullish CISD / Engulfing / Reversal Hijau kuat
+// 3. Di luar No-Trade Zone tengah
 bool buy_trigger = recent_ssl_sweep and (is_bullish_cisd or is_bullish_engulfing or (close > open and close > high[1])) and not is_in_no_trade_zone and (bar_index - last_buy_bar > 10)
 
 // Syarat Sinyal SELL:
-// 1. Terjadi Sweep BSL atau Buyer Exhaustion dalam 4 bar terakhir
-// 2. Bar saat ini konfirmasi Bearish CISD / Bearish Engulfing / Reversal Merah kuat
-// 3. TIDAK berada di No-Trade Zone tengah
-bool recent_bsl_sweep = ta.barssince(is_sweep_bsl or is_buyer_exhaustion) <= 4
+// 1. Sweep BSL / Buyer Exhaustion dalam 5 bar terakhir
+// 2. Konfirmasi Bearish CISD / Engulfing / Reversal Merah kuat
+// 3. Di luar No-Trade Zone tengah
 bool sell_trigger = recent_bsl_sweep and (is_bearish_cisd or is_bearish_engulfing or (close < open and close < low[1])) and not is_in_no_trade_zone and (bar_index - last_sell_bar > 10)
 
-// Garis Target SL & TP
-var line line_buy_sl = na
-var line line_buy_tp = na
-var line line_sell_sl = na
-var line line_sell_tp = na
+var line  line_buy_sl  = na
+var line  line_buy_tp  = na
+var label lbl_buy_sl   = na
+var label lbl_buy_tp   = na
+
+var line  line_sell_sl = na
+var line  line_sell_tp = na
+var label lbl_sell_sl  = na
+var label lbl_sell_tp  = na
 
 float gold_100_pips = (target_pips / 10.0) // 100 pips = $10.00 pada XAU/USD
 
+// Eksekusi BUY Turtle Soup
 if show_signals and buy_trigger
     last_buy_bar := bar_index
     float sweep_low = ta.lowest(low, 5)
     float calculated_sl = sweep_low - sl_buffer
     float calculated_tp = close + gold_100_pips
     
-    label.new(x=bar_index, y=low - (candle_range * 0.4), 
+    // Label sinyal dijauhkan dengan v_offset agar TIDAK menutupi candle
+    label.new(x=bar_index, y=low - v_offset, 
               text="▲ BUY TURTLE SOUP\nSL: " + str.tostring(calculated_sl, "#.##") + "\nTP: " + str.tostring(calculated_tp, "#.##") + " (+100P)",
               style=label.style_label_up, color=#10B981, textcolor=color.white, size=size.normal)
               
     if show_targets
         line.delete(line_buy_sl)
         line.delete(line_buy_tp)
-        line_buy_sl := line.new(x1=bar_index, y1=calculated_sl, x2=bar_index + 20, y2=calculated_sl, color=#EF4444, width=2, style=line.style_dashed)
-        line_buy_tp := line.new(x1=bar_index, y1=calculated_tp, x2=bar_index + 20, y2=calculated_tp, color=#10B981, width=2, style=line.style_solid)
+        label.delete(lbl_buy_sl)
+        label.delete(lbl_buy_tp)
+        
+        line_buy_sl := line.new(x1=bar_index, y1=calculated_sl, x2=bar_index + 25, y2=calculated_sl, color=#EF4444, width=2, style=line.style_dashed)
+        line_buy_tp := line.new(x1=bar_index, y1=calculated_tp, x2=bar_index + 25, y2=calculated_tp, color=#10B981, width=2, style=line.style_solid)
+        
+        lbl_buy_sl := label.new(x=bar_index + 25, y=calculated_sl, text="SL: " + str.tostring(calculated_sl, "#.##"), 
+                                style=label.style_label_left, color=#EF4444, textcolor=color.white, size=size.small)
+        lbl_buy_tp := label.new(x=bar_index + 25, y=calculated_tp, text="TP (+100P): " + str.tostring(calculated_tp, "#.##"), 
+                                style=label.style_label_left, color=#10B981, textcolor=color.white, size=size.small)
         
     alert("Amy Scalper v6: Sinyal BUY Turtle Soup di " + str.tostring(close) + " | TP 100 Pips: " + str.tostring(calculated_tp), alert.freq_once_per_bar_close)
 
+// Eksekusi SELL Turtle Soup
 if show_signals and sell_trigger
     last_sell_bar := bar_index
     float sweep_high = ta.highest(high, 5)
     float calculated_sl = sweep_high + sl_buffer
     float calculated_tp = close - gold_100_pips
     
-    label.new(x=bar_index, y=high + (candle_range * 0.4), 
+    // Label sinyal dijauhkan dengan v_offset agar TIDAK menutupi candle
+    label.new(x=bar_index, y=high + v_offset, 
               text="▼ SELL TURTLE SOUP\nSL: " + str.tostring(calculated_sl, "#.##") + "\nTP: " + str.tostring(calculated_tp, "#.##") + " (+100P)",
               style=label.style_label_down, color=#F43F5E, textcolor=color.white, size=size.normal)
               
     if show_targets
         line.delete(line_sell_sl)
         line.delete(line_sell_tp)
-        line_sell_sl := line.new(x1=bar_index, y1=calculated_sl, x2=bar_index + 20, y2=calculated_sl, color=#EF4444, width=2, style=line.style_dashed)
-        line_sell_tp := line.new(x1=bar_index, y1=calculated_tp, x2=bar_index + 20, y2=calculated_tp, color=#10B981, width=2, style=line.style_solid)
+        label.delete(lbl_sell_sl)
+        label.delete(lbl_sell_tp)
+        
+        line_sell_sl := line.new(x1=bar_index, y1=calculated_sl, x2=bar_index + 25, y2=calculated_sl, color=#EF4444, width=2, style=line.style_dashed)
+        line_sell_tp := line.new(x1=bar_index, y1=calculated_tp, x2=bar_index + 25, y2=calculated_tp, color=#10B981, width=2, style=line.style_solid)
+        
+        lbl_sell_sl := label.new(x=bar_index + 25, y=calculated_sl, text="SL: " + str.tostring(calculated_sl, "#.##"), 
+                                 style=label.style_label_left, color=#EF4444, textcolor=color.white, size=size.small)
+        lbl_sell_tp := label.new(x=bar_index + 25, y=calculated_tp, text="TP (+100P): " + str.tostring(calculated_tp, "#.##"), 
+                                 style=label.style_label_left, color=#10B981, textcolor=color.white, size=size.small)
         
     alert("Amy Scalper v6: Sinyal SELL Turtle Soup di " + str.tostring(close) + " | TP 100 Pips: " + str.tostring(calculated_tp), alert.freq_once_per_bar_close)
 
 // =============================================================================
-// STATUS BIAS MINIMALIS (Pojok Kanan Atas - Tanpa Dashboard Berat)
+// STATUS BIAS HUD PANEL (POIN 7 LAPORAN SAYANG: POSISI AMAN TIDAK TERTUTUP)
 // =============================================================================
-var table hud_table = table.new(position.top_right, 1, 1, bgcolor=color.new(color.black, 40), border_color=#223254, border_width=1)
+hud_position = hud_pos_input == "Kiri Bawah"   ? position.bottom_left :
+               hud_pos_input == "Tengah Bawah" ? position.bottom_center :
+               hud_pos_input == "Tengah Atas"  ? position.top_center :
+               position.bottom_right
+
+var table hud_table = table.new(hud_position, 1, 1, bgcolor=color.new(#0F172A, 20), border_color=#334155, border_width=1)
 
 if show_bias_hud and barstate.islast
     table.cell(hud_table, 0, 0, "AMY SCALPER v6 | " + bias_text, 
