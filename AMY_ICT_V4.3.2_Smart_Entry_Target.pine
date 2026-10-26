@@ -1,5 +1,5 @@
 //@version=5
-indicator("AMY ICT V4.3.0 [Smart Entry Target + Logic Fixed]", shorttitle="AMY CONTEXT V4.3.0", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+indicator("AMY ICT V4.3.2 [Smart Entry Target + Mobile Fit]", shorttitle="AMY CONTEXT V4.3.2", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
 
 // ============================================================================
 // 1. INPUT PENGATURAN (PRESET 3-TIMEFRAME & VISUAL KONTEKS MURNI)
@@ -213,7 +213,8 @@ f_calc_mtf_zones(_swingLen, _idmLen, _atrLen) =>
 
 [mtfClose, mtfConfirmed, mtfAtr, devHigh, devLow, rawBearIdm, rawBullIdm, rawBearOB_T, rawBearOB_B, rawBearOB_Typ, rawBullOB_T, rawBullOB_B, rawBullOB_Typ, rawBearFVG_T, rawBearFVG_B, rawBullFVG_T, rawBullFVG_B, rawSbrT, rawSbrB, rawRbsT, rawRbsB] = request.security(syminfo.tickerid, mtf, f_calc_mtf_zones(swingLen, idmLen, atrLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
-atrVal = nz(mtfAtr, ta.atr(atrLen))
+chartAtr = ta.atr(14)
+atrVal   = nz(mtfAtr, ta.atr(atrLen))
 
 // ============================================================================
 // 5. BOS/CHoCH DI CHART & SINKRONISASI SBR / RBS MTF
@@ -620,7 +621,7 @@ else
         phaseColor  := c_bear
 
 // ----------------------------------------------------------------------------
-// MESIN PEMILIH TARGET SKENARIO ENTRY (PRIORITAS JARAK & VALIDITAS ZONA)
+// MESIN PEMILIH TARGET SKENARIO ENTRY (LOGIKA PENUH + TEKS PADAT ANTI-KEPOTONG)
 // ----------------------------------------------------------------------------
 hasBearOB  = not bearOB_Mit  and not na(bearOB_B)  and bearOB_T  >= close
 hasBearFVG = not bearFVG_Mit and not na(bearFVG_B) and bearFVG_T >= close
@@ -633,81 +634,81 @@ hasRBS     = not rbsMit      and not na(rbsTop)    and rbsBot    <= close
 // 1. Tentukan Target Terbaik untuk Skenario SELL (Dari harga menuju ke atas)
 sellZoneName = ""
 if inBearSupply or inSbrZone
-    sActName     = (inBearSupply and inSbrZone) ? "Supply OB + SBR" : inSbrZone ? "SBR Breaker" : (isBearFvgAttached ? ("Supply [" + bearOB_Pat + "+FVG]") : ("Supply [" + bearOB_Pat + "]"))
-    sellZoneName := "Di " + sActName + " -> Entry " + ltfLbl + " CHoCH Turun"
+    sActName     = (inBearSupply and inSbrZone) ? "Supply+SBR" : inSbrZone ? "SBR" : (isBearFvgAttached ? ("OB[" + bearOB_Pat + "+FVG]") : ("OB[" + bearOB_Pat + "]"))
+    sellZoneName := "Di " + sActName + " (CHoCH " + ltfLbl + ")"
 else if rejBearSupply
-    sellZoneName := "Reject Supply [" + bearOB_Pat + "] -> Ikuti Rejeksi " + ltfLbl
+    sellZoneName := "Rej Supply[" + bearOB_Pat + "] (" + ltfLbl + ")"
 else if isTopSwpFresh
-    swpName      = bslSwept ? (mtfLbl + " BSL") : pdhSwept ? "PDH" : "Asia High"
-    sellZoneName := swpName + " Disapu -> Entry " + ltfLbl + " CHoCH Turun"
+    swpName      = bslSwept ? "BSL" : pdhSwept ? "PDH" : "Asia H"
+    sellZoneName := swpName + " Swp (CHoCH " + ltfLbl + ")"
 else
     dBearOB  = hasBearOB  ? math.max(0.0, bearOB_B  - close) : 999999.0
     dBearFVG = hasBearFVG ? math.max(0.0, bearFVG_B - close) : 999999.0
     dSBR     = hasSBR     ? math.max(0.0, sbrBot    - close) : 999999.0
     minSellD = math.min(dBearOB, math.min(dBearFVG, dSBR))
 
-    idmSellNote = (not na(bearIDM) and not bearIdmSwept and bearIDM > close and bearIDM < minSellD + close) ? "Sapu IDM -> " : ""
+    idmSellNote = (not na(bearIDM) and not bearIdmSwept and bearIDM > close and bearIDM < minSellD + close) ? "IDM->" : ""
 
     if minSellD < 999999.0
         if hasBearOB and isBearFvgAttached and dBearOB <= dSBR
-            sellZoneName := idmSellNote + "Supply [" + bearOB_Pat + "+FVG]"
+            sellZoneName := idmSellNote + "Supply[" + bearOB_Pat + "+FVG]"
         else if hasBearOB and isSbrInsideSupply and dBearOB <= dBearFVG
-            sellZoneName := idmSellNote + "Supply [" + bearOB_Pat + "+SBR]"
+            sellZoneName := idmSellNote + "Supply[" + bearOB_Pat + "+SBR]"
         else if minSellD == dBearFVG and not isBearFvgAttached
-            sellZoneName := idmSellNote + mtfLbl + " Bear FVG" + (hasBearOB ? " (Ekstrem: OB)" : "")
+            sellZoneName := idmSellNote + "Bear FVG" + (hasBearOB ? "/OB" : "")
         else if minSellD == dSBR and not isSbrInsideSupply
-            sellZoneName := idmSellNote + mtfLbl + " SBR Breaker" + (hasBearOB ? " / Supply OB" : "")
+            sellZoneName := idmSellNote + "SBR" + (hasBearOB ? "/Supply OB" : "")
         else
-            sellZoneName := idmSellNote + "Supply OB [" + bearOB_Pat + "]"
+            sellZoneName := idmSellNote + "Supply[" + bearOB_Pat + "]"
     else
-        topLiqTarget = (not pdhBroken and not na(pdhPrice) and pdhPrice > close and math.abs(pdhPrice - effBslPrice) <= atrVal * 0.5) ? "BSL / PDH" : (effBslTag)
-        sellZoneName := "POI Mitigated -> Tunggu Sweep " + topLiqTarget + " + " + ltfLbl + " CHoCH"
+        topLiqTarget = (not pdhBroken and not na(pdhPrice) and pdhPrice > close and math.abs(pdhPrice - effBslPrice) <= atrVal * 0.5) ? "BSL/PDH" : "BSL"
+        sellZoneName := "Swp " + topLiqTarget + " + CHoCH " + ltfLbl
 
 // 2. Tentukan Target Terbaik untuk Skenario BUY (Dari harga menuju ke bawah)
 buyZoneName = ""
 if inBullDemand or inRbsZone
-    bActName    = (inBullDemand and inRbsZone) ? "Demand OB + RBS" : inRbsZone ? "RBS Breaker" : (isBullFvgAttached ? ("Demand [" + bullOB_Pat + "+FVG]") : ("Demand [" + bullOB_Pat + "]"))
-    buyZoneName := "Di " + bActName + " -> Entry " + ltfLbl + " CHoCH Naik"
+    bActName    = (inBullDemand and inRbsZone) ? "Demand+RBS" : inRbsZone ? "RBS" : (isBullFvgAttached ? ("OB[" + bullOB_Pat + "+FVG]") : ("OB[" + bullOB_Pat + "]"))
+    buyZoneName := "Di " + bActName + " (CHoCH " + ltfLbl + ")"
 else if rejBullDemand
-    buyZoneName := "Reject Demand [" + bullOB_Pat + "] -> Ikuti Rejeksi " + ltfLbl
+    buyZoneName := "Rej Demand[" + bullOB_Pat + "] (" + ltfLbl + ")"
 else if isBotSwpFresh
-    swpName     = sslSwept ? (mtfLbl + " SSL") : pdlSwept ? "PDL" : "Asia Low"
-    buyZoneName := swpName + " Disapu -> Entry " + ltfLbl + " CHoCH Naik"
+    swpName     = sslSwept ? "SSL" : pdlSwept ? "PDL" : "Asia L"
+    buyZoneName := swpName + " Swp (CHoCH " + ltfLbl + ")"
 else
     dBullOB  = hasBullOB  ? math.max(0.0, close - bullOB_T)  : 999999.0
     dBullFVG = hasBullFVG ? math.max(0.0, close - bullFVG_T) : 999999.0
     dRBS     = hasRBS     ? math.max(0.0, close - rbsTop)    : 999999.0
     minBuyD  = math.min(dBullOB, math.min(dBullFVG, dRBS))
 
-    idmBuyNote = (not na(bullIDM) and not bullIdmSwept and bullIDM < close and bullIDM > close - minBuyD) ? "Sapu IDM -> " : ""
+    idmBuyNote = (not na(bullIDM) and not bullIdmSwept and bullIDM < close and bullIDM > close - minBuyD) ? "IDM->" : ""
 
     if minBuyD < 999999.0
         if hasBullOB and isBullFvgAttached and dBullOB <= dRBS
-            buyZoneName := idmBuyNote + "Demand [" + bullOB_Pat + "+FVG]"
+            buyZoneName := idmBuyNote + "Demand[" + bullOB_Pat + "+FVG]"
         else if hasBullOB and isRbsInsideDemand and dBullOB <= dBullFVG
-            buyZoneName := idmBuyNote + "Demand [" + bullOB_Pat + "+RBS]"
+            buyZoneName := idmBuyNote + "Demand[" + bullOB_Pat + "+RBS]"
         else if minBuyD == dBullFVG and not isBullFvgAttached
-            buyZoneName := idmBuyNote + mtfLbl + " Bull FVG" + (hasBullOB ? " (Ekstrem: OB)" : "")
+            buyZoneName := idmBuyNote + "Bull FVG" + (hasBullOB ? "/OB" : "")
         else if minBuyD == dRBS and not isRbsInsideDemand
-            buyZoneName := idmBuyNote + mtfLbl + " RBS Breaker" + (hasBullOB ? " / Demand OB" : "")
+            buyZoneName := idmBuyNote + "RBS" + (hasBullOB ? "/Demand OB" : "")
         else
-            buyZoneName := idmBuyNote + "Demand OB [" + bullOB_Pat + "]"
+            buyZoneName := idmBuyNote + "Demand[" + bullOB_Pat + "]"
     else
-        botLiqTarget = (not pdlBroken and not na(pdlPrice) and pdlPrice < close and math.abs(pdlPrice - effSslPrice) <= atrVal * 0.5) ? "SSL / PDL" : (effSslTag)
-        buyZoneName := "POI Mitigated -> Tunggu Sweep " + botLiqTarget + " + " + ltfLbl + " CHoCH"
+        botLiqTarget = (not pdlBroken and not na(pdlPrice) and pdlPrice < close and math.abs(pdlPrice - effSslPrice) <= atrVal * 0.5) ? "SSL/PDL" : "SSL"
+        buyZoneName := "Swp " + botLiqTarget + " + CHoCH " + ltfLbl
 
-// 3. Susun Kalimat Rekomendasi Entry Berdasarkan Keselarasan HTF & MTF
+// 3. Susun Kalimat Rekomendasi Entry Padat (Maks ~52 Karakter agar Kolom Kiri Tidak Terdorong di HP)
 entryRecTxt = ""
 isDualMode  = entryMode == "Kontekstual 2-Arah (HTF + MTF)"
 
 if isHtfBull
     if not isMtfBull and isDualMode and not inBullDemand and not inRbsZone
-        entryRecTxt := "Buy Utama (" + htfLbl + "): " + buyZoneName + " | Sell Koreksi (" + mtfLbl + "): " + sellZoneName
+        entryRecTxt := "Buy " + htfLbl + ": " + buyZoneName + " | Sell " + mtfLbl + ": " + sellZoneName
     else
         entryRecTxt := "Fokus Buy (" + htfLbl + "/" + mtfLbl + "): " + buyZoneName
 else
     if isMtfBull and isDualMode and not inBearSupply and not inSbrZone
-        entryRecTxt := "Sell Utama (" + htfLbl + "): " + sellZoneName + " | Buy MTF (" + mtfLbl + "): " + buyZoneName
+        entryRecTxt := "Sell " + htfLbl + ": " + sellZoneName + " | Buy " + mtfLbl + ": " + buyZoneName
     else
         entryRecTxt := "Fokus Sell (" + htfLbl + "/" + mtfLbl + "): " + sellZoneName
 
@@ -724,7 +725,7 @@ var label asiaHLbl  = label.new(na, na, "", style=label.style_label_left, color=
 var line  asiaLLine = line.new(na, na, na, na, style=line.style_dotted, width=1)
 var label asiaLLbl  = label.new(na, na, "", style=label.style_label_left, color=color.new(color.black, 100), size=size.tiny)
 
-var line  bslLine   = line.new(na, na, na, line.style_dashed, width=1)
+var line  bslLine   = line.new(na, na, na, na, style=line.style_dashed, width=1)
 var label bslLbl    = label.new(na, na, "", style=label.style_label_left, color=color.new(color.black, 100), size=size.tiny)
 var line  sslLine   = line.new(na, na, na, na, style=line.style_dashed, width=1)
 var label sslLbl    = label.new(na, na, "", style=label.style_label_left, color=color.new(color.black, 100), size=size.tiny)
@@ -765,7 +766,7 @@ f_non_overlap_y(_rawY, _usedArr, _minDist) =>
 if barstate.islast
     rightEdge = bar_index + 3
     boxEdge   = bar_index + 15
-    minGapY   = nz(ta.atr(14), atrVal) * 0.32
+    minGapY   = nz(chartAtr, atrVal) * 0.32
     usedLblY  = array.new_float()
 
     drawBearOB = showOB and not bearOB_Mit and not na(bearOB_T) and (not onlyHtfZones or not isHtfBull)
@@ -929,19 +930,19 @@ if barstate.islast
         box.set_lefttop(bullFvgBox, na, na), box.set_rightbottom(bullFvgBox, na, na)
 
 // ============================================================================
-// 10. TABEL CONTEXT DASHBOARD V4.3.0 (DENGAN BARIS TARGET ENTRY CERDAS)
+// 10. TABEL CONTEXT DASHBOARD V4.3.2 (ANTI-KEPOTONG DI LAYAR HP)
 // ============================================================================
 tPos  = posInput == "Bottom Right" ? position.bottom_right : posInput == "Top Right" ? position.top_right : posInput == "Bottom Left" ? position.bottom_left : position.bottom_center
 tSize = txtSizeIn == "Tiny" ? size.tiny : txtSizeIn == "Small" ? size.small : size.normal
 
-var table dash = table.new(tPos, 2, 18, bgcolor=color.new(#0f172a, 6), border_color=color.new(#334155, 25), border_width=1, frame_color=color.new(#475569, 10), frame_width=1)
+var table dash = table.new(tPos, 2, 16, bgcolor=color.new(#0f172a, 6), border_color=color.new(#334155, 25), border_width=1, frame_color=color.new(#475569, 10), frame_width=1)
 
 f_row(_tbl, _r, _lbl, _val, _bg, _txtCol) =>
     table.cell(_tbl, 0, _r, " " + _lbl + " ", bgcolor=color.new(#1e293b, 4), text_color=color.new(#cbd5e1, 0), text_size=tSize, text_halign=text.align_left)
     table.cell(_tbl, 1, _r, " " + _val + " ", bgcolor=_bg, text_color=_txtCol, text_size=tSize, text_halign=text.align_left)
 
 if barstate.islast
-    table.clear(dash, 0, 0, 1, 17)
+    table.clear(dash, 0, 0, 1, 15)
 
     if showDash
         cRed   = color.new(#9f1239, 8)
@@ -956,7 +957,7 @@ if barstate.islast
         isRejectZone  = rejBearSupply or rejBullDemand
         alignBadge    = isTestingZone ? "DI ZONA POI AKTIF!" : isRejectZone ? "REJEKSI DARI POI!" : (isFullBullAlign or isFullBearAlign) ? "SEARAH (ALIGNED)" : "FASE PULLBACK"
         hdrBg         = isTestingZone ? cAmber : isRejectZone ? (rejBearSupply ? cRed : cGreen) : isFullBullAlign ? cGreen : isFullBearAlign ? cRed : cPurp
-        table.cell(dash, 0, 0, " AMY V4.3 [" + modeBadge + "] ", bgcolor=color.new(#020617, 0), text_color=cWhite, text_size=tSize, text_halign=text.align_left)
+        table.cell(dash, 0, 0, " AMY V4.3.2 [" + modeBadge + "] ", bgcolor=color.new(#020617, 0), text_color=cWhite, text_size=tSize, text_halign=text.align_left)
         table.cell(dash, 1, 0, " STATUS: " + alignBadge + " ", bgcolor=hdrBg, text_color=cWhite, text_size=tSize, text_halign=text.align_right)
 
         tfMatrixTxt = htfLbl + ": " + (isHtfBull ? "BULL" : "BEAR") + "  |  " + mtfLbl + ": " + (isMtfBull ? "BULL" : "BEAR") + "  |  " + ltfLbl + ": " + (isLtfBull ? "BULL" : "BEAR")
@@ -1008,7 +1009,6 @@ if barstate.islast
         invInfo   = htfInvTxt + " | " + mtfInvTxt
         f_row(dash, 11, "BATAS CHOCH", invInfo, cDark, cWhite)
 
-        // BARIS BARU: TARGET ENTRY (Rekomendasi Titik Entry Tanpa Angka Berdasarkan Potensi & Jarak Zona)
         recBg = isTestingZone ? cAmber : isHtfBull ? cGreen : cRed
         f_row(dash, 12, "TARGET ENTRY", entryRecTxt, recBg, cWhite)
 
@@ -1017,9 +1017,3 @@ if barstate.islast
         if mobSpacer
             table.cell(dash, 0, 14, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
             table.cell(dash, 1, 14, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 0, 15, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 1, 15, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 0, 16, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 1, 16, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 0, 17, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
-            table.cell(dash, 1, 17, "", bgcolor=color.new(color.black, 100), text_size=size.tiny)
